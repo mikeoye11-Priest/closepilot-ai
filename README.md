@@ -41,6 +41,33 @@ Accuracy requirements:
 
 ClosePilot does not guess. It analyses finance exports, shows its evidence, and lets finance teams approve the final review.
 
+## Continuous Finance Assurance
+
+The long-term product direction is not another reporting tool. ClosePilot should become the second finance reviewer that never gets tired and reviews 100% of the available data every time.
+
+Target flow:
+
+```text
+Data
+  -> Data Integrity Engine
+  -> Finance Rules Engine
+  -> Statistical Detection
+  -> Finance Knowledge Graph
+  -> AI Insight Engine
+  -> Human Review
+```
+
+The layers are deliberately separated:
+
+- Data Integrity Engine checks source quality before analysis.
+- Finance Rules Engine applies deterministic accounting logic.
+- Statistical Detection finds outliers, trend breaks and unusual movements.
+- Finance Knowledge Graph links GL, VAT, AP, AR, bank, payroll, customers and suppliers.
+- AI Insight Engine explains the evidence and recommends next actions.
+- Human Review accepts, rejects or resolves findings before sign-off.
+
+The moat is the finance rules library, anomaly dataset, industry benchmarks and knowledge graph. OpenAI powers narrative and reasoning support; it must not be the source of deterministic calculations.
+
 ## Multi-Tenant Practice Model
 
 ClosePilot supports two onboarding paths:
