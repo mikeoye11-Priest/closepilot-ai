@@ -150,7 +150,7 @@ export const userCompanyAccess: UserCompanyAccess[] = [
 ];
 
 export const clients: ClientCompany[] = [
-  { id: "client_aurora", name: "Aurora Components Ltd", system: "Sage", score: 68, risk: "high", openFindings: 5, closeStatus: "Day 4 close" },
+  { id: company.id, name: "Aurora Components Ltd", system: "Sage", score: 68, risk: "high", openFindings: 5, closeStatus: "Day 4 close" },
   { id: "client_brook", name: "Brookline Services", system: "Xero", score: 86, risk: "low", openFindings: 2, closeStatus: "Ready for review" },
   { id: "client_crest", name: "Crest Retail Group", system: "QuickBooks", score: 74, risk: "medium", openFindings: 4, closeStatus: "AR review" },
   { id: "client_nova", name: "Nova Clinics", system: "Business Central", score: 59, risk: "high", openFindings: 8, closeStatus: "VAT exceptions" },

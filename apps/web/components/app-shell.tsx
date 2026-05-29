@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { clients, company as seededCompany, findings as seededFindings, recommendations as seededRecommendations, scoreBreakdown, tenant as seededTenant, uploads as seededUploads, validationChecks as seededValidationChecks } from "@/lib/data";
 import { assistantAnswer, calculateFinanceHealth, estimateCashAtRisk, estimateTimeSaved, generateForecast, riskCopy, riskLabel } from "@/lib/finance";
@@ -9,12 +9,58 @@ import type { AnalysisResult, ClientCompany, Company, Finding, FindingStatus, Re
 
 const nav = ["Onboarding", "Finance Health Review", "Upload Pack", "ClosePilot Close", "ClosePilot Cash", "ClosePilot Collections", "ClosePilot VAT", "ClosePilot Controls", "Ask ClosePilot", "Practice Portal"];
 const forecast = generateForecast();
+const storageKey = "closepilot.workspace.v1";
+
+type WorkspaceState = {
+  tenant: Tenant;
+  companies: Company[];
+  currentCompanyId: string;
+  portfolioClients: ClientCompany[];
+  companySnapshots: Record<string, AnalysisResult>;
+};
+
+const seededSnapshot: AnalysisResult = {
+  uploads: seededUploads,
+  validationChecks: seededValidationChecks,
+  findings: seededFindings,
+  recommendations: seededRecommendations
+};
+
+function clientToCompany(client: ClientCompany, tenantId: string): Company {
+  return {
+    id: client.id,
+    tenantId,
+    name: client.name,
+    industry: "Professional Services",
+    accountingSystem: client.system,
+    currency: "GBP",
+    country: "United Kingdom"
+  };
+}
+
+function updateClientSummary(clients: ClientCompany[], company: Company, snapshot: AnalysisResult): ClientCompany[] {
+  const score = calculateFinanceHealth(scoreBreakdown, snapshot.recommendations);
+  const risk = riskLabel(score);
+  const openFindings = snapshot.findings.filter((item) => item.status !== "resolved").length;
+  const nextClient: ClientCompany = {
+    id: company.id,
+    name: company.name,
+    system: company.accountingSystem,
+    score,
+    risk,
+    openFindings,
+    closeStatus: snapshot.uploads.length ? `${snapshot.uploads.length} files reviewed` : "Awaiting upload"
+  };
+  return [nextClient, ...clients.filter((item) => item.id !== company.id)];
+}
 
 export function AppShell() {
   const [active, setActive] = useState("Finance Health Review");
   const [tenant, setTenant] = useState<Tenant>(seededTenant);
   const [currentCompany, setCurrentCompany] = useState<Company>(seededCompany);
+  const [companies, setCompanies] = useState<Company[]>([seededCompany, ...clients.filter((client) => client.id !== seededCompany.id).map((client) => clientToCompany(client, seededTenant.id))]);
   const [portfolioClients, setPortfolioClients] = useState<ClientCompany[]>(clients);
+  const [companySnapshots, setCompanySnapshots] = useState<Record<string, AnalysisResult>>({ [seededCompany.id]: seededSnapshot });
   const [findings, setFindings] = useState<Finding[]>(seededFindings);
   const [recommendations, setRecommendations] = useState<Recommendation[]>(seededRecommendations);
   const [uploads, setUploads] = useState<Upload[]>(seededUploads);
@@ -30,6 +76,43 @@ export function AppShell() {
   const timeSaved = estimateTimeSaved(openFindings);
   const validationBlockers = validationChecks.filter((item) => item.status === "failed").length;
   const validationWarnings = validationChecks.filter((item) => item.status === "warning").length;
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(storageKey);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved) as WorkspaceState;
+      const selectedCompany = parsed.companies.find((item) => item.id === parsed.currentCompanyId) ?? parsed.companies[0];
+      if (!selectedCompany) return;
+      const snapshot = parsed.companySnapshots[selectedCompany.id] ?? { uploads: [], validationChecks: [], findings: [], recommendations: [] };
+      setTenant(parsed.tenant);
+      setCompanies(parsed.companies);
+      setPortfolioClients(parsed.portfolioClients);
+      setCompanySnapshots(parsed.companySnapshots);
+      setCurrentCompany(selectedCompany);
+      setUploads(snapshot.uploads);
+      setValidationChecks(snapshot.validationChecks);
+      setFindings(snapshot.findings);
+      setRecommendations(snapshot.recommendations);
+      setUploadMessage(`${selectedCompany.name} workspace restored. Upload a new finance pack or continue the current review.`);
+    } catch {
+      window.localStorage.removeItem(storageKey);
+    }
+  }, []);
+
+  useEffect(() => {
+    const workspace: WorkspaceState = {
+      tenant,
+      companies,
+      currentCompanyId: currentCompany.id,
+      portfolioClients,
+      companySnapshots: {
+        ...companySnapshots,
+        [currentCompany.id]: { uploads, validationChecks, findings, recommendations }
+      }
+    };
+    window.localStorage.setItem(storageKey, JSON.stringify(workspace));
+  }, [companies, companySnapshots, currentCompany.id, findings, portfolioClients, recommendations, tenant, uploads, validationChecks]);
 
   const completeRecommendation = (recommendation: Recommendation) => {
     setRecommendations((items) => items.map((item) => (item.id === recommendation.id ? { ...item, completed: true } : item)));
@@ -61,6 +144,8 @@ export function AppShell() {
       setValidationChecks(scoped.validationChecks);
       setFindings(scoped.findings.length ? scoped.findings : []);
       setRecommendations(scoped.recommendations);
+      setCompanySnapshots((items) => ({ ...items, [currentCompany.id]: scoped }));
+      setPortfolioClients((items) => updateClientSummary(items, currentCompany, scoped));
       setUploadMessage(scoped.findings.length ? `Analysed ${selected.length} file(s) for ${currentCompany.name} and generated ${scoped.findings.length} evidence-linked finding(s).` : `Analysed ${selected.length} file(s) for ${currentCompany.name}. No material findings were generated from parsed rows.`);
       setActive("Finance Health Review");
     } finally {
@@ -70,16 +155,32 @@ export function AppShell() {
   const onboardWorkspace = (nextTenant: Tenant, nextCompany: Company) => {
     setTenant(nextTenant);
     setCurrentCompany(nextCompany);
+    setCompanies((items) => [nextCompany, ...items.filter((item) => item.id !== nextCompany.id)].map((item) => ({ ...item, tenantId: nextTenant.id })));
     setUploads([]);
     setValidationChecks([]);
     setFindings([]);
     setRecommendations([]);
+    setCompanySnapshots((items) => ({ ...items, [nextCompany.id]: { uploads: [], validationChecks: [], findings: [], recommendations: [] } }));
     setUploadMessage(`${nextCompany.name} is ready. Upload a finance pack to create the first evidence-linked review.`);
     setPortfolioClients((items) => {
       const client: ClientCompany = { id: nextCompany.id, name: nextCompany.name, system: nextCompany.accountingSystem, score: 0, risk: "medium", openFindings: 0, closeStatus: "Awaiting upload" };
       return [client, ...items.filter((item) => item.id !== nextCompany.id)];
     });
     setActive("Upload Pack");
+  };
+  const switchCompany = (companyId: string) => {
+    const selectedCompany = companies.find((item) => item.id === companyId);
+    if (!selectedCompany) return;
+    const currentSnapshot = { uploads, validationChecks, findings, recommendations };
+    const nextSnapshot = companySnapshots[selectedCompany.id] ?? { uploads: [], validationChecks: [], findings: [], recommendations: [] };
+    setCompanySnapshots((items) => ({ ...items, [currentCompany.id]: currentSnapshot }));
+    setCurrentCompany(selectedCompany);
+    setUploads(nextSnapshot.uploads);
+    setValidationChecks(nextSnapshot.validationChecks);
+    setFindings(nextSnapshot.findings);
+    setRecommendations(nextSnapshot.recommendations);
+    setUploadMessage(nextSnapshot.uploads.length ? `${selectedCompany.name} review loaded.` : `${selectedCompany.name} has no uploaded pack yet. Upload files to begin the review.`);
+    setActive("Finance Health Review");
   };
 
   const content = useMemo(() => {
@@ -157,8 +258,8 @@ export function AppShell() {
     if (active === "ClosePilot VAT") return <RiskModule title="ClosePilot VAT" category="vat" findings={findings} updateFindingStatus={updateFindingStatus} />;
     if (active === "ClosePilot Controls") return <RiskModule title="ClosePilot Controls" category="controls" findings={findings} updateFindingStatus={updateFindingStatus} />;
     if (active === "Ask ClosePilot") return <AICopilot question={question} setQuestion={setQuestion} score={score} findings={findings} company={currentCompany} />;
-    return <PracticePortal tenant={tenant} clients={portfolioClients} />;
-  }, [active, cashAtRisk, currentCompany, financialExposure, findings, isAnalysing, openFindings, portfolioClients, question, recommendations, risk, score, tenant, timeSaved, uploadMessage, uploads, validationBlockers, validationChecks, validationWarnings]);
+    return <PracticePortal tenant={tenant} clients={portfolioClients} currentCompanyId={currentCompany.id} switchCompany={switchCompany} />;
+  }, [active, cashAtRisk, companySnapshots, companies, currentCompany, financialExposure, findings, isAnalysing, openFindings, portfolioClients, question, recommendations, risk, score, tenant, timeSaved, uploadMessage, uploads, validationBlockers, validationChecks, validationWarnings]);
 
   return (
     <div className="grid min-h-screen lg:grid-cols-[270px_1fr]">
@@ -186,6 +287,9 @@ export function AppShell() {
             <p className="mt-1 text-sm font-semibold text-cyan">{tenant.name} - {currentCompany.name} - ClosePilot reviewed {uploads.length} finance exports and found {openFindings.length} items to resolve before sign-off.</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <select className="h-10 rounded-lg border border-line bg-white px-3 font-bold" value={currentCompany.id} onChange={(event) => switchCompany(event.target.value)}>
+              {companies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
             <button className="h-10 rounded-lg border border-line px-4 font-bold" onClick={() => setActive("Onboarding")}>Onboard</button>
             <button className="h-10 rounded-lg bg-brand px-4 font-bold text-white">Export Finance Review</button>
           </div>
@@ -759,7 +863,7 @@ function AICopilot({ question, setQuestion, score, findings, company }: { questi
   );
 }
 
-function PracticePortal({ tenant, clients }: { tenant: Tenant; clients: ClientCompany[] }) {
+function PracticePortal({ tenant, clients, currentCompanyId, switchCompany }: { tenant: Tenant; clients: ClientCompany[]; currentCompanyId: string; switchCompany: (companyId: string) => void }) {
   const average = Math.round(clients.reduce((sum, client) => sum + client.score, 0) / clients.length);
   return (
     <div className="grid gap-4">
@@ -779,7 +883,7 @@ function PracticePortal({ tenant, clients }: { tenant: Tenant; clients: ClientCo
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] border-collapse text-left">
             <thead className="text-xs uppercase text-muted">
-              <tr><th className="border-b border-line p-3">Client</th><th className="border-b border-line p-3">System</th><th className="border-b border-line p-3">Score</th><th className="border-b border-line p-3">Risk</th><th className="border-b border-line p-3">Open Findings</th><th className="border-b border-line p-3">Close Status</th></tr>
+              <tr><th className="border-b border-line p-3">Client</th><th className="border-b border-line p-3">System</th><th className="border-b border-line p-3">Score</th><th className="border-b border-line p-3">Risk</th><th className="border-b border-line p-3">Open Findings</th><th className="border-b border-line p-3">Close Status</th><th className="border-b border-line p-3"></th></tr>
             </thead>
             <tbody>
               {clients.map((client) => (
@@ -790,6 +894,11 @@ function PracticePortal({ tenant, clients }: { tenant: Tenant; clients: ClientCo
                   <td className="border-b border-line p-3"><Pill level={client.risk}>{riskCopy(client.risk)}</Pill></td>
                   <td className="border-b border-line p-3">{client.openFindings}</td>
                   <td className="border-b border-line p-3">{client.closeStatus}</td>
+                  <td className="border-b border-line p-3">
+                    <button className={`rounded-lg px-3 py-2 text-sm font-bold ${client.id === currentCompanyId ? "bg-slate-100 text-muted" : "bg-brand text-white"}`} onClick={() => switchCompany(client.id)} disabled={client.id === currentCompanyId}>
+                      {client.id === currentCompanyId ? "Active" : "Open"}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
