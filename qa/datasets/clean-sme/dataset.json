@@ -1,0 +1,22 @@
+{
+  "id": "clean-sme",
+  "description": "Clean SME finance pack with balanced TB, standard VAT and no overdue AR/AP issues.",
+  "files": {
+    "trial_balance": [
+      { "account_code": "4000", "account_name": "Sales", "balance": "-120000.00" },
+      { "account_code": "5000", "account_name": "Cost of sales", "balance": "72000.00" },
+      { "account_code": "2202", "account_name": "VAT control", "balance": "-6400.00" },
+      { "account_code": "1200", "account_name": "Bank", "balance": "54400.00" }
+    ],
+    "vat_report": [
+      { "date": "2026-05-31", "vat_code": "standard", "type": "sale", "net_amount": "100000.00", "vat_amount": "20000.00" },
+      { "date": "2026-05-31", "vat_code": "standard", "type": "purchase", "net_amount": "68000.00", "vat_amount": "13600.00" }
+    ],
+    "aged_debtors": [
+      { "customer": "North Retail Ltd", "invoice": "INV-1001", "due_date": "2026-06-15", "amount": "1200.00" }
+    ],
+    "aged_creditors": [
+      { "supplier": "Metro Supplies", "invoice": "MS-882", "due_date": "2026-06-10", "amount": "900.00" }
+    ]
+  }
+}

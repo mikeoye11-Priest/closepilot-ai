@@ -1,0 +1,14 @@
+category,description,amount
+Revenue,Product Sales,180000
+Revenue,Service Revenue,29000
+COGS,Direct Materials,-95000
+COGS,Direct Labour,-45000
+Gross Profit,,69000
+Operating,Logistics,-8000
+Operating,Utilities,-2500
+Operating,Professional Fees,-3500
+Operating,Rent,-10000
+Operating,Payroll,-40000
+Operating,Marketing,-12000
+Operating,Depreciation,-9000
+EBIT,,-16000

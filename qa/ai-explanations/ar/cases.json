@@ -1,0 +1,33 @@
+[
+  {
+    "id": "ar-overdue-grounded",
+    "finding": {
+      "id": "finding_ar_overdue",
+      "tenantId": "tenant_qa",
+      "companyId": "company_qa",
+      "severity": "high",
+      "category": "ar",
+      "title": "Aged debtors over 90 days",
+      "description": "Overdue receivables include invoices older than 90 days.",
+      "expectedImpact": "Potential cash exposure of GBP 18,400.",
+      "status": "open",
+      "confidence": "high",
+      "confidenceScore": 92,
+      "ruleId": "AR_002",
+      "amount": 18400,
+      "evidenceStrength": "deterministic",
+      "evidence": {
+        "sourceFile": "aged-debtors.csv",
+        "accountCode": "Multiple customers",
+        "period": "May 2026",
+        "calculation": "Aged debtor rows over 90 days total GBP 18,400."
+      }
+    },
+    "mustReference": ["aged debtor", "overdue", "£18,400"],
+    "mustNotInvent": ["fraud", "payroll", "missing sales"],
+    "badExplanations": [
+      "This is likely caused by missing sales invoices in the ledger.",
+      "This overdue debtor issue indicates fraud by the customer."
+    ]
+  }
+]

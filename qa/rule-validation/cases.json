@@ -1,0 +1,245 @@
+[
+  {
+    "id": "clean-tb-balance-column",
+    "group": "clean-packs",
+    "description": "Trial balance exported as signed balance values.",
+    "files": {
+      "trial_balance": [
+        { "account_code": "4000", "account_name": "Sales", "balance": "-1000.00" },
+        { "account_code": "5000", "account_name": "Cost of sales", "balance": "650.00" },
+        { "account_code": "1200", "account_name": "Bank", "balance": "350.00" }
+      ]
+    },
+    "expectedValidationChecks": [
+      { "name": "Trial balance balances to zero", "status": "passed" },
+      { "name": "Trial Balance rule execution gate", "status": "passed" }
+    ],
+    "expectedFindings": [],
+    "forbiddenFindings": ["TB_BALANCES_TO_ZERO"]
+  },
+  {
+    "id": "clean-tb-debit-credit-columns",
+    "group": "edge-cases",
+    "description": "Trial balance exported as separate debit and credit columns.",
+    "files": {
+      "trial_balance": [
+        { "account_code": "4000", "account_name": "Sales", "debit": "0.00", "credit": "1000.00" },
+        { "account_code": "5000", "account_name": "Cost of sales", "debit": "650.00", "credit": "0.00" },
+        { "account_code": "1200", "account_name": "Bank", "debit": "350.00", "credit": "0.00" }
+      ]
+    },
+    "expectedValidationChecks": [
+      { "name": "Trial balance balances to zero", "status": "passed" },
+      { "name": "Trial Balance rule execution gate", "status": "passed" }
+    ],
+    "expectedFindings": [],
+    "forbiddenFindings": ["TB_BALANCES_TO_ZERO"]
+  },
+  {
+    "id": "xero-tb-balance-column",
+    "group": "clean-packs",
+    "description": "Xero-style trial balance with code, name and signed balance columns.",
+    "files": {
+      "trial_balance": [
+        { "code": "4000", "name": "Sales", "balance": "-2500.00" },
+        { "code": "5000", "name": "Cost of sales", "balance": "1400.00" },
+        { "code": "1200", "name": "Bank", "balance": "1100.00" }
+      ]
+    },
+    "expectedValidationChecks": [
+      { "name": "Trial Balance import mapping", "status": "passed" },
+      { "name": "Trial balance balances to zero", "status": "passed" },
+      { "name": "Trial Balance rule execution gate", "status": "passed" }
+    ],
+    "expectedFindings": [],
+    "forbiddenFindings": ["TB_BALANCES_TO_ZERO"]
+  },
+  {
+    "id": "sage-tb-debit-credit-columns",
+    "group": "edge-cases",
+    "description": "Sage-style nominal export with separate debit and credit columns.",
+    "files": {
+      "trial_balance": [
+        { "nominal_code": "4000", "description": "Sales", "debit": "0.00", "credit": "3200.00" },
+        { "nominal_code": "5000", "description": "Purchases", "debit": "2100.00", "credit": "0.00" },
+        { "nominal_code": "1200", "description": "Bank", "debit": "1100.00", "credit": "0.00" }
+      ]
+    },
+    "expectedValidationChecks": [
+      { "name": "Trial Balance import mapping", "status": "passed" },
+      { "name": "Trial balance balances to zero", "status": "passed" },
+      { "name": "Trial Balance rule execution gate", "status": "passed" }
+    ],
+    "expectedFindings": [],
+    "forbiddenFindings": ["TB_BALANCES_TO_ZERO"]
+  },
+  {
+    "id": "quickbooks-tb-amount-column",
+    "group": "clean-packs",
+    "description": "QuickBooks-style account name and amount export.",
+    "files": {
+      "trial_balance": [
+        { "account_name": "Sales", "amount": "-1800.00" },
+        { "account_name": "Cost of sales", "amount": "950.00" },
+        { "account_name": "Bank", "amount": "850.00" }
+      ]
+    },
+    "expectedValidationChecks": [
+      { "name": "Trial Balance import mapping", "status": "passed" },
+      { "name": "Trial balance balances to zero", "status": "passed" },
+      { "name": "Trial Balance rule execution gate", "status": "passed" }
+    ],
+    "expectedFindings": [],
+    "forbiddenFindings": ["TB_BALANCES_TO_ZERO"]
+  },
+  {
+    "id": "malformed-numeric-tb",
+    "group": "edge-cases",
+    "description": "Mapped numeric columns with non-numeric values must fail validation instead of silently normalising.",
+    "files": {
+      "trial_balance": [
+        { "account_code": "4000", "account_name": "Sales", "balance": "not-a-number" },
+        { "account_code": "1200", "account_name": "Bank", "balance": "100.00" }
+      ]
+    },
+    "expectedValidationChecks": [
+      { "name": "Trial Balance import mapping", "status": "failed" },
+      { "name": "Trial balance balances to zero", "status": "failed" },
+      { "name": "Trial Balance rule execution gate", "status": "failed" }
+    ],
+    "expectedFindings": [
+      { "ruleId": "TB_BALANCES_TO_ZERO", "severity": "critical", "exposure": 100 }
+    ],
+    "forbiddenFindings": []
+  },
+  {
+    "id": "missing-mandatory-tb-account-name",
+    "group": "edge-cases",
+    "description": "Trial balance without an account name mapping should fail mandatory mapping validation.",
+    "files": {
+      "trial_balance": [
+        { "account_code": "4000", "balance": "-1000.00" },
+        { "account_code": "1200", "balance": "1000.00" }
+      ]
+    },
+    "expectedValidationChecks": [
+      { "name": "Trial Balance import mapping", "status": "failed" },
+      { "name": "Trial balance balances to zero", "status": "failed" },
+      { "name": "Trial Balance rule execution gate", "status": "failed" }
+    ],
+    "expectedFindings": [],
+    "forbiddenFindings": ["TB_BALANCES_TO_ZERO"]
+  },
+  {
+    "id": "tb-dr-cr-sign-convention",
+    "group": "false-positives",
+    "description": "Credit column values should be normalised as negative balances.",
+    "files": {
+      "trial_balance": [
+        { "account": "Sales", "dr": "0.00", "cr": "750.00" },
+        { "account": "Bank", "dr": "750.00", "cr": "0.00" }
+      ]
+    },
+    "expectedValidationChecks": [
+      { "name": "Trial Balance import mapping", "status": "passed" },
+      { "name": "Trial balance balances to zero", "status": "passed" },
+      { "name": "Trial Balance rule execution gate", "status": "passed" }
+    ],
+    "expectedFindings": [],
+    "forbiddenFindings": ["TB_BALANCES_TO_ZERO"]
+  },
+  {
+    "id": "known-error-tb-imbalance",
+    "group": "known-errors",
+    "description": "Separate debit/credit trial balance is genuinely out of balance.",
+    "files": {
+      "trial_balance": [
+        { "account_code": "4000", "account_name": "Sales", "debit": "0.00", "credit": "1000.00" },
+        { "account_code": "5000", "account_name": "Cost of sales", "debit": "650.00", "credit": "0.00" },
+        { "account_code": "1200", "account_name": "Bank", "debit": "300.00", "credit": "0.00" }
+      ]
+    },
+    "expectedFindings": [
+      { "ruleId": "TB_BALANCES_TO_ZERO", "severity": "critical", "exposure": 50 }
+    ],
+    "expectedValidationChecks": [
+      { "name": "Trial balance balances to zero", "status": "failed" },
+      { "name": "Trial Balance rule execution gate", "status": "failed" }
+    ],
+    "forbiddenFindings": []
+  },
+  {
+    "id": "known-error-vat-control-mismatch",
+    "group": "known-errors",
+    "description": "VAT return does not agree to the VAT control account.",
+    "files": {
+      "trial_balance": [
+        { "account_code": "2202", "account_name": "VAT control", "balance": "-15200.00" },
+        { "account_code": "1200", "account_name": "Bank", "balance": "15200.00" }
+      ],
+      "vat_report": [
+        { "box": "1", "description": "Output VAT", "vat_code": "20%", "net_amount": "105000.00", "vat_amount": "21000.00" },
+        { "box": "4", "description": "Input VAT", "vat_code": "20%", "net_amount": "-55000.00", "vat_amount": "-11000.00" }
+      ]
+    },
+    "expectedFindings": [
+      {
+        "ruleId": "VAT_CONTROL_MISMATCH",
+        "severity": "high",
+        "exposure": 5200,
+        "engineRuleIds": ["REC_003"],
+        "engineTitleIncludes": ["VAT report vs TB control mismatch", "VAT report does not reconcile"]
+      }
+    ],
+    "forbiddenFindings": []
+  },
+  {
+    "id": "known-error-ap-duplicate",
+    "group": "known-errors",
+    "description": "Same supplier, same invoice reference and same amount appears twice.",
+    "files": {
+      "aged_creditors": [
+        { "supplier": "Vector Plastics", "invoice_ref": "VP-7781", "amount": "1000.00" },
+        { "supplier": "Vector Plastics", "invoice_ref": "VP-7781", "amount": "1000.00" }
+      ]
+    },
+    "expectedFindings": [
+      {
+        "ruleId": "AP_DUPLICATE_INVOICE",
+        "severity": "medium",
+        "exposure": 1000,
+        "engineTitleIncludes": ["Duplicate payment", "Possible duplicate supplier invoice"]
+      }
+    ],
+    "forbiddenFindings": []
+  },
+  {
+    "id": "false-positive-ap-same-invoice-different-supplier",
+    "group": "false-positives",
+    "description": "Same invoice reference and amount from different suppliers must not be flagged as duplicate.",
+    "files": {
+      "aged_creditors": [
+        { "supplier": "Vector Plastics", "invoice_ref": "INV-100", "amount": "1000.00" },
+        { "supplier": "North Metals", "invoice_ref": "INV-100", "amount": "1000.00" }
+      ]
+    },
+    "expectedFindings": [],
+    "forbiddenFindings": ["AP_DUPLICATE_INVOICE"],
+    "engineForbiddenTitleIncludes": ["Duplicate payment", "Possible duplicate supplier invoice"]
+  },
+  {
+    "id": "false-positive-legitimate-suspense-cleared",
+    "group": "false-positives",
+    "description": "A suspense account with zero closing balance must not create a review finding.",
+    "files": {
+      "trial_balance": [
+        { "account_code": "9998", "account_name": "Suspense", "balance": "0.00" },
+        { "account_code": "1200", "account_name": "Bank", "balance": "100.00" },
+        { "account_code": "4000", "account_name": "Sales", "balance": "-100.00" }
+      ]
+    },
+    "expectedFindings": [],
+    "forbiddenFindings": ["SUSPENSE_BALANCE_REVIEW"],
+    "engineForbiddenTitleIncludes": ["Suspense/clearing account", "Suspense or clearing account balance outstanding"]
+  }
+]

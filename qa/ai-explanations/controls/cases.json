@@ -1,0 +1,32 @@
+[
+  {
+    "id": "controls-late-journal-grounded",
+    "finding": {
+      "id": "finding_controls_late_journal",
+      "tenantId": "tenant_qa",
+      "companyId": "company_qa",
+      "severity": "medium",
+      "category": "controls",
+      "title": "Late manual journal after close cut-off",
+      "description": "Manual journal posted after the normal close window by a non-recurring user.",
+      "expectedImpact": "Control review required.",
+      "status": "open",
+      "confidence": "medium",
+      "confidenceScore": 80,
+      "ruleId": "CTL_002",
+      "evidenceStrength": "indicator",
+      "evidence": {
+        "sourceFile": "trial-balance.csv",
+        "accountCode": "MJ-2048",
+        "period": "May 2026",
+        "calculation": "Journal posted two days after close cut-off by a user with no prior journal history."
+      }
+    },
+    "mustReference": ["control", "journal"],
+    "mustNotInvent": ["fraud", "payroll", "duplicate invoices"],
+    "badExplanations": [
+      "This proves fraud occurred in the finance team.",
+      "This issue was caused by duplicate invoices."
+    ]
+  }
+]

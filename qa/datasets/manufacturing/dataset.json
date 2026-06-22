@@ -1,0 +1,14 @@
+{
+  "id": "manufacturing",
+  "description": "Manufacturing pack with inventory and suspense clearing account that nets to zero.",
+  "files": {
+    "trial_balance": [
+      { "nominal": "4000", "description": "Product sales", "credit": "250000.00", "debit": "0.00" },
+      { "nominal": "5000", "description": "Raw materials", "credit": "0.00", "debit": "105000.00" },
+      { "nominal": "1300", "description": "Inventory", "credit": "0.00", "debit": "85000.00" },
+      { "nominal": "9998", "description": "Suspense clearing debit", "credit": "0.00", "debit": "2500.00" },
+      { "nominal": "9999", "description": "Suspense clearing credit", "credit": "2500.00", "debit": "0.00" },
+      { "nominal": "1200", "description": "Bank", "credit": "0.00", "debit": "60000.00" }
+    ]
+  }
+}

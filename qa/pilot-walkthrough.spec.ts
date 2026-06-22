@@ -1,0 +1,56 @@
+import { expect, test } from "@playwright/test";
+
+const baseURL = process.env.CLOSEPILOT_QA_URL ?? "http://127.0.0.1:3004";
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.print = () => {};
+  });
+});
+
+test("pilot demo walkthrough opens the right workflow context", async ({ page }) => {
+  test.setTimeout(60000);
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+
+  page.on("console", (msg) => {
+    if (msg.type() === "error" && !msg.text().includes("Download the React DevTools")) {
+      consoleErrors.push(msg.text());
+    }
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.goto(baseURL);
+  await expect(page.getByRole("heading", { name: "Onboarding" })).toBeVisible();
+  await page.getByRole("button", { name: "Load Pilot Demo" }).click();
+
+  await expect(page.getByRole("heading", { name: "Findings", exact: true })).toBeVisible();
+  await expect(page.getByText("Pilot Walkthrough")).toBeVisible();
+  await expect(page.locator("header p").filter({ hasText: "Brightlane Manufacturing Ltd" })).toBeVisible();
+  await expect(page.getByText("Partner conclusion recorded")).toBeVisible();
+
+  await page.getByRole("button", { name: /Inspect Evidence/ }).click();
+  await expect(page.getByText("VAT control difference resolved").first()).toBeVisible();
+  await expect(page.getByRole("link", { name: /vat-control-reconciliation/ })).toBeVisible();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+
+  await page.getByRole("button", { name: /Manager Review/ }).click();
+  await expect(page.getByText("Aged debtor concentration reviewed and accepted").first()).toBeVisible();
+  await expect(page.getByText("Manager Review").last()).toBeVisible();
+  await expect(page.getByText("Approved. Evidence supports recoverability conclusion.")).toBeVisible();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+
+  await page.getByRole("button", { name: /Partner Sign-Off/ }).click();
+  await expect(page.getByText("Suspense balance cleared before close").first()).toBeVisible();
+  await expect(page.getByText("Escalated for partner awareness because the adjustment was material.")).toBeVisible();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+
+  await page.getByRole("button", { name: /Export Pack/ }).click();
+  await expect(page.getByRole("heading", { name: "Review Pack" })).toBeVisible();
+  await expect(page.getByText("Partner Sign-Off").first()).toBeVisible();
+  await expect(page.getByText("Signed by Priya Desai")).toBeVisible();
+
+  expect(consoleErrors).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});

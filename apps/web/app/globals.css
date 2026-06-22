@@ -10,6 +10,7 @@ body {
   margin: 0;
   background: #f5f7fb;
   color: #172033;
+  min-width: 320px;
 }
 
 button,
@@ -18,3 +19,161 @@ select,
 textarea {
   font: inherit;
 }
+
+button,
+select,
+input,
+textarea {
+  letter-spacing: 0;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+:focus-visible {
+  outline: 3px solid rgba(14, 116, 144, 0.32);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(14, 116, 144, 0.18);
+}
+
+@media print {
+  html,
+  body {
+    width: 100% !important;
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 9pt;
+  }
+
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    overflow: visible !important;
+  }
+
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  .print-page { break-inside: avoid; page-break-inside: avoid; }
+  .print-cover {
+    min-height: 250mm !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .min-h-screen,
+  main {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  header,
+  section,
+  article,
+  div {
+    max-width: 100% !important;
+  }
+
+  section {
+    break-inside: auto;
+    page-break-inside: auto;
+    margin-bottom: 8pt !important;
+  }
+
+  article,
+  .print-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  [class*="grid-cols"],
+  [class*="xl:grid-cols"],
+  [class*="lg:grid-cols"],
+  [class*="md:grid-cols"],
+  [class*="sm:grid-cols"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  [class*="min-w-"] {
+    min-width: 0 !important;
+  }
+
+  [class*="rounded"] {
+    border-radius: 4px !important;
+  }
+
+  [class*=" p-"],
+  [class*=" px-"],
+  [class*=" py-"] {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .shadow-panel,
+  .shadow-lg,
+  .shadow-panel,
+  .shadow-2xl,
+  .shadow-sm {
+    box-shadow: none !important;
+  }
+
+  table {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed;
+    page-break-inside: auto;
+    font-size: 8pt;
+  }
+
+  th,
+  td {
+    padding: 5pt !important;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    vertical-align: top;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  h1 { font-size: 20pt !important; }
+  h2 { font-size: 13pt !important; }
+  h3 { font-size: 11pt !important; }
+  .print-cover h1 { font-size: 28pt !important; }
+
+  .print-cover p,
+  .print-cover span,
+  .print-cover strong {
+    font-size: 10pt !important;
+  }
+
+  strong[class*="text-3xl"],
+  strong[class*="text-2xl"] {
+    font-size: 15pt !important;
+  }
+
+  textarea,
+  button {
+    break-inside: avoid;
+  }
+
+  @page { margin: 12mm 10mm; size: A4; }
+}
+
+.print-only { display: none; }

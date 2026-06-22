@@ -1,0 +1,10 @@
+{
+  "id": "ap-error",
+  "description": "Duplicate supplier invoice in aged creditors should be detected.",
+  "files": {
+    "aged_creditors": [
+      { "supplier": "Vector Plastics", "invoice": "VP-7781", "due_date": "2026-05-30", "amount": "1000.00" },
+      { "supplier": "Vector Plastics", "invoice": "VP-7781", "due_date": "2026-05-30", "amount": "1000.00" }
+    ]
+  }
+}

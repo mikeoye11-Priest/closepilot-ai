@@ -1,0 +1,33 @@
+[
+  {
+    "id": "ap-duplicate-grounded",
+    "finding": {
+      "id": "finding_ap_duplicate",
+      "tenantId": "tenant_qa",
+      "companyId": "company_qa",
+      "severity": "medium",
+      "category": "ap",
+      "title": "Possible duplicate supplier invoice",
+      "description": "Two AP rows share supplier, invoice reference and amount.",
+      "expectedImpact": "Duplicate payment exposure of GBP 4,820.",
+      "status": "open",
+      "confidence": "medium",
+      "confidenceScore": 82,
+      "ruleId": "AP_004",
+      "amount": 4820,
+      "evidenceStrength": "indicator",
+      "evidence": {
+        "sourceFile": "aged-creditors.csv",
+        "accountCode": "SUP-221",
+        "period": "May 2026",
+        "calculation": "Two supplier invoice rows match on supplier, reference and amount."
+      }
+    },
+    "mustReference": ["supplier", "invoice", "£4,820"],
+    "mustNotInvent": ["fraud", "payroll", "missing sales"],
+    "badExplanations": [
+      "This is likely due to payroll errors.",
+      "This proves supplier fraud occurred."
+    ]
+  }
+]

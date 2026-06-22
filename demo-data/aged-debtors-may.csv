@@ -1,0 +1,7 @@
+customer,invoice_ref,invoice_date,amount,days_overdue,account_manager
+Topline Retail,INV-4821,2026-03-01,42300,75,James Reid
+Wyvern Group,INV-4756,2026-03-10,31800,65,Sarah Collins
+Aster Foods,INV-4801,2026-03-15,21900,62,James Reid
+Morris Trading,INV-4889,2026-04-01,8500,45,Sarah Collins
+Green Hills Ltd,INV-4901,2026-04-10,5200,30,Tom Okafor
+Pinewood Retail,INV-4912,2026-04-18,3100,22,Tom Okafor

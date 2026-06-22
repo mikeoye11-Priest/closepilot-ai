@@ -1,0 +1,19 @@
+{
+  "healthScore": 90,
+  "readiness": 86,
+  "criticalFindings": 0,
+  "expectedFindings": [],
+  "forbiddenFindings": ["DI_001", "SUSPENSE_001"],
+  "metrics": {
+    "fileRecognitionAccuracy": 98,
+    "mappingAccuracy": 96,
+    "importGatePassRate": 100,
+    "blockedImports": 0,
+    "tbValidationAccuracy": 100,
+    "falsePositiveRate": 0,
+    "ruleAccuracy": 100,
+    "vatCalculationAccuracy": 100,
+    "pilotReadinessScore": 97,
+    "overallCoreQuality": 96
+  }
+}

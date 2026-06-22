@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ClosePilot AI",
-  description: "Upload finance exports and get a board-ready finance health review"
+  title: "ClosePilot — AI Financial Assurance Platform",
+  description: "Every ledger. Every balance. Every risk. Reviewed before sign-off. 350+ assurance tests across 8 layers."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

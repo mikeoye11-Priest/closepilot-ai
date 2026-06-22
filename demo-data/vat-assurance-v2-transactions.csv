@@ -1,0 +1,8 @@
+date,type,party,description,net_amount,vat_amount,gross_amount,vat_code,country,supply_type
+2026-04-03,Sale,Atlas Retail Ltd,UK standard-rated product sale,53210,10642,63852,STD,United Kingdom,goods
+2026-04-09,Sale,Harbour Engineering Ltd,UK standard-rated service sale,26750,5350,32100,STD,United Kingdom,services
+2026-04-12,Purchase,Precision Components Ltd,UK standard-rated components purchase,21370,4274,25644,PSTD,United Kingdom,goods
+2026-04-16,Purchase,Google Ireland Ltd,Cloud services reverse charge,5000,0,5000,RC,Ireland,services
+2026-04-20,Purchase,HMRC PVA,Postponed import VAT statement,15000,3000,18000,PVA,China,goods
+2026-04-23,Purchase,Book Supply Co,Zero-rated books purchase,2000,0,2000,ZR,United Kingdom,goods
+2026-04-28,Sale,Overseas Distributor,Zero-rated export sale,10000,0,10000,EXPORT,France,goods

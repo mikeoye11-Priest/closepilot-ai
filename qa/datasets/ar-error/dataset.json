@@ -1,0 +1,13 @@
+{
+  "id": "ar-error",
+  "description": "Aged debtor balance older than 90 days should produce an AR finding.",
+  "files": {
+    "trial_balance": [
+      { "account_code": "1100", "account_name": "Trade debtors", "balance": "6200.00" },
+      { "account_code": "4000", "account_name": "Sales", "balance": "-6200.00" }
+    ],
+    "aged_debtors": [
+      { "customer": "Longview Construction", "invoice": "INV-4321", "due_date": "2026-01-31", "amount": "6200.00" }
+    ]
+  }
+}

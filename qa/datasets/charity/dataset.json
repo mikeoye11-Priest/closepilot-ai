@@ -1,0 +1,14 @@
+{
+  "id": "charity",
+  "description": "Charity pack with exempt income and grant funding that should not trigger VAT output tax findings.",
+  "files": {
+    "trial_balance": [
+      { "account_code": "4100", "account_name": "Grant income", "balance": "-80000.00" },
+      { "account_code": "5100", "account_name": "Programme costs", "balance": "52000.00" },
+      { "account_code": "1200", "account_name": "Bank", "balance": "28000.00" }
+    ],
+    "vat_report": [
+      { "date": "2026-05-31", "vat_code": "exempt", "type": "sale", "net_amount": "80000.00", "vat_amount": "0.00" }
+    ]
+  }
+}

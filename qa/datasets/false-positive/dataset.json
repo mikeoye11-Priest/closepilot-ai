@@ -1,0 +1,14 @@
+{
+  "id": "false-positive",
+  "description": "Legitimate edge cases that must not create findings.",
+  "files": {
+    "trial_balance": [
+      { "account": "Sales", "dr": "0.00", "cr": "750.00" },
+      { "account": "Bank", "dr": "750.00", "cr": "0.00" }
+    ],
+    "aged_creditors": [
+      { "supplier": "Alpha Ltd", "invoice": "1001", "due_date": "2026-06-10", "amount": "1000.00" },
+      { "supplier": "Beta Ltd", "invoice": "1001", "due_date": "2026-06-10", "amount": "1000.00" }
+    ]
+  }
+}

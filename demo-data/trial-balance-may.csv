@@ -1,0 +1,21 @@
+account_code,account_name,debit,credit
+1100,Cash at Bank,100000,0
+1200,Trade Debtors,150000,0
+1300,Stock,42000,0
+1400,Prepayments,8500,0
+2100,Trade Creditors,0,67000
+2200,VAT Control,0,8400
+2300,Bank Loan,0,80000
+3000,Share Capital,0,50000
+3100,Retained Earnings,0,171600
+4000,Product Revenue,0,180000
+4100,Service Revenue,0,29000
+5000,Cost of Sales,95000,0
+5100,Direct Labour,45000,0
+5200,Logistics,8000,0
+5400,Utilities,2500,0
+5600,Professional Fees,3500,0
+5700,Rent,10000,0
+6000,Payroll,40000,0
+6100,Marketing,12000,0
+6200,Depreciation,9000,0

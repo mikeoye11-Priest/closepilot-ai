@@ -1,0 +1,32 @@
+[
+  {
+    "id": "audit-readiness-data-quality-grounded",
+    "finding": {
+      "id": "finding_data_quality_future_date",
+      "tenantId": "tenant_qa",
+      "companyId": "company_qa",
+      "severity": "low",
+      "category": "data_quality",
+      "title": "Future-dated transactions detected",
+      "description": "Uploaded ledger contains transactions dated after the review period.",
+      "expectedImpact": "Audit readiness warning.",
+      "status": "open",
+      "confidence": "medium",
+      "confidenceScore": 78,
+      "ruleId": "DQ_001",
+      "evidenceStrength": "indicator",
+      "evidence": {
+        "sourceFile": "general-ledger.csv",
+        "accountCode": "Multiple",
+        "period": "May 2026",
+        "calculation": "Five transaction dates fall after 31 May 2026."
+      }
+    },
+    "mustReference": ["Future-dated transactions detected"],
+    "mustNotInvent": ["fraud", "payroll", "duplicate invoices", "missing sales"],
+    "badExplanations": [
+      "This is likely supplier fraud.",
+      "This was caused by duplicate invoices."
+    ]
+  }
+]

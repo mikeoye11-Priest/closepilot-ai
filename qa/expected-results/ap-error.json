@@ -1,0 +1,21 @@
+{
+  "healthScore": 82,
+  "readiness": 78,
+  "criticalFindings": 0,
+  "expectedFindings": [
+    { "ruleId": "AP_001", "severity": "medium", "exposure": 1000 }
+  ],
+  "forbiddenFindings": ["DI_001", "AR_002"],
+  "metrics": {
+    "fileRecognitionAccuracy": 98,
+    "mappingAccuracy": 96,
+    "importGatePassRate": 100,
+    "blockedImports": 0,
+    "tbValidationAccuracy": 100,
+    "falsePositiveRate": 0,
+    "ruleAccuracy": 100,
+    "vatCalculationAccuracy": 100,
+    "pilotReadinessScore": 97,
+    "overallCoreQuality": 96
+  }
+}

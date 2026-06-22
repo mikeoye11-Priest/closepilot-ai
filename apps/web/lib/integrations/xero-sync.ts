@@ -1,0 +1,114 @@
+import type { XeroClient } from "xero-node";
+
+export type XeroSyncData = {
+  trialBalanceRows: Record<string, string>[];
+  vatRows: Record<string, string>[];
+  counts: { trialBalance: number; invoices: number; bankTransactions: number; manualJournals: number; vatRows: number };
+};
+
+export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, asOfDate: string, modifiedSince?: Date): Promise<XeroSyncData> {
+  const [trialBalance, invoices, bankTransactions, manualJournals] = await Promise.all([
+    xero.accountingApi.getReportTrialBalance(xeroTenantId, asOfDate, false),
+    fetchAllPages(100, (page) => xero.accountingApi.getInvoices(xeroTenantId, modifiedSince, undefined, "Date ASC", undefined, undefined, undefined, ["AUTHORISED", "PAID"], page, false, false, 4, false, 100), (body) => body.invoices ?? []),
+    fetchAllPages(100, (page) => xero.accountingApi.getBankTransactions(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 4, 100), (body) => body.bankTransactions ?? []),
+    fetchAllPages(100, (page) => xero.accountingApi.getManualJournals(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 100), (body) => body.manualJournals ?? []),
+  ]);
+
+  const invoiceRows = invoices.flatMap((invoice) => (invoice.lineItems ?? []).map((line, index) => vatRow({
+    date: invoice.date,
+    type: String(invoice.type).startsWith("ACCREC") ? "Sale" : "Purchase",
+    party: invoice.contact?.name,
+    description: line.description || invoice.reference || invoice.invoiceNumber || "Xero invoice line",
+    net: line.lineAmount,
+    vat: line.taxAmount,
+    gross: number(line.lineAmount) + number(line.taxAmount),
+    taxType: line.taxType,
+    accountCode: line.accountCode,
+    reference: invoice.invoiceNumber || invoice.invoiceID || `invoice-${index + 1}`,
+  })));
+  const bankRows = bankTransactions.flatMap((transaction) => (transaction.lineItems ?? []).map((line, index) => vatRow({
+    date: transaction.date,
+    type: String(transaction.type).startsWith("RECEIVE") ? "Sale" : "Purchase",
+    party: transaction.contact?.name,
+    description: line.description || transaction.reference || "Xero bank transaction",
+    net: line.lineAmount,
+    vat: line.taxAmount,
+    gross: number(line.lineAmount) + number(line.taxAmount),
+    taxType: line.taxType,
+    accountCode: line.accountCode,
+    reference: transaction.reference || transaction.bankTransactionID || `bank-${index + 1}`,
+  })));
+  const journalRows = manualJournals.flatMap((journal) => (journal.journalLines ?? []).filter((line) => number(line.taxAmount) !== 0 || /vat|tax/i.test(`${journal.narration} ${line.description ?? ""}`)).map((line, index) => vatRow({
+    date: journal.date,
+    type: "Adjustment",
+    party: "Manual Journal",
+    description: `Manual journal: ${journal.narration}${line.description ? ` — ${line.description}` : ""}`,
+    net: line.lineAmount,
+    vat: line.taxAmount,
+    gross: number(line.lineAmount) + number(line.taxAmount),
+    taxType: line.taxType,
+    accountCode: line.accountCode,
+    reference: journal.manualJournalID || `journal-${index + 1}`,
+  })));
+
+  const trialBalanceRows = flattenTrialBalance(trialBalance.body.reports?.[0]?.rows ?? []);
+  const vatRows = [...invoiceRows, ...bankRows, ...journalRows];
+  return {
+    trialBalanceRows,
+    vatRows,
+    counts: { trialBalance: trialBalanceRows.length, invoices: invoices.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, vatRows: vatRows.length },
+  };
+}
+
+async function fetchAllPages<TBody, TItem>(pageSize: number, request: (page: number) => Promise<{ body: TBody }>, items: (body: TBody) => TItem[]) {
+  const result: TItem[] = [];
+  for (let page = 1; page <= 100; page += 1) {
+    const response = await request(page);
+    const batch = items(response.body);
+    result.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  return result;
+}
+
+function flattenTrialBalance(sections: Array<{ rows?: Array<{ cells?: Array<{ value?: string; attributes?: Array<{ id?: string; value?: string }> }> }> }>) {
+  let rowNumber = 0;
+  return sections.flatMap((section) => section.rows ?? []).map((row) => {
+    rowNumber += 1;
+    const cells = row.cells ?? [];
+    const accountName = cells[0]?.value?.trim() ?? "";
+    const accountCode = cells[0]?.attributes?.find((attribute) => /account|code/i.test(attribute.id ?? ""))?.value ?? `XERO-${rowNumber}`;
+    const debit = amount(cells[1]?.value);
+    const credit = amount(cells[2]?.value);
+    return { account_code: accountCode, account_name: accountName, debit: String(debit), credit: String(credit), balance: String(debit - credit) };
+  }).filter((row) => row.account_name && !/^total/i.test(row.account_name));
+}
+
+function vatRow(input: { date?: string; type: string; party?: string; description: string; net?: number; vat?: number; gross?: number; taxType?: string; accountCode?: string; reference: string }) {
+  return {
+    date: input.date ?? "",
+    type: input.type,
+    party: input.party ?? "",
+    description: input.description,
+    net_amount: String(number(input.net)),
+    vat_amount: String(number(input.vat)),
+    gross_amount: String(number(input.gross)),
+    vat_code: canonicalVatCode(input.taxType, input.type),
+    nominal_code: input.accountCode ?? "",
+    reference: input.reference,
+    source_system: "Xero",
+  };
+}
+
+export function canonicalVatCode(taxType: string | undefined, transactionType: string) {
+  const code = (taxType ?? "").toUpperCase();
+  if (/POSTPONED|IMPORTVAT|PVA/.test(code)) return "PVA";
+  if (/REVERSE|ECINPUTSERVICES/.test(code)) return "RC";
+  if (/ZERO/.test(code)) return "ZR";
+  if (/EXEMPT/.test(code)) return "EXEMPT";
+  if (/NONE|NOTAX|BASEXCLUDED/.test(code)) return "OOS";
+  return transactionType === "Sale" ? "STD" : transactionType === "Purchase" ? "PSTD" : code;
+}
+
+function number(value: unknown) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
+function amount(value: string | undefined) { return number((value ?? "").replace(/[£,$()]/g, (character) => character === "(" ? "-" : "").replace(")", "")); }

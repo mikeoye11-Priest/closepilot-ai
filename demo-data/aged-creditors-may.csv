@@ -1,0 +1,7 @@
+supplier,invoice_date,invoice_amount,invoice_ref,due_date,status
+Meridian Freight,2026-04-15,4820,MF-4491A,2026-05-15,overdue
+Meridian Freight,2026-04-15,4820,MF-4491-A,2026-05-15,overdue
+Office Supplies Ltd,2026-04-20,1250,OSL-8812,2026-05-20,due
+Capital Cleaning,2026-04-22,890,CC-3301,2026-05-22,due
+Broadband Pro,2026-04-01,320,BP-9021,2026-05-01,overdue
+IT Support Co,2026-04-05,1800,ITS-6654,2026-05-05,overdue

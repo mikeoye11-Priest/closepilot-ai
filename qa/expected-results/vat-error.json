@@ -1,0 +1,28 @@
+{
+  "healthScore": 68,
+  "readiness": 62,
+  "criticalFindings": 0,
+  "expectedFindings": [
+    { "ruleId": "VAT_003", "severity": "high", "exposure": 5200 }
+  ],
+  "forbiddenFindings": ["DI_001"],
+  "metrics": {
+    "fileRecognitionAccuracy": 98,
+    "mappingAccuracy": 96,
+    "importGatePassRate": 100,
+    "blockedImports": 0,
+    "tbValidationAccuracy": 100,
+    "falsePositiveRate": 0,
+    "ruleAccuracy": 100,
+    "vatCalculationAccuracy": 100,
+    "pilotReadinessScore": 91,
+    "overallCoreQuality": 96
+  },
+  "vatBoxes": {
+    "box1": 21000,
+    "box4": 11000,
+    "box5": 10000,
+    "box6": 105000,
+    "box7": 55000
+  }
+}

@@ -1,0 +1,33 @@
+[
+  {
+    "id": "vat-control-mismatch-grounded",
+    "finding": {
+      "id": "finding_vat_control",
+      "tenantId": "tenant_qa",
+      "companyId": "company_qa",
+      "severity": "high",
+      "category": "vat",
+      "title": "VAT Control Account mismatch",
+      "description": "VAT control account is GBP 45,000 and VAT return is GBP 39,800.",
+      "expectedImpact": "Difference of GBP 5,200.",
+      "status": "open",
+      "confidence": "high",
+      "confidenceScore": 96,
+      "ruleId": "REC_003",
+      "amount": 5200,
+      "evidenceStrength": "deterministic",
+      "evidence": {
+        "sourceFile": "vat-report.csv",
+        "accountCode": "VAT-CTRL",
+        "period": "May 2026",
+        "calculation": "VAT control account GBP 45,000 less VAT return GBP 39,800 equals GBP 5,200."
+      }
+    },
+    "mustReference": ["VAT control", "VAT return", "£5,200"],
+    "mustNotInvent": ["duplicate invoices", "fraud", "missing sales", "payroll"],
+    "badExplanations": [
+      "The VAT difference is likely caused by duplicate invoices in sales.",
+      "The issue is probably a payroll error affecting the VAT return."
+    ]
+  }
+]

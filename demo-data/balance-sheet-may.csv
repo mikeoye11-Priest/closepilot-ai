@@ -1,0 +1,15 @@
+category,item,amount
+Current Assets,Cash at Bank,100000
+Current Assets,Trade Debtors,150000
+Current Assets,Stock,42000
+Current Assets,Prepayments,8500
+Fixed Assets,Plant and Equipment,85000
+Total Assets,,385500
+Current Liabilities,Trade Creditors,67000
+Current Liabilities,VAT Payable,8400
+Long Term Liabilities,Bank Loan,80000
+Total Liabilities,,155400
+Equity,Share Capital,50000
+Equity,Retained Earnings,180100
+Total Equity,,230100
+Total Liabilities and Equity,,385500

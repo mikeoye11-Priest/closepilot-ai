@@ -1,0 +1,13 @@
+supplier,transaction_date,amount,vat_code,vat_amount,description
+Meridian Freight,2026-04-15,4820,S,964,Logistics services
+Office Supplies Ltd,2026-04-20,1250,,0,Office consumables
+Amazon Business,2026-04-21,890,,0,IT accessories
+Marketing Agency Ltd,2026-04-05,3500,S,700,Digital marketing
+Utility Provider,2026-04-01,2100,,0,Electricity and gas
+Capital Cleaning,2026-04-22,890,S,178,Cleaning services
+IT Support Co,2026-04-05,1800,,0,IT support monthly
+Broadband Pro,2026-04-01,320,S,64,Broadband
+Conference Venue,2026-04-18,1200,,0,Staff training venue
+Legal Partners LLP,2026-04-10,2800,E,0,Legal advice
+Travel Expenses,2026-04-12,640,,0,Staff travel
+Catering Supplies,2026-04-25,420,,0,Client event catering

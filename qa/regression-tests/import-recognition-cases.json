@@ -1,0 +1,73 @@
+[
+  {
+    "id": "sage50-tb-dr-cr",
+    "fileName": "Sage_Trial_Balance_May_2026.csv",
+    "expectedFileType": "trial_balance",
+    "expectedVendor": "Sage",
+    "minConfidence": 90,
+    "expectedGateStatus": "ready",
+    "rows": [
+      { "Nominal Code": "4000", "Description": "Sales", "Debit": "0.00", "Credit": "1000.00" },
+      { "Nominal Code": "1200", "Description": "Bank", "Debit": "1000.00", "Credit": "0.00" }
+    ]
+  },
+  {
+    "id": "xero-aged-receivables",
+    "fileName": "Xero_Aged_Receivables.csv",
+    "expectedFileType": "aged_debtors",
+    "expectedVendor": "Xero",
+    "minConfidence": 80,
+    "expectedGateStatus": "ready",
+    "rows": [
+      { "Contact": "North Retail Ltd", "Invoice Ref": "INV-1001", "Due Local": "2026-06-15", "Outstanding": "1200.00" }
+    ]
+  },
+  {
+    "id": "quickbooks-ap-aging",
+    "fileName": "QuickBooks_AP_Aging.csv",
+    "expectedFileType": "aged_creditors",
+    "expectedVendor": "QuickBooks",
+    "minConfidence": 80,
+    "expectedGateStatus": "ready",
+    "rows": [
+      { "Vendor": "Metro Supplies", "Ref": "MS-882", "Due Date": "2026-06-10", "Current": "900.00", "91 And Over": "0.00" }
+    ]
+  },
+  {
+    "id": "sap-gl-trial-balance",
+    "fileName": "SAP_GL_Export_May.csv",
+    "expectedFileType": "trial_balance",
+    "expectedVendor": "SAP",
+    "minConfidence": 80,
+    "expectedGateStatus": "ready",
+    "rows": [
+      { "BUKRS": "1000", "G/L Account": "4000", "G/L Account Name": "Sales", "DMBTR": "-2500.00" },
+      { "BUKRS": "1000", "G/L Account": "1200", "G/L Account Name": "Bank", "DMBTR": "2500.00" }
+    ]
+  },
+  {
+    "id": "dynamics-vat-detail",
+    "fileName": "Business_Central_VAT_Detail.csv",
+    "expectedFileType": "vat_report",
+    "expectedVendor": "Business Central",
+    "minConfidence": 90,
+    "expectedGateStatus": "ready",
+    "rows": [
+      { "Posting Date": "2026-05-31", "Tax Code": "STANDARD", "Net": "10000.00", "Tax Amount": "2000.00" }
+    ]
+  },
+  {
+    "id": "blocked-tb-missing-account-name",
+    "fileName": "Custom_TB_No_Account_Name.csv",
+    "expectedFileType": "trial_balance",
+    "expectedVendor": "Excel/CSV",
+    "minConfidence": 65,
+    "expectedGateStatus": "blocked",
+    "expectedRuleGateStatus": "failed",
+    "forbiddenFindingTitleIncludes": ["trial balance does not balance", "trial balance out of balance"],
+    "rows": [
+      { "Account Code": "4000", "Balance": "-1000.00" },
+      { "Account Code": "1200", "Balance": "950.00" }
+    ]
+  }
+]

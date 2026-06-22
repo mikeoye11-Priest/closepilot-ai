@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from app.models.schemas import FinanceHealthScore, Finding, Recommendation, RiskLevel
 
 
@@ -22,7 +22,7 @@ def calculate_score(findings: list[Finding], recommendations: list[Recommendatio
     open_penalty = sum(penalties[item.severity] for item in findings if item.status != "resolved")
     completed_boost = len([item for item in recommendations if item.completed]) * 3
     score = max(0, min(100, 88 - open_penalty + completed_boost))
-    return FinanceHealthScore(company_id=findings[0].company_id if findings else "unknown", score=score, risk_level=classify(score), calculated_at=datetime.utcnow())
+    return FinanceHealthScore(company_id=findings[0].company_id if findings else "unknown", score=score, risk_level=classify(score), calculated_at=datetime.now(UTC))
 
 
 def cash_at_risk(findings: list[Finding]) -> int:

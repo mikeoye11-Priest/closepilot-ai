@@ -1,0 +1,3 @@
+date,type,party,description,net_amount,vat_amount,gross_amount,vat_code,country,supply_type
+2026-01-15,Sale,Atlas Retail Ltd,Prior-quarter standard-rated sales,60000,12000,72000,STD,United Kingdom,goods
+2026-02-18,Purchase,Precision Components Ltd,Prior-quarter standard-rated purchases,12500,2500,15000,PSTD,United Kingdom,goods

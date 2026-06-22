@@ -1,0 +1,64 @@
+import { XeroClient, type TokenSet, type TokenSetParameters } from "xero-node";
+
+export const XERO_SCOPES = [
+  "openid",
+  "profile",
+  "email",
+  "offline_access",
+  "accounting.transactions.read",
+  "accounting.settings.read",
+  "accounting.reports.read",
+  "accounting.contacts.read",
+];
+
+export function xeroConfigured() {
+  return Boolean(process.env.XERO_CLIENT_ID && process.env.XERO_CLIENT_SECRET && process.env.XERO_REDIRECT_URI && process.env.INTEGRATION_ENCRYPTION_KEY);
+}
+
+export function createXeroClient(state?: string) {
+  const clientId = required("XERO_CLIENT_ID");
+  const clientSecret = required("XERO_CLIENT_SECRET");
+  const redirectUri = required("XERO_REDIRECT_URI");
+  return new XeroClient({
+    clientId,
+    clientSecret,
+    redirectUris: [redirectUri],
+    scopes: XERO_SCOPES,
+    state,
+    httpTimeout: 15_000,
+    clockTolerance: 10,
+  });
+}
+
+export function xeroCallbackUrl(requestUrl: string) {
+  const callback = new URL(required("XERO_REDIRECT_URI"));
+  callback.search = new URL(requestUrl).search;
+  return callback.toString();
+}
+
+export function tokenSetParameters(tokenSet: TokenSet): TokenSetParameters {
+  return {
+    access_token: tokenSet.access_token,
+    refresh_token: tokenSet.refresh_token,
+    id_token: tokenSet.id_token,
+    token_type: tokenSet.token_type,
+    scope: tokenSet.scope,
+    expires_at: tokenSet.expires_at,
+  };
+}
+
+export function tokenExpiry(tokenSet: TokenSet | TokenSetParameters) {
+  const expiresAt = tokenSet.expires_at ?? Math.floor(Date.now() / 1000) + 1800;
+  return new Date(expiresAt * 1000).toISOString();
+}
+
+export function tokenScopes(tokenSet: TokenSet | TokenSetParameters) {
+  const scope = tokenSet.scope;
+  return Array.isArray(scope) ? scope : typeof scope === "string" ? scope.split(" ").filter(Boolean) : [];
+}
+
+function required(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required.`);
+  return value;
+}

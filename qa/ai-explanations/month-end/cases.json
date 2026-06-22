@@ -1,0 +1,33 @@
+[
+  {
+    "id": "month-end-suspense-grounded",
+    "finding": {
+      "id": "finding_month_end_suspense",
+      "tenantId": "tenant_qa",
+      "companyId": "company_qa",
+      "severity": "high",
+      "category": "month_end",
+      "title": "Suspense balance not cleared",
+      "description": "Suspense account contains a material balance at month end.",
+      "expectedImpact": "Close accuracy exposure of GBP 12,000.",
+      "status": "open",
+      "confidence": "high",
+      "confidenceScore": 90,
+      "ruleId": "CR_012",
+      "amount": 12000,
+      "evidenceStrength": "deterministic",
+      "evidence": {
+        "sourceFile": "trial-balance.csv",
+        "accountCode": "9998",
+        "period": "May 2026",
+        "calculation": "Suspense account closing balance is GBP 12,000."
+      }
+    },
+    "mustReference": ["month-end", "£12,000"],
+    "mustNotInvent": ["fraud", "payroll", "missing sales"],
+    "badExplanations": [
+      "The suspense balance is likely caused by payroll errors.",
+      "This balance proves missing sales have been omitted."
+    ]
+  }
+]
