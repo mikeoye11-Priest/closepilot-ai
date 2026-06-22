@@ -110,3 +110,7 @@ Only promote the tested Preview deployment after:
 - the first pilot session is supervised.
 
 Use Vercel's Preview-to-Production promotion or deploy the verified commit with `vercel --prod`. Record the deployment URL and commit SHA in `docs/pilot-1/01-staging-access.md`.
+
+## Safe pilot-data reset
+
+To return the application to first-run onboarding without deleting Auth users or schema, run `infra/pilot_data_reset.sql` in the Supabase SQL Editor. Then open **Storage → finance-uploads**, select the `tenants` folder and delete it through the Storage UI. Sign out and back in to confirm the onboarding screen appears.
