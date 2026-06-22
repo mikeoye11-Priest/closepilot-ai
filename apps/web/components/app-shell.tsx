@@ -1768,11 +1768,12 @@ export function AppShell({ userEmail }: { userEmail: string }) {
       try {
         const res = await fetch("/api/workspace");
         const { workspace } = await res.json();
-        const parsed: WorkspaceState | null = workspace ?? (() => {
+        const parsed: WorkspaceState | null = workspace ?? (userEmail ? null : (() => {
           const local = window.localStorage.getItem(storageKey);
           return local ? JSON.parse(local) : null;
-        })();
+        })());
         if (!parsed) {
+          if (userEmail) window.localStorage.removeItem(storageKey);
           setActive("Onboarding");
           return;
         }
@@ -1801,6 +1802,11 @@ export function AppShell({ userEmail }: { userEmail: string }) {
         : `${selectedCompany.name} workspace restored. Upload a new finance pack or continue the current review.`);
         setActive("Finance Review");
       } catch {
+        if (userEmail) {
+          window.localStorage.removeItem(storageKey);
+          setActive("Onboarding");
+          return;
+        }
         const local = window.localStorage.getItem(storageKey);
         if (!local) { setActive("Onboarding"); return; }
         try {
@@ -1829,7 +1835,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
       }
     }
     loadWorkspace();
-  }, []);
+  }, [userEmail]);
 
   useEffect(() => {
     // Don't persist default empty state — only save once real data exists
