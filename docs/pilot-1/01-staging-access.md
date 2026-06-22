@@ -2,7 +2,7 @@
 
 ## Environment
 
-- Staging URL: **[COMPLETE BEFORE PILOT]**
+- Staging URL: **https://closepilot-pilot.vercel.app** (Vercel-protected Preview)
 - Service status page: **[COMPLETE BEFORE PILOT]**
 - Pilot start date: **[COMPLETE BEFORE PILOT]**
 - Pilot end date: **[COMPLETE BEFORE PILOT]**
