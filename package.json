@@ -2,6 +2,9 @@
   "name": "closepilot-ai",
   "private": true,
   "version": "0.1.0",
+  "engines": {
+    "node": ">=20.9 <23"
+  },
   "scripts": {
     "dev": "next dev apps/web -p 3004",
     "build": "next build apps/web",
@@ -21,7 +24,8 @@
     "test:upload": "CLOSEPILOT_QA_URL=${CLOSEPILOT_QA_URL:-http://localhost:3010} playwright test qa/upload-compat.spec.ts --browser=chromium --reporter=line",
     "test:ui": "CLOSEPILOT_QA_URL=${CLOSEPILOT_QA_URL:-http://localhost:3010} playwright test qa/button-smoke.spec.ts qa/pilot-walkthrough.spec.ts --browser=chromium --reporter=line",
     "verify": "npm run test && npm run test:rules && npm run test:finance-regression && npm run test:ai-explanations && npm run test:upload && npm run test:ui",
-    "test:ui:install": "playwright install chromium"
+    "test:ui:install": "playwright install chromium",
+    "check:launch": "node scripts/check-launch-readiness.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.100.1",

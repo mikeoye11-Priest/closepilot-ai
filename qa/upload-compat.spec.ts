@@ -580,3 +580,32 @@ test("Ask ClosePilot answers from evidence-linked findings", async () => {
   expect(body.answer).toMatch(/£257,405|£565,000|£2,860,000|£45,000|£10,300|£15,000|£52,000|£750,000/);
   expect(body.answer).toMatch(/Action:/);
 });
+
+test("pilot upload guard rejects unsupported file types", async () => {
+  const formData = new FormData();
+  formData.append("files", new Blob(["not a finance export"], { type: "application/pdf" }), "client-records.pdf");
+
+  const response = await fetch(`${baseURL}/api/analyse-upload`, { method: "POST", body: formData });
+  expect(response.status).toBe(415);
+  await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.stringContaining("Unsupported file type") }));
+});
+
+test("pilot upload guard rejects too many files", async () => {
+  const formData = new FormData();
+  for (let index = 0; index < 13; index += 1) {
+    formData.append("files", new Blob(["Account,Balance\nBank,0"], { type: "text/csv" }), `trial-balance-${index}.csv`);
+  }
+
+  const response = await fetch(`${baseURL}/api/analyse-upload`, { method: "POST", body: formData });
+  expect(response.status).toBe(413);
+  await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.stringContaining("at most 12 files") }));
+});
+
+test("pilot upload guard rejects packs above four megabytes", async () => {
+  const formData = new FormData();
+  formData.append("files", new Blob([new Uint8Array(4 * 1024 * 1024 + 1)], { type: "text/csv" }), "oversized-trial-balance.csv");
+
+  const response = await fetch(`${baseURL}/api/analyse-upload`, { method: "POST", body: formData });
+  expect(response.status).toBe(413);
+  await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.stringContaining("4 MB or smaller") }));
+});

@@ -5,7 +5,7 @@ type ApiSession =
   | { ok: true; userId: string | null; userEmail: string | null; authDisabled: boolean }
   | { ok: false; response: NextResponse };
 
-const AUTH_DISABLED = process.env.CLOSEPILOT_AUTH_DISABLED === "1";
+const AUTH_DISABLED = process.env.CLOSEPILOT_AUTH_DISABLED === "1" && process.env.NODE_ENV !== "production";
 const AUTH_CONFIGURED = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 export async function requireApiSession(): Promise<ApiSession> {

@@ -3,10 +3,17 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const AUTH_DISABLED = process.env.CLOSEPILOT_AUTH_DISABLED === "1";
+const AUTH_DISABLED = process.env.CLOSEPILOT_AUTH_DISABLED === "1" && process.env.NODE_ENV !== "production";
 
 export async function proxy(request: NextRequest) {
-  if (AUTH_DISABLED || !SUPABASE_URL || !SUPABASE_KEY) {
+  if (AUTH_DISABLED) {
+    return NextResponse.next();
+  }
+
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    if (process.env.NODE_ENV === "production" && request.nextUrl.pathname !== "/login") {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
     return NextResponse.next();
   }
 

@@ -8,8 +8,12 @@ import { analyseParsedFiles, createUpload, normaliseHeader, scopeAnalysisResult,
 import type { Company, ImportMappingProfile, Tenant, Upload } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const UPLOAD_BUCKET = process.env.CLOSEPILOT_UPLOAD_BUCKET || "finance-uploads";
+const MAX_UPLOAD_FILES = 12;
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+const SUPPORTED_UPLOAD = /\.(csv|tsv|txt|xlsx|xls)$/i;
 
 export async function POST(request: Request) {
   const session = await requireApiSession();
@@ -22,6 +26,20 @@ export async function POST(request: Request) {
 
   if (!files.length) {
     return NextResponse.json({ error: "No files uploaded" }, { status: 400 });
+  }
+
+  if (files.length > MAX_UPLOAD_FILES) {
+    return NextResponse.json({ error: `Upload at most ${MAX_UPLOAD_FILES} files at a time.` }, { status: 413 });
+  }
+
+  const unsupported = files.filter((file) => !SUPPORTED_UPLOAD.test(file.name));
+  if (unsupported.length) {
+    return NextResponse.json({ error: `Unsupported file type: ${unsupported.map((file) => file.name).join(", ")}` }, { status: 415 });
+  }
+
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  if (totalBytes > MAX_UPLOAD_BYTES) {
+    return NextResponse.json({ error: "The combined upload must be 4 MB or smaller for the pilot environment." }, { status: 413 });
   }
 
   const parsed = (await Promise.all(files.map(parseServerFileSafely))).flat();
