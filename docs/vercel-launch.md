@@ -79,9 +79,9 @@ node --env-file=.env.vercel.local scripts/check-launch-readiness.mjs
 Against the Preview URL:
 
 ```bash
-curl --fail https://YOUR-PREVIEW-URL/api/health
-CLOSEPILOT_QA_URL=https://YOUR-PREVIEW-URL npm run test:upload
-CLOSEPILOT_QA_URL=https://YOUR-PREVIEW-URL npm run test:ui
+curl --fail https://closepilot-ai-nvlz.vercel.app/api/health
+CLOSEPILOT_QA_URL=https://closepilot-ai-nvlz.vercel.app npm run test:upload
+CLOSEPILOT_QA_URL=https://closepilot-ai-nvlz.vercel.app npm run test:ui
 ```
 
 Vercel Functions accept request bodies up to 4.5 MB. ClosePilot therefore limits each pilot upload request to 12 supported files and 4 MB combined. Larger packs need direct-to-storage upload work before they are supported.

@@ -2,7 +2,7 @@
 
 ## Environment
 
-- Staging URL: **https://closepilot-pilot.vercel.app** (Vercel-protected Preview)
+- Staging URL: **https://closepilot-ai-nvlz.vercel.app** (Git-connected Vercel deployment)
 - Service status page: **[COMPLETE BEFORE PILOT]**
 - Pilot start date: **[COMPLETE BEFORE PILOT]**
 - Pilot end date: **[COMPLETE BEFORE PILOT]**
