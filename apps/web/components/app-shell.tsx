@@ -2721,6 +2721,11 @@ export function AppShell({ userEmail }: { userEmail: string }) {
                 {companies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
               <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("User Guide")}>Guide</button>
+              {isPilotDemo && (
+                <button className="h-10 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-sm font-bold text-emerald-800 shadow-sm transition-colors hover:bg-emerald-100" onClick={() => {
+                  if (confirm("Reload the original Brightlane demo? This replaces any changes made in the synthetic demo workspace.")) loadPilotDemo();
+                }}>Reload Demo</button>
+              )}
               <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Onboarding")}>Onboard</button>
               <button className="h-10 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700" onClick={() => setShowExport(true)}>Export Review</button>
             </div>
@@ -2783,7 +2788,12 @@ function UserGuide({ isPilotDemo, hasData, loadPilotDemo, setActive, setPilotWal
           {!isPilotDemo ? (
             <button className="shrink-0 rounded-lg bg-emerald-600 px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-emerald-700" onClick={loadPilotDemo}>Load Safe Pilot Demo</button>
           ) : (
-            <button className="shrink-0 rounded-lg bg-brand px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-blue-700" onClick={() => openStep("Finance Review")}>Start Guided Review</button>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <button className="rounded-lg border border-emerald-300 bg-white px-5 py-3 text-sm font-black text-emerald-800 shadow-sm hover:bg-emerald-50" onClick={() => {
+                if (confirm("Reload the original Brightlane demo? This replaces any changes made in the synthetic demo workspace.")) loadPilotDemo();
+              }}>Reload Demo Data</button>
+              <button className="rounded-lg bg-brand px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-blue-700" onClick={() => openStep("Finance Review")}>Start Guided Review</button>
+            </div>
           )}
         </div>
       </section>
