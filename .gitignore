@@ -6,6 +6,9 @@ coverage/
 test-results/
 *.tsbuildinfo
 
+# Reproducible synthetic stress packs (generated locally; do not commit large outputs)
+demo-data/generated/
+
 .env
 .env.*
 !.env.example
