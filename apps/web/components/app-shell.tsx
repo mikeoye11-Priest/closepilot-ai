@@ -31,6 +31,7 @@ const nav: Array<string | null> = [
   null,
   "Ask ClosePilot",
   "Practice Portal",
+  "User Guide",
   "Settings",
 ];
 
@@ -2644,6 +2645,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
     if (active === "Review Pack") return <ReviewPack company={currentCompany} tenant={tenant} userName={userName} score={score} risk={risk} findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} recommendations={recommendations} validationChecks={validationChecks} uploads={uploads} financialExposure={financialExposure} cashAtRisk={cashAtRisk} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
     if (active === "Change Intelligence") return <ChangeIntelligence findings={findings} uploads={uploads} />;
     if (active === "Ask ClosePilot") return <AICopilot question={question} setQuestion={setQuestion} score={score} findings={findings} findingActivities={findingActivities} validationChecks={validationChecks} uploads={uploads} company={currentCompany} forecast={forecast} assistantResult={assistantResult?.companyId === currentCompany.id ? assistantResult : null} setAssistantResult={setAssistantResult} updateFindingStatus={updateFindingStatus} updateManagerReview={updateManagerReview} openFindingEvidence={(findingId) => { setFocusedFindingId(findingId); setActive("Findings"); }} setActive={setActive} />;
+    if (active === "User Guide") return <UserGuide isPilotDemo={isPilotDemo} hasData={hasUploadedData} loadPilotDemo={loadPilotDemo} setActive={setActive} setPilotWalkthroughStep={setPilotWalkthroughStep} />;
     if (active === "Settings") return <SettingsPanel tenant={tenant} company={currentCompany} userEmail={userEmail} userName={userName} onIntegrationAnalysis={applyIntegrationAnalysis} />;
     return <PracticePortal tenant={tenant} clients={portfolioClients} currentCompanyId={currentCompany.id} switchCompany={switchCompany} companySnapshots={companySnapshots} />;
   }, [active, assurance, assistantResult, cashAtRisk, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, isAnalysing, isPilotDemo, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, risk, score, tenant, timeSaved, uploadMessage, uploads, validationBlockers, validationChecks, validationWarnings, vatReview]);
@@ -2718,6 +2720,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
               <select className="h-10 min-w-0 rounded-lg border border-line bg-white px-3 text-sm font-bold shadow-sm" value={currentCompany.id} onChange={(event) => switchCompany(event.target.value)}>
                 {companies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
+              <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("User Guide")}>Guide</button>
               <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Onboarding")}>Onboard</button>
               <button className="h-10 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700" onClick={() => setShowExport(true)}>Export Review</button>
             </div>
@@ -2743,6 +2746,108 @@ export function AppShell({ userEmail }: { userEmail: string }) {
         )}
         {content}
       </main>
+    </div>
+  );
+}
+
+function UserGuide({ isPilotDemo, hasData, loadPilotDemo, setActive, setPilotWalkthroughStep }: {
+  isPilotDemo: boolean;
+  hasData: boolean;
+  loadPilotDemo: () => void;
+  setActive: (value: string) => void;
+  setPilotWalkthroughStep: (value: number) => void;
+}) {
+  const steps = [
+    { number: 1, title: "Understand the finance review", detail: "Check health, readiness, exposure, validation warnings and recommended actions.", page: "Finance Review", time: "10 min" },
+    { number: 2, title: "Review findings", detail: "Open material exceptions and verify severity, source rows, calculations and recommendations.", page: "Findings", time: "10 min", walkthrough: 0 },
+    { number: 3, title: "Inspect evidence", detail: "Read attachments, source evidence, reviewer comments and the activity history.", page: "Findings", time: "8 min", walkthrough: 1 },
+    { number: 4, title: "Check manager and partner controls", detail: "Review decisions, escalation, sign-off gates and the locked audit trail.", page: "Findings", time: "10 min", walkthrough: 2 },
+    { number: 5, title: "Open the review pack", detail: "Confirm findings, evidence, decisions and sign-off before exporting the dossier.", page: "Review Pack", time: "8 min", walkthrough: 4 },
+    { number: 6, title: "Explore finance intelligence", detail: "Review cash forecasts, expected collections, VAT assurance and close insights.", page: "Cash Intelligence", time: "7 min" },
+  ];
+
+  const openStep = (page: string, walkthrough?: number) => {
+    if (typeof walkthrough === "number") setPilotWalkthroughStep(walkthrough);
+    setActive(page);
+  };
+
+  return (
+    <div className="grid gap-5">
+      <section className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 p-5 shadow-panel">
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-brand">Getting started</p>
+            <h2 className="mt-1 text-2xl font-black">Follow one review from evidence to partner sign-off</h2>
+            <p className="mt-2 max-w-3xl text-sm text-muted">For demonstrations, use Brightlane Manufacturing Ltd only. It contains fictional finance data and a completed, read-only decision trail.</p>
+          </div>
+          {!isPilotDemo ? (
+            <button className="shrink-0 rounded-lg bg-emerald-600 px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-emerald-700" onClick={loadPilotDemo}>Load Safe Pilot Demo</button>
+          ) : (
+            <button className="shrink-0 rounded-lg bg-brand px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-blue-700" onClick={() => openStep("Finance Review")}>Start Guided Review</button>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <strong className="text-amber-900">Demo safety</strong>
+        <p className="mt-1 text-sm text-amber-900">Do not upload, email or paste real client information during a demonstration. Real data requires an approved pilot scope, signed processing terms and named user access.</p>
+      </section>
+
+      <Panel title="Guided Review Workflow">
+        <div className="grid gap-3 lg:grid-cols-2">
+          {steps.map((step) => (
+            <article key={step.number} className="flex flex-col justify-between rounded-lg border border-line bg-white p-4">
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="grid h-8 w-8 place-items-center rounded-full bg-blue-100 text-sm font-black text-brand">{step.number}</span>
+                  <span className="text-xs font-bold text-muted">{step.time}</span>
+                </div>
+                <h3 className="mt-3 font-black">{step.title}</h3>
+                <p className="mt-1 text-sm text-muted">{step.detail}</p>
+              </div>
+              <button className="mt-4 self-start rounded-lg border border-line px-3 py-2 text-sm font-bold transition-colors hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50" disabled={!hasData} onClick={() => openStep(step.page, step.walkthrough)}>
+                Open {step.page}
+              </button>
+            </article>
+          ))}
+        </div>
+      </Panel>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Panel title="60-Minute Demonstration">
+          <div className="grid gap-2 text-sm">
+            {[
+              ["0–5", "Welcome, scope and synthetic-data safety"],
+              ["5–10", "Sign in and workspace orientation"],
+              ["10–15", "Load and introduce the pilot demo"],
+              ["15–25", "Finance Review and validation"],
+              ["25–35", "Findings and source evidence"],
+              ["35–49", "Review decisions and partner controls"],
+              ["49–57", "Review Pack and intelligence screens"],
+              ["57–60", "Feedback and next decision"],
+            ].map(([time, activity]) => (
+              <div key={time} className="grid grid-cols-[58px_1fr] gap-3 rounded-lg bg-slate-50 px-3 py-2">
+                <strong>{time}</strong><span>{activity}</span>
+              </div>
+            ))}
+          </div>
+        </Panel>
+
+        <Panel title="Questions to Ask">
+          <ol className="grid gap-3 text-sm">
+            {[
+              "Would this help you review a client finance pack?",
+              "Can you trace each material conclusion to evidence?",
+              "Which result do you trust least, and why?",
+              "What is missing from your normal review process?",
+              "What must change before a controlled real-data pilot?",
+              "Would you nominate one suitable client for the next stage?",
+            ].map((question, index) => (
+              <li key={question} className="flex gap-3 rounded-lg border border-line p-3"><strong className="text-brand">{index + 1}.</strong><span>{question}</span></li>
+            ))}
+          </ol>
+        </Panel>
+      </div>
     </div>
   );
 }
