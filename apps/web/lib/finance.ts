@@ -186,7 +186,7 @@ export function calculateScoreBreakdown(findings: Finding[], validationChecks: V
 
 export function parseImpactAmount(impact: string): number {
   if (!impact) return 0;
-  const match = impact.match(/£([\d,]+)([km]?)/i);
+  const match = impact.match(/(?:£|GBP\s*)([\d,]+(?:\.\d+)?)([km]?)/i);
   if (!match) return 0;
   const num = Number(match[1].replace(/,/g, ""));
   const multiplier = match[2].toLowerCase() === "k" ? 1000 : match[2].toLowerCase() === "m" ? 1_000_000 : 1;
@@ -201,7 +201,7 @@ export function estimateTimeSaved(findings: Finding[]) {
 
 export function estimateCashAtRisk(findings: Finding[]) {
   return findings.filter((finding) => finding.evidenceStrength !== "advisory").reduce((sum, finding) => {
-    const actual = parseImpactAmount(finding.expectedImpact);
+    const actual = finding.amount ?? parseImpactAmount(finding.expectedImpact);
     return actual > 0 ? sum + actual : sum;
   }, 0);
 }

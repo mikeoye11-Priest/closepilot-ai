@@ -251,6 +251,7 @@ function emptySnapshot(): AnalysisResult {
 
 function normaliseSnapshot(snapshot?: AnalysisResult): AnalysisResult {
   if (!snapshot || snapshot.uploads.length === 0) return emptySnapshot();
+  const reviewLocked = snapshot.partnerSignOff?.reviewPackStatus === "LOCKED" || snapshot.partnerSignOff?.status === "locked" || snapshot.partnerSignOff?.status === "signed";
   return {
     uploads: snapshot.uploads,
     validationChecks: snapshot.validationChecks ?? [],
@@ -260,7 +261,7 @@ function normaliseSnapshot(snapshot?: AnalysisResult): AnalysisResult {
     findingComments: snapshot.findingComments ?? [],
     findingActivities: snapshot.findingActivities ?? [],
     partnerSignOff: snapshot.partnerSignOff,
-    recommendations: snapshot.recommendations ?? [],
+    recommendations: (snapshot.recommendations ?? []).map((recommendation) => reviewLocked ? { ...recommendation, completed: true } : recommendation),
     vatReview: snapshot.vatReview,
   };
 }
@@ -1706,10 +1707,11 @@ export function AppShell({ userEmail }: { userEmail: string }) {
   const score = scorecard.overall;
   const risk = hasUploadedData ? riskLabel(score) : "medium";
   const openFindings = findings.filter(isOpenFinding);
-  const cashAtRisk = estimateCashAtRisk(openFindings);
-  const arCashRisk = estimateCashAtRisk(findings.filter((f) => f.category === "ar" && isOpenFinding(f)));
+  const exposureFindings = findings.filter((finding) => isOpenFinding(finding) || finding.status === "accepted_risk" || finding.status === "accepted");
+  const cashAtRisk = estimateCashAtRisk(exposureFindings.filter((finding) => finding.category === "ar"));
+  const arCashRisk = cashAtRisk;
   const forecast = useMemo(() => generateForecast(undefined, arCashRisk), [arCashRisk]);
-  const financialExposure = cashAtRisk;
+  const financialExposure = estimateCashAtRisk(exposureFindings);
   const timeSaved = estimateTimeSaved(openFindings);
   const validationBlockers = validationChecks.filter((item) => item.status === "failed").length;
   const validationWarnings = validationChecks.filter((item) => item.status === "warning").length;
@@ -7034,8 +7036,8 @@ function MonthEndClose({ findings, recommendations, completeRecommendation, upda
 
 function CashflowPanel({ forecast, findings, uploads }: { forecast: CashForecastPoint[]; findings: Finding[]; uploads: Upload[] }) {
   const hasUploads = uploads.length > 0;
-  const arFindings = findings.filter((f) => f.category === "ar" && isOpenFinding(f));
-  const expectedCollections = arFindings.reduce((sum, f) => sum + parseImpactAmount(f.expectedImpact), 0);
+  const arFindings = findings.filter((finding) => finding.category === "ar" && finding.status !== "false_positive" && finding.status !== "not_applicable");
+  const expectedCollections = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
   const f30 = hasUploads ? (forecast[1]?.cash ?? 0) : 0;
   const f90 = hasUploads ? (forecast[3]?.cash ?? 0) : 0;
   const risk30: RiskLevel = forecast[1]?.risk ?? "medium";
@@ -7059,7 +7061,7 @@ function CashflowPanel({ forecast, findings, uploads }: { forecast: CashForecast
         <div className="grid gap-3">
           <Metric title="30-Day Forecast" value={f30 ? `£${Math.round(f30 / 1000)}k` : "—"} detail={hasUploads ? riskCopy(risk30) + " risk" : "Upload to calculate"} tone={hasUploads ? risk30 : "low"} />
           <Metric title="90-Day Forecast" value={f90 ? `£${Math.round(f90 / 1000)}k` : "—"} detail={hasUploads ? `${riskCopy(risk90)} risk` : "Upload to calculate"} tone={hasUploads ? risk90 : "low"} />
-          <Metric title="Expected Collections" value={expectedCollections ? `£${Math.round(expectedCollections / 1000)}k` : "—"} detail={hasUploads ? "From AR findings" : "Upload aged debtors"} tone={expectedCollections ? "low" : "medium"} />
+          <Metric title="Expected Collections" value={expectedCollections ? `£${Math.round(expectedCollections / 1000)}k` : "—"} detail={hasUploads ? "Identified from AR review" : "Upload aged debtors"} tone={expectedCollections ? "low" : "medium"} />
         </div>
       </Panel>
     </div>
