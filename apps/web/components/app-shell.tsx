@@ -9003,6 +9003,27 @@ function partnerReviewQuestions(findings: Finding[], validationChecks: Validatio
   return Array.from(new Set(questions));
 }
 
+type XeroSyncPollResult = {
+  status: "queued" | "running" | "completed" | "failed";
+  counts?: { trialBalance?: number; vatRows?: number };
+  analysis?: AnalysisResult;
+  error?: string;
+};
+
+async function pollXeroSync(syncId: string, onProgress: (status: XeroSyncPollResult["status"]) => void): Promise<XeroSyncPollResult> {
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const response = await fetch(`/api/integrations/xero/sync?syncId=${encodeURIComponent(syncId)}`, { cache: "no-store" });
+    const result = await response.json() as XeroSyncPollResult;
+    if (!response.ok) throw new Error(result.error || "Could not read Xero sync progress.");
+    if (result.status === "completed") return result;
+    if (result.status === "failed") throw new Error(result.error || "Xero sync failed.");
+    onProgress(result.status);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  throw new Error("Xero sync is still running. You can leave this page and check again shortly.");
+}
+
 function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnalysis }: { tenant: Tenant; company: Company; userEmail: string; userName: string; onIntegrationAnalysis: (result: AnalysisResult) => void }) {
   const [name, setName] = useState(userName);
   const [email, setEmail] = useState(userEmail);
@@ -9041,14 +9062,17 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
   };
 
   const syncXero = async () => {
-    setIntegrationBusy(true); setIntegrationMessage("Syncing Xero trial balance and VAT evidence…");
+    setIntegrationBusy(true); setIntegrationMessage("Queueing Xero trial balance and VAT evidence…");
     try {
       const response = await fetch("/api/integrations/xero/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId: tenant.id, tenantName: tenant.name, tenantType: tenant.type, tenantPlan: tenant.plan, companyId: company.id, companyName: company.name, companyIndustry: company.industry, currency: company.currency, country: company.country, asOfDate: new Date().toISOString().slice(0, 10) }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Xero sync failed.");
-      onIntegrationAnalysis(result.analysis);
+      setIntegrationMessage("Xero sync is running in the background…");
+      const completed = await pollXeroSync(result.syncId, (status) => setIntegrationMessage(status === "queued" ? "Xero sync queued…" : "Syncing Xero pages and running assurance checks…"));
+      if (!completed.analysis) throw new Error("Xero sync completed without an analysis result.");
+      onIntegrationAnalysis(completed.analysis);
       await reloadIntegrations();
-      setIntegrationMessage(`Xero sync completed: ${result.counts.trialBalance} trial-balance and ${result.counts.vatRows} VAT row(s).`);
+      setIntegrationMessage(`Xero sync completed: ${completed.counts?.trialBalance ?? 0} trial-balance and ${completed.counts?.vatRows ?? 0} VAT row(s).`);
     } catch (error) { setIntegrationMessage(error instanceof Error ? error.message : "Xero sync failed."); }
     finally { setIntegrationBusy(false); }
   };

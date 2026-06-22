@@ -8,7 +8,9 @@ test("integration secrets use authenticated encryption", () => {
   const encrypted = encryptIntegrationSecret("refresh-token-value");
   assert.notEqual(encrypted, "refresh-token-value");
   assert.equal(decryptIntegrationSecret(encrypted), "refresh-token-value");
-  assert.throws(() => decryptIntegrationSecret(`${encrypted.slice(0, -1)}x`));
+  const parts = encrypted.split(".");
+  parts[2] = `${parts[2][0] === "A" ? "B" : "A"}${parts[2].slice(1)}`;
+  assert.throws(() => decryptIntegrationSecret(parts.join(".")));
 });
 
 test("Xero responses map into ClosePilot trial balance and VAT evidence", async () => {
