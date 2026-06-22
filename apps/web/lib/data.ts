@@ -1,4 +1,5 @@
 import type { AnalysisResult, ClientCompany, Company, Tenant } from "./types";
+import type { VatReviewResult } from "./vat-engine/types";
 
 export const tenant: Tenant = {
   id: "tenant_default",
@@ -47,6 +48,56 @@ export const pilotClient: ClientCompany = {
 const uploadedAt = "2026-06-18T09:00:00.000Z";
 const reviewedAt = "2026-06-18T11:45:00.000Z";
 const signedAt = "2026-06-18T12:20:00.000Z";
+
+const pilotVatReview: VatReviewResult = {
+  vatReturn: { box1: 31000, box2: 2000, box3: 33000, box4: 17800, box5: 15200, box6: 173000, box7: 99000, box8: 0, box9: 10000 },
+  findings: [],
+  healthScore: 96,
+  readinessScore: 92,
+  readinessDrivers: { boxValidation: 100, controlReconciliations: 100, piva: 95, reverseCharge: 95, evidence: 90 },
+  assuranceChecks: [
+    { id: "VAT-A01", suite: "vat_assurance_v2", category: "box_validation", title: "VAT return arithmetic", status: "passed", severity: "high", expected: 15200, actual: 15200, difference: 0, detail: "Boxes 1–5 recalculate correctly." },
+    { id: "VAT-A02", suite: "vat_assurance_v2", category: "control_reconciliation", title: "VAT control reconciliation", status: "passed", severity: "high", expected: 15200, actual: 15200, difference: 0, detail: "VAT control agrees to the adjusted return after the late purchase journal." },
+    { id: "VAT-A03", suite: "vat_assurance_v2", category: "reverse_charge", title: "Reverse-charge treatment", status: "passed", severity: "medium", detail: "Reverse-charge services are represented in output and input VAT evidence." },
+    { id: "VAT-A04", suite: "vat_assurance_v2", category: "piva", title: "Postponed import VAT", status: "passed", severity: "medium", detail: "PIVA evidence agrees to Boxes 2, 4 and 9." },
+    { id: "VAT-A05", suite: "vat_assurance_v2", category: "trend_analysis", title: "Prior-period comparison", status: "not_tested", severity: "low", detail: "No comparative VAT return was included in the synthetic pack." },
+  ],
+  workpaper: {
+    reference: "WP-02 VAT",
+    objective: "Confirm the May 2026 VAT return is arithmetically correct, reconciled and supported by transaction evidence.",
+    risk: "Incorrect VAT coding or an unreconciled control balance could misstate the liability.",
+    evidenceReviewed: ["vat-detail-may.csv", "vat-control-reconciliation.xlsx", "trial-balance-may.csv"],
+    proceduresPerformed: ["Recalculated Boxes 1–9", "Agreed Box 5 to the VAT control account", "Reviewed reverse-charge and PIVA treatments", "Inspected the late purchase VAT journal"],
+    findings: ["The initial GBP 12,300 control difference was cleared by an evidenced late journal.", "No filing blocker remains."],
+    conclusion: "The adjusted VAT return is ready for reviewer acknowledgement. Prior-period trend comparison remains outside this synthetic pack.",
+  },
+  periodComparison: { currentVatDue: 15200, previousVatDue: 0, movement: 15200, percentageChange: null, threshold: 30, status: "not_available", primaryDriver: "Prior-period data unavailable", detail: "Load a comparative VAT return to activate movement analysis." },
+  exceptionDashboard: { high: 0, medium: 0, low: 1, total: 1, categories: { boxValidation: 0, controlReconciliation: 0, manualJournals: 0, reverseCharge: 0, piva: 0, trendAnalysis: 1, codingAndRates: 0 } },
+  filingSignOff: { status: "ready_with_risks", label: "Ready with Risks", blockers: [], risks: ["Prior-period VAT comparison not tested in the synthetic pack."], detail: "Core return and reconciliation checks passed; acknowledge the missing comparative review." },
+  scoreBreakdown: { computationAccuracy: 100, reconciliation: 100, missingVatCodes: 100, blockedVatExposure: 100, documentationQuality: 90, manualAdjustments: 85 },
+  status: "HMRC VAT Return Ready for Review",
+  reconciliationResults: [
+    { name: "VAT control to Box 5", status: "passed", expected: 15200, actual: 15200, difference: 0, detail: "Adjusted VAT control agrees to the return liability." },
+    { name: "VAT return arithmetic", status: "passed", expected: 15200, actual: 15200, difference: 0, detail: "Box 3 less Box 4 equals Box 5." },
+  ],
+  boxContributions: [
+    { box: "box1", amount: 31000, party: "UK customers", description: "Output VAT on taxable sales", vatCode: "STD", canonicalCode: "STD", countryCode: "GB", countryRegion: "domestic", recoverability: "not_applicable", riskCategory: "standard", treatment: "standard", sourceFile: "vat-detail-may.csv", reason: "Standard-rated sales output VAT." },
+    { box: "box2", amount: 2000, party: "Import suppliers", description: "Postponed import VAT", vatCode: "PVA", canonicalCode: "PVA", countryCode: "CN", countryRegion: "non_eu", recoverability: "recoverable", riskCategory: "import", treatment: "import_vat", sourceFile: "vat-detail-may.csv", reason: "PIVA output VAT." },
+    { box: "box3", amount: 33000, description: "Total VAT due", treatment: "standard", sourceFile: "vat-detail-may.csv", reason: "Boxes 1 and 2 combined." },
+    { box: "box4", amount: 17800, party: "UK and import suppliers", description: "Recoverable input VAT", vatCode: "PSTD/PVA", treatment: "standard", sourceFile: "vat-detail-may.csv", reason: "Input VAT supported by purchase and PIVA evidence." },
+    { box: "box5", amount: 15200, description: "Net VAT payable", treatment: "standard", sourceFile: "vat-detail-may.csv", reason: "Box 3 less Box 4." },
+    { box: "box6", amount: 173000, party: "Customers", description: "Sales excluding VAT", treatment: "standard", sourceFile: "vat-detail-may.csv", reason: "Taxable and zero-rated sales." },
+    { box: "box7", amount: 99000, party: "Suppliers", description: "Purchases excluding VAT", treatment: "standard", sourceFile: "vat-detail-may.csv", reason: "Purchases and other inputs." },
+    { box: "box9", amount: 10000, party: "Import suppliers", description: "Imported goods value", treatment: "import_vat", sourceFile: "vat-detail-may.csv", reason: "PIVA goods value." },
+  ],
+  reviewActions: [{ question: "Has the prior-period movement been reviewed?", action: "Add the preceding VAT return before a live filing review.", priority: "low" }],
+  blockedVatRisk: 0,
+  highRiskCount: 0,
+  exceptionsCount: 1,
+  reconciliationStatus: "PASS",
+  transactionsAnalysed: 142,
+  source: "computed_transactions",
+};
 
 export const pilotAnalysisResult: AnalysisResult = {
   uploads: [
@@ -290,5 +341,6 @@ export const pilotAnalysisResult: AnalysisResult = {
   recommendations: [
     { id: "rec_pilot_ar_001", tenantId: pilotTenant.id, companyId: pilotCompany.id, findingId: "find_pilot_ar_001", action: "Monitor two large overdue debtors weekly until cleared.", expectedImpact: "Reduce cash collection risk by GBP 42,600.", priority: "high", completed: true },
     { id: "rec_pilot_close_001", tenantId: pilotTenant.id, companyId: pilotCompany.id, findingId: "find_pilot_close_001", action: "Add suspense clearance review to month-end checklist.", expectedImpact: "Reduce recurring close adjustment risk.", priority: "medium", completed: true }
-  ]
+  ],
+  vatReview: pilotVatReview,
 };
