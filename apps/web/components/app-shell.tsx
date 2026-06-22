@@ -6241,7 +6241,7 @@ function FindingDetailDrawer({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/40">
-      <aside className="ml-auto flex h-full w-full max-w-3xl flex-col overflow-hidden bg-white shadow-2xl">
+      <aside className="ml-auto flex h-full w-full max-w-[min(96vw,1536px)] flex-col overflow-hidden bg-white shadow-2xl">
         <div className="border-b border-line p-5">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
@@ -6257,8 +6257,8 @@ function FindingDetailDrawer({
           </div>
         </div>
 
-        <div className="grid flex-1 gap-4 overflow-y-auto p-5 xl:grid-cols-[1fr_0.82fr]">
-          <div className="grid content-start gap-4">
+        <div className="grid min-w-0 flex-1 gap-4 overflow-y-auto p-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.82fr)]">
+          <div className="grid min-w-0 content-start gap-4">
             <section className="rounded-lg border border-line bg-slate-50 p-4">
               <p className="text-xs font-bold uppercase text-muted">Finding Details</p>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -6445,7 +6445,7 @@ function FindingDetailDrawer({
             </section>
           </div>
 
-          <div className="grid content-start gap-4">
+          <div className="grid min-w-0 content-start gap-4">
             <section className="rounded-lg border border-line bg-white p-4">
               <p className="text-xs font-bold uppercase text-muted">Comments</p>
               <textarea className="mt-3 min-h-24 w-full rounded-lg border border-line px-3 py-2 text-sm" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add manager note, client response, or evidence request context." />
