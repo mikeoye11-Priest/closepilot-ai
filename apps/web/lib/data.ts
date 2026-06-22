@@ -289,6 +289,6 @@ export const pilotAnalysisResult: AnalysisResult = {
   },
   recommendations: [
     { id: "rec_pilot_ar_001", tenantId: pilotTenant.id, companyId: pilotCompany.id, findingId: "find_pilot_ar_001", action: "Monitor two large overdue debtors weekly until cleared.", expectedImpact: "Reduce cash collection risk by GBP 42,600.", priority: "high", completed: true },
-    { id: "rec_pilot_close_001", tenantId: pilotTenant.id, companyId: pilotCompany.id, findingId: "find_pilot_close_001", action: "Add suspense clearance review to month-end checklist.", expectedImpact: "Reduce recurring close adjustment risk.", priority: "medium", completed: false }
+    { id: "rec_pilot_close_001", tenantId: pilotTenant.id, companyId: pilotCompany.id, findingId: "find_pilot_close_001", action: "Add suspense clearance review to month-end checklist.", expectedImpact: "Reduce recurring close adjustment risk.", priority: "medium", completed: true }
   ]
 };

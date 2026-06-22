@@ -6683,10 +6683,10 @@ function CashChart({ forecast }: { forecast: CashForecastPoint[] }) {
   return (
     <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={forecast} margin={{ left: -18, right: 12, top: 12, bottom: 0 }}>
+        <AreaChart data={forecast} margin={{ left: 4, right: 12, top: 12, bottom: 0 }}>
           <CartesianGrid stroke="#e5e7eb" strokeDasharray="4 4" vertical={false} />
           <XAxis dataKey="period" tickLine={false} axisLine={false} />
-          <YAxis tickFormatter={(value) => `£${Number(value) / 1000}k`} tickLine={false} axisLine={false} />
+          <YAxis width={58} tickFormatter={(value) => `£${Number(value) / 1000}k`} tickLine={false} axisLine={false} />
           <Tooltip formatter={(value) => `£${Number(value).toLocaleString()}`} />
           <Area type="monotone" dataKey="cash" stroke="#0e7490" fill="#cffafe" strokeWidth={3} />
         </AreaChart>
@@ -7058,7 +7058,7 @@ function CashflowPanel({ forecast, findings, uploads }: { forecast: CashForecast
       <Panel title="Working Capital Signals">
         <div className="grid gap-3">
           <Metric title="30-Day Forecast" value={f30 ? `£${Math.round(f30 / 1000)}k` : "—"} detail={hasUploads ? riskCopy(risk30) + " risk" : "Upload to calculate"} tone={hasUploads ? risk30 : "low"} />
-          <Metric title="90-Day Forecast" value={f90 ? `£${Math.round(f90 / 1000)}k` : "—"} detail={hasUploads ? "Collection pressure" : "Upload to calculate"} tone={hasUploads ? risk90 : "low"} />
+          <Metric title="90-Day Forecast" value={f90 ? `£${Math.round(f90 / 1000)}k` : "—"} detail={hasUploads ? `${riskCopy(risk90)} risk` : "Upload to calculate"} tone={hasUploads ? risk90 : "low"} />
           <Metric title="Expected Collections" value={expectedCollections ? `£${Math.round(expectedCollections / 1000)}k` : "—"} detail={hasUploads ? "From AR findings" : "Upload aged debtors"} tone={expectedCollections ? "low" : "medium"} />
         </div>
       </Panel>
