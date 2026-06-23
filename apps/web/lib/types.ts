@@ -212,6 +212,29 @@ export type FindingActivity = {
   details?: string;
 };
 
+export type CollectionStatus = "not_contacted" | "contacted" | "promised" | "disputed" | "paid" | "escalated";
+
+export type CollectionContact = {
+  id: string;
+  channel: "email" | "phone" | "meeting" | "note";
+  note: string;
+  contactedBy: string;
+  contactedAt: string;
+};
+
+export type CollectionCase = {
+  id: string;
+  findingId: string;
+  customer: string;
+  status: CollectionStatus;
+  owner: string;
+  promiseAmount?: number;
+  promiseDate?: string;
+  disputeReason?: string;
+  contacts: CollectionContact[];
+  updatedAt: string;
+};
+
 export type PartnerSignOffGateSnapshot = {
   criticalOpen: number;
   highOpen: number;
@@ -350,6 +373,7 @@ export type AnalysisResult = {
   findingEvidence?: Evidence[];
   findingComments?: FindingComment[];
   findingActivities?: FindingActivity[];
+  collectionCases?: CollectionCase[];
   partnerSignOff?: PartnerSignOff;
   recommendations: Recommendation[];
   vatReview?: import("./vat-engine/types").VatReviewResult;

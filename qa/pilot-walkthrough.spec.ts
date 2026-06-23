@@ -72,6 +72,24 @@ test("pilot demo walkthrough opens the right workflow context", async ({ page })
   await expect(page.locator("header p").filter({ hasText: "Brightlane Manufacturing Ltd" })).toBeVisible();
   await expect(page.locator("header").getByText(/6 finance exports reviewed, 0 items to resolve/)).toBeVisible();
 
+  await page.getByRole("button", { name: "Collections Intelligence", exact: true }).click();
+  await page.getByRole("button", { name: "Manage collection case for Cobalt Retail Group" }).click();
+  const collectionCase = page.getByRole("dialog", { name: "Collection case" });
+  await collectionCase.getByLabel("Status").selectOption("promised");
+  await collectionCase.getByLabel("Promise amount").fill("12000");
+  await collectionCase.getByLabel("Promise date").fill("2026-07-15");
+  await collectionCase.getByLabel("Contact note").fill("Customer committed to a staged payment after dispute evidence was accepted.");
+  await collectionCase.getByRole("button", { name: "Save Collection Case" }).click();
+  await expect(page.getByText("£12,000 · 2026-07-15")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem("closepilot.workspace.v2")?.includes('"promiseAmount":12000'))).toBe(true);
+
+  await page.reload();
+  await page.getByRole("button", { name: "Collections Intelligence", exact: true }).click();
+  await expect(page.getByText("£12,000 · 2026-07-15")).toBeVisible();
+  await page.getByRole("button", { name: "Manage collection case for Cobalt Retail Group" }).click();
+  await expect(page.getByRole("dialog", { name: "Collection case" })).toContainText("Customer committed to a staged payment after dispute evidence was accepted.");
+  await page.getByRole("dialog", { name: "Collection case" }).getByRole("button", { name: "Close" }).click();
+
   expect(consoleErrors).toEqual([]);
   expect(pageErrors).toEqual([]);
 });

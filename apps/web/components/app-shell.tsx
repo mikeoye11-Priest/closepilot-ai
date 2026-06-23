@@ -7,7 +7,7 @@ import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompan
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
 import { analyseFinanceFiles, scopeAnalysisResult } from "@/lib/upload-analysis";
-import type { AnalysisResult, CashForecastPoint, ClientCompany, Company, Evidence, EvidenceStatus, FinanceScoreBreakdown, Finding, FindingActivity, FindingComment, FindingEvidenceRow, FindingStatus, ImportMappingProfile, ManagerReviewStatus, PartnerSignOff, PartnerSignOffGateSnapshot, PartnerSignOffStatus, Recommendation, ReviewPackStatus, RiskLevel, Tenant, TenantType, Upload, ValidationCheck, ValidationStatus } from "@/lib/types";
+import type { AnalysisResult, CashForecastPoint, ClientCompany, CollectionCase, CollectionStatus, Company, Evidence, EvidenceStatus, FinanceScoreBreakdown, Finding, FindingActivity, FindingComment, FindingEvidenceRow, FindingStatus, ImportMappingProfile, ManagerReviewStatus, PartnerSignOff, PartnerSignOffGateSnapshot, PartnerSignOffStatus, Recommendation, ReviewPackStatus, RiskLevel, Tenant, TenantType, Upload, ValidationCheck, ValidationStatus } from "@/lib/types";
 import type { VatReviewResult } from "@/lib/vat-engine/types";
 import { approveVatFiling, reopenVatFiling } from "@/lib/vat-engine/sign-off";
 import type { AccountingIntegrationState } from "@/lib/integrations/types";
@@ -241,13 +241,14 @@ const emptyAnalysisResult: AnalysisResult = {
   findingEvidence: [],
   findingComments: [],
   findingActivities: [],
+  collectionCases: [],
   partnerSignOff: undefined,
   recommendations: [],
   vatReview: undefined,
 };
 
 function emptySnapshot(): AnalysisResult {
-  return { ...emptyAnalysisResult, uploads: [], validationChecks: [], findings: [], importProfiles: [], findingEvidence: [], findingComments: [], findingActivities: [], partnerSignOff: undefined, recommendations: [] };
+  return { ...emptyAnalysisResult, uploads: [], validationChecks: [], findings: [], importProfiles: [], findingEvidence: [], findingComments: [], findingActivities: [], collectionCases: [], partnerSignOff: undefined, recommendations: [] };
 }
 
 function normaliseSnapshot(snapshot?: AnalysisResult): AnalysisResult {
@@ -261,6 +262,7 @@ function normaliseSnapshot(snapshot?: AnalysisResult): AnalysisResult {
     findingEvidence: snapshot.findingEvidence ?? [],
     findingComments: snapshot.findingComments ?? [],
     findingActivities: snapshot.findingActivities ?? [],
+    collectionCases: snapshot.collectionCases ?? [],
     partnerSignOff: snapshot.partnerSignOff,
     recommendations: (snapshot.recommendations ?? []).map((recommendation) => reviewLocked ? { ...recommendation, completed: true } : recommendation),
     vatReview: snapshot.vatReview,
@@ -1689,6 +1691,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const [findingEvidence, setFindingEvidence] = useState<Evidence[]>(initialPilotSnapshot?.findingEvidence ?? []);
   const [findingComments, setFindingComments] = useState<FindingComment[]>(initialPilotSnapshot?.findingComments ?? []);
   const [findingActivities, setFindingActivities] = useState<FindingActivity[]>(initialPilotSnapshot?.findingActivities ?? []);
+  const [collectionCases, setCollectionCases] = useState<CollectionCase[]>(initialPilotSnapshot?.collectionCases ?? []);
   const [partnerSignOff, setPartnerSignOff] = useState<PartnerSignOff | undefined>(initialPilotSnapshot?.partnerSignOff);
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("Upload your finance pack to run a real deterministic review.");
@@ -1809,6 +1812,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
         setFindingEvidence(snapshot.findingEvidence ?? []);
         setFindingComments(snapshot.findingComments ?? []);
         setFindingActivities(snapshot.findingActivities ?? []);
+        setCollectionCases(snapshot.collectionCases ?? []);
         setPartnerSignOff(snapshot.partnerSignOff);
         setRecommendations(snapshot.recommendations);
         setVatReview(snapshot.vatReview);
@@ -1844,6 +1848,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           setFindingEvidence(snapshot.findingEvidence ?? []);
           setFindingComments(snapshot.findingComments ?? []);
           setFindingActivities(snapshot.findingActivities ?? []);
+          setCollectionCases(snapshot.collectionCases ?? []);
           setPartnerSignOff(snapshot.partnerSignOff);
           setRecommendations(snapshot.recommendations);
           setVatReview(snapshot.vatReview);
@@ -1866,7 +1871,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       portfolioClients,
       companySnapshots: {
         ...companySnapshots,
-        [currentCompany.id]: { uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, partnerSignOff, recommendations, vatReview }
+        [currentCompany.id]: { uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, collectionCases, partnerSignOff, recommendations, vatReview }
       }
     };
     window.localStorage.setItem(storageKey, JSON.stringify(workspace));
@@ -1875,7 +1880,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(workspace)
     }).catch(() => {});
-  }, [companies, companySnapshots, currentCompany.id, findingActivities, findingComments, findingEvidence, findings, importProfiles, partnerSignOff, portfolioClients, presentationMode, recommendations, tenant, uploads, validationChecks, vatReview]);
+  }, [collectionCases, companies, companySnapshots, currentCompany.id, findingActivities, findingComments, findingEvidence, findings, importProfiles, partnerSignOff, portfolioClients, presentationMode, recommendations, tenant, uploads, validationChecks, vatReview]);
 
   const completeRecommendation = (recommendation: Recommendation) => {
     if (reviewLocked) return;
@@ -2274,6 +2279,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     setFindingEvidence([]);
     setFindingComments([]);
     setFindingActivities([]);
+    setCollectionCases([]);
     setPartnerSignOff(undefined);
     setRecommendations([]);
     setImportProfiles([]);
@@ -2308,6 +2314,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       findingEvidence: findingEvidence.filter((evidence) => !removedFindingIds.has(evidence.findingId)),
       findingComments: findingComments.filter((comment) => !removedFindingIds.has(comment.findingId)),
       findingActivities: findingActivities.filter((activity) => !removedFindingIds.has(activity.findingId)),
+      collectionCases: collectionCases.filter((collectionCase) => !removedFindingIds.has(collectionCase.findingId)),
       partnerSignOff: undefined,
       recommendations: nextRecommendations,
       vatReview: nextVatReview,
@@ -2317,6 +2324,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     setFindingEvidence(nextSnapshot.findingEvidence ?? []);
     setFindingComments(nextSnapshot.findingComments ?? []);
     setFindingActivities(nextSnapshot.findingActivities ?? []);
+    setCollectionCases(nextSnapshot.collectionCases ?? []);
     setRecommendations(nextRecommendations);
     setImportProfiles(nextSnapshot.importProfiles ?? []);
     setValidationChecks(nextValidationChecks);
@@ -2348,6 +2356,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       findingEvidence,
       findingComments,
       findingActivities,
+      collectionCases,
       partnerSignOff,
       recommendations,
       vatReview,
@@ -2420,6 +2429,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
         findingEvidence: [],
         findingComments: [],
         findingActivities: generatedActivities,
+        collectionCases: [],
         partnerSignOff: undefined,
       };
       setUploads(scoped.uploads);
@@ -2429,6 +2439,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setFindingEvidence([]);
       setFindingComments([]);
       setFindingActivities(generatedActivities);
+      setCollectionCases([]);
       setPartnerSignOff(undefined);
       setRecommendations(scoped.recommendations);
       setVatReview(scoped.vatReview);
@@ -2457,7 +2468,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     const nextImportProfiles = mergeImportProfiles(importProfiles, scoped.importProfiles ?? []);
     const generatedAt = new Date().toISOString();
     const generatedActivities: FindingActivity[] = scoped.findings.map((finding) => ({ id: crypto.randomUUID(), findingId: finding.id, action: "created", userId: userEmail || userName || "closepilot", timestamp: generatedAt, details: "Finding generated from live accounting integration evidence." }));
-    const scopedWithWorkflow: AnalysisResult = { ...scoped, importProfiles: nextImportProfiles, findingEvidence: [], findingComments: [], findingActivities: generatedActivities, partnerSignOff: undefined };
+    const scopedWithWorkflow: AnalysisResult = { ...scoped, importProfiles: nextImportProfiles, findingEvidence: [], findingComments: [], findingActivities: generatedActivities, collectionCases: [], partnerSignOff: undefined };
     setUploads(scoped.uploads);
     setValidationChecks(scoped.validationChecks);
     setImportProfiles(nextImportProfiles);
@@ -2465,6 +2476,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     setFindingEvidence([]);
     setFindingComments([]);
     setFindingActivities(generatedActivities);
+    setCollectionCases([]);
     setPartnerSignOff(undefined);
     setRecommendations(scoped.recommendations);
     setVatReview(scoped.vatReview);
@@ -2484,6 +2496,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     setFindingEvidence([]);
     setFindingComments([]);
     setFindingActivities([]);
+    setCollectionCases([]);
     setPartnerSignOff(undefined);
     setRecommendations([]);
     setImportProfiles([]);
@@ -2512,6 +2525,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     setFindingEvidence(snapshot.findingEvidence ?? []);
     setFindingComments(snapshot.findingComments ?? []);
     setFindingActivities(snapshot.findingActivities ?? []);
+    setCollectionCases(snapshot.collectionCases ?? []);
     setPartnerSignOff(snapshot.partnerSignOff);
     setRecommendations(snapshot.recommendations);
     setVatReview(snapshot.vatReview);
@@ -2524,7 +2538,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const switchCompany = (companyId: string) => {
     const selectedCompany = companies.find((item) => item.id === companyId);
     if (!selectedCompany) return;
-    const currentSnapshot = normaliseSnapshot({ uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, partnerSignOff, recommendations, vatReview });
+    const currentSnapshot = normaliseSnapshot({ uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, collectionCases, partnerSignOff, recommendations, vatReview });
     const nextSnapshot = normaliseSnapshot(companySnapshots[selectedCompany.id]);
     setCompanySnapshots((items) => ({ ...items, [currentCompany.id]: currentSnapshot }));
     setCurrentCompany(selectedCompany);
@@ -2535,6 +2549,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     setFindingEvidence(nextSnapshot.findingEvidence ?? []);
     setFindingComments(nextSnapshot.findingComments ?? []);
     setFindingActivities(nextSnapshot.findingActivities ?? []);
+    setCollectionCases(nextSnapshot.collectionCases ?? []);
     setPartnerSignOff(nextSnapshot.partnerSignOff);
     setRecommendations(nextSnapshot.recommendations);
     setVatReview(nextSnapshot.vatReview);
@@ -2655,7 +2670,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     if (active === "Upload Finance Pack") return <UploadAnalyse analyseUploads={analyseUploads} isAnalysing={isAnalysing} uploadMessage={uploadMessage} validationChecks={validationChecks} uploads={uploads} importProfiles={importProfiles} confirmImportProfile={confirmImportProfile} findings={findings} recommendations={recommendations} onDelete={deleteUpload} onClear={clearCurrentReview} />;
     if (active === "Close Review") return <MonthEndClose findings={findings} recommendations={recommendations} completeRecommendation={completeRecommendation} updateFindingStatus={updateFindingStatus} />;
     if (active === "Cash Intelligence") return <CashflowPanel forecast={forecast} findings={findings} uploads={uploads} />;
-    if (active === "Collections Intelligence") return <CollectionsPanel findings={findings} openFindingEvidence={(findingId) => {
+    if (active === "Collections Intelligence") return <CollectionsPanel findings={findings} collectionCases={collectionCases} saveCollectionCase={(nextCase) => setCollectionCases((items) => [nextCase, ...items.filter((item) => item.id !== nextCase.id)])} actor={userName || "Collections Team"} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
       setFocusedFindingId(findingId);
       setActive("Findings");
@@ -2673,7 +2688,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     if (active === "User Guide") return <UserGuide isPilotDemo={isPilotDemo} hasData={hasUploadedData} loadPilotDemo={loadPilotDemo} setActive={setActive} setPilotWalkthroughStep={setPilotWalkthroughStep} />;
     if (active === "Settings") return <SettingsPanel tenant={tenant} company={currentCompany} userEmail={userEmail} userName={userName} onIntegrationAnalysis={applyIntegrationAnalysis} />;
     return <PracticePortal tenant={tenant} clients={portfolioClients} currentCompanyId={currentCompany.id} switchCompany={switchCompany} companySnapshots={companySnapshots} />;
-  }, [active, assurance, assistantResult, cashAtRisk, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, isAnalysing, isPilotDemo, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, risk, score, tenant, timeSaved, uploadMessage, uploads, validationBlockers, validationChecks, validationWarnings, vatReview]);
+  }, [active, assurance, assistantResult, cashAtRisk, collectionCases, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, isAnalysing, isPilotDemo, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, risk, score, tenant, timeSaved, uploadMessage, uploads, userName, validationBlockers, validationChecks, validationWarnings, vatReview]);
 
   return (
     <div className="min-h-screen bg-page text-ink lg:grid lg:grid-cols-[280px_1fr]">
@@ -7377,17 +7392,56 @@ function collectionAccounts(findings: Finding[]) {
   }).sort((a, b) => b.priorityScore - a.priorityScore || b.balance - a.balance);
 }
 
-function CollectionsPanel({ findings, openFindingEvidence }: { findings: Finding[]; openFindingEvidence: (findingId: string) => void }) {
+const collectionStatusLabels: Record<CollectionStatus, string> = {
+  not_contacted: "Not contacted",
+  contacted: "Contacted",
+  promised: "Promise to pay",
+  disputed: "Disputed",
+  paid: "Paid",
+  escalated: "Escalated",
+};
+
+function collectionStatusClass(status: CollectionStatus) {
+  if (status === "paid") return "bg-emerald-100 text-emerald-800";
+  if (status === "promised") return "bg-blue-100 text-blue-800";
+  if (status === "disputed" || status === "escalated") return "bg-red-100 text-red-800";
+  if (status === "contacted") return "bg-amber-100 text-amber-800";
+  return "bg-slate-100 text-slate-600";
+}
+
+function promiseIsOverdue(collectionCase?: CollectionCase) {
+  if (collectionCase?.status !== "promised" || !collectionCase.promiseDate) return false;
+  return new Date(`${collectionCase.promiseDate}T23:59:59`).getTime() < Date.now();
+}
+
+function CollectionsPanel({ findings, collectionCases, saveCollectionCase, actor, openFindingEvidence }: {
+  findings: Finding[];
+  collectionCases: CollectionCase[];
+  saveCollectionCase: (collectionCase: CollectionCase) => void;
+  actor: string;
+  openFindingEvidence: (findingId: string) => void;
+}) {
   const [emailAccount, setEmailAccount] = useState<CollectionAccount | null>(null);
+  const [managedAccount, setManagedAccount] = useState<CollectionAccount | null>(null);
   const arFindings = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
   const accounts = collectionAccounts(findings);
   const sourceLinked = accounts.reduce((sum, account) => sum + account.balance, 0);
   const totalExposure = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
   const residual = Math.max(0, totalExposure - sourceLinked);
   const coverage = totalExposure ? Math.min(100, Math.round((sourceLinked / totalExposure) * 100)) : 0;
-  const expectedRecovery = accounts.reduce((sum, account) => sum + account.balance * account.recoveryRate, 0);
+  const caseFor = (account: CollectionAccount) => collectionCases.find((collectionCase) => collectionCase.findingId === account.findingId && collectionCase.customer === account.customer);
+  const expectedRecovery = accounts.reduce((sum, account) => {
+    const collectionCase = caseFor(account);
+    if (collectionCase?.status === "paid") return sum;
+    if (collectionCase?.status === "promised") return sum + Math.min(account.balance, collectionCase.promiseAmount ?? account.balance);
+    if (collectionCase?.status === "disputed") return sum + account.balance * 0.2;
+    return sum + account.balance * account.recoveryRate;
+  }, 0);
   const priorityAccounts = accounts.filter((account) => account.priorityScore >= 70).length;
   const acceptedRisks = arFindings.filter((finding) => finding.status === "accepted_risk").length;
+  const promisedTotal = collectionCases.filter((collectionCase) => collectionCase.status === "promised").reduce((sum, collectionCase) => sum + (collectionCase.promiseAmount ?? 0), 0);
+  const overduePromises = collectionCases.filter(promiseIsOverdue).length;
+  const disputedTotal = accounts.filter((account) => caseFor(account)?.status === "disputed").reduce((sum, account) => sum + account.balance, 0);
 
   const emailSubject = emailAccount ? `Payment date confirmation: ${emailAccount.customer}` : "";
   const emailBody = emailAccount
@@ -7405,12 +7459,13 @@ function CollectionsPanel({ findings, openFindingEvidence }: { findings: Finding
           </div>
           <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Evidence-backed queue</span>
         </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <Metric title="AR Exposure" value={totalExposure ? `£${Math.round(totalExposure).toLocaleString("en-GB")}` : "—"} detail={`${acceptedRisks} accepted risk${acceptedRisks === 1 ? "" : "s"}`} tone={totalExposure ? "high" : "low"} />
           <Metric title="Source-Linked" value={sourceLinked ? `£${Math.round(sourceLinked).toLocaleString("en-GB")}` : "—"} detail={`${coverage}% of finding exposure`} tone={coverage >= 90 ? "low" : "medium"} />
-          <Metric title="30-Day Recovery" value={expectedRecovery ? `£${Math.round(expectedRecovery).toLocaleString("en-GB")}` : "—"} detail="Age-weighted estimate" tone={expectedRecovery ? "low" : "medium"} />
-          <Metric title="Priority Accounts" value={String(priorityAccounts)} detail="Priority score 70+" tone={priorityAccounts ? "high" : "low"} />
-          <Metric title="Unallocated" value={residual ? `£${Math.round(residual).toLocaleString("en-GB")}` : "£0"} detail="Finding balance without captured row" tone={residual ? "medium" : "low"} />
+          <Metric title="Recovery Forecast" value={expectedRecovery ? `£${Math.round(expectedRecovery).toLocaleString("en-GB")}` : "—"} detail="Promises and age weighting" tone={expectedRecovery ? "low" : "medium"} />
+          <Metric title="Promised Cash" value={promisedTotal ? `£${Math.round(promisedTotal).toLocaleString("en-GB")}` : "£0"} detail="Active promises to pay" tone={promisedTotal ? "low" : "medium"} />
+          <Metric title="Overdue Promises" value={String(overduePromises)} detail="Past promised date" tone={overduePromises ? "critical" : "low"} />
+          <Metric title="Disputed" value={disputedTotal ? `£${Math.round(disputedTotal).toLocaleString("en-GB")}` : "£0"} detail={`${priorityAccounts} priority account${priorityAccounts === 1 ? "" : "s"}`} tone={disputedTotal ? "high" : "low"} />
         </div>
         {residual > 0 && (
           <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
@@ -7430,7 +7485,7 @@ function CollectionsPanel({ findings, openFindingEvidence }: { findings: Finding
                   <th className="border-b border-line p-3">Customer / Evidence</th>
                   <th className="border-b border-line p-3">Balance</th>
                   <th className="border-b border-line p-3">Age</th>
-                  <th className="border-b border-line p-3">Priority</th>
+                  <th className="border-b border-line p-3">Status / Priority</th>
                   <th className="border-b border-line p-3">Owner / Due</th>
                   <th className="border-b border-line p-3">Next Action</th>
                   <th className="border-b border-line p-3">Actions</th>
@@ -7438,7 +7493,7 @@ function CollectionsPanel({ findings, openFindingEvidence }: { findings: Finding
               </thead>
               <tbody>
                 {accounts.map((account) => (
-                  <tr key={account.id}>
+                  <tr key={account.id} className={promiseIsOverdue(caseFor(account)) ? "bg-red-50/60" : ""}>
                     <td className="border-b border-line p-3">
                       <strong className="block">{account.customer}</strong>
                       <span className="mt-1 block text-xs text-muted">{account.sourceFile}{account.rowIndex ? ` · row ${account.rowIndex}` : ""}</span>
@@ -7446,14 +7501,19 @@ function CollectionsPanel({ findings, openFindingEvidence }: { findings: Finding
                     <td className="border-b border-line p-3 font-black">£{Math.round(account.balance).toLocaleString("en-GB")}</td>
                     <td className="border-b border-line p-3">{account.ageLabel}</td>
                     <td className="border-b border-line p-3">
+                      <span className={`mb-2 inline-flex rounded-full px-2 py-1 text-xs font-black ${collectionStatusClass(caseFor(account)?.status ?? "not_contacted")}`}>{collectionStatusLabels[caseFor(account)?.status ?? "not_contacted"]}</span>
                       <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${account.priorityScore >= 80 ? "bg-red-100 text-red-800" : account.priorityScore >= 70 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>{account.priorityScore}/100</span>
                       {account.acceptedRisk && <span className="mt-1 block text-xs font-semibold text-violet-700">Accepted risk</span>}
+                      {promiseIsOverdue(caseFor(account)) && <span className="mt-1 block text-xs font-black text-red-700">Promise overdue</span>}
+                      {caseFor(account)?.status === "promised" && <span className="mt-1 block text-xs text-muted">£{Math.round(caseFor(account)?.promiseAmount ?? 0).toLocaleString("en-GB")} · {caseFor(account)?.promiseDate}</span>}
+                      {caseFor(account)?.status === "disputed" && <span className="mt-1 block max-w-48 text-xs text-red-700">{caseFor(account)?.disputeReason}</span>}
                     </td>
                     <td className="border-b border-line p-3"><strong className="block">{account.owner}</strong><span className="text-xs text-muted">Due {account.dueDate}</span></td>
                     <td className="border-b border-line p-3">{account.action}</td>
                     <td className="border-b border-line p-3">
                       <div className="flex gap-2">
                         <button aria-label={`View evidence for ${account.customer}`} className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold" onClick={() => openFindingEvidence(account.findingId)}>View Evidence</button>
+                        <button aria-label={`Manage collection case for ${account.customer}`} className="rounded-lg border border-brand bg-white px-3 py-2 text-xs font-bold text-brand" onClick={() => setManagedAccount(account)}>Manage</button>
                         <button aria-label={`Draft email for ${account.customer}`} className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-white" onClick={() => setEmailAccount(account)}>Draft Email</button>
                       </div>
                     </td>
@@ -7464,6 +7524,16 @@ function CollectionsPanel({ findings, openFindingEvidence }: { findings: Finding
           </div>
         )}
       </Panel>
+
+      {managedAccount && (
+        <CollectionCaseDialog
+          account={managedAccount}
+          collectionCase={caseFor(managedAccount)}
+          actor={actor}
+          onSave={(collectionCase) => { saveCollectionCase(collectionCase); setManagedAccount(null); }}
+          onClose={() => setManagedAccount(null)}
+        />
+      )}
 
       {emailAccount && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-label="Collection email preview" onClick={(event) => event.target === event.currentTarget && setEmailAccount(null)}>
@@ -7483,6 +7553,102 @@ function CollectionsPanel({ findings, openFindingEvidence }: { findings: Finding
           </section>
         </div>
       )}
+    </div>
+  );
+}
+
+function CollectionCaseDialog({ account, collectionCase, actor, onSave, onClose }: {
+  account: CollectionAccount;
+  collectionCase?: CollectionCase;
+  actor: string;
+  onSave: (collectionCase: CollectionCase) => void;
+  onClose: () => void;
+}) {
+  const [status, setStatus] = useState<CollectionStatus>(collectionCase?.status ?? "not_contacted");
+  const [promiseAmount, setPromiseAmount] = useState(collectionCase?.promiseAmount ? String(collectionCase.promiseAmount) : "");
+  const [promiseDate, setPromiseDate] = useState(collectionCase?.promiseDate ?? "");
+  const [disputeReason, setDisputeReason] = useState(collectionCase?.disputeReason ?? "");
+  const [channel, setChannel] = useState<"email" | "phone" | "meeting" | "note">("phone");
+  const [contactNote, setContactNote] = useState("");
+  const contacts = (collectionCase?.contacts ?? []).slice().sort((a, b) => b.contactedAt.localeCompare(a.contactedAt));
+
+  const save = () => {
+    const now = new Date().toISOString();
+    const nextContacts = contactNote.trim()
+      ? [{ id: crypto.randomUUID(), channel, note: contactNote.trim(), contactedBy: actor, contactedAt: now }, ...(collectionCase?.contacts ?? [])]
+      : collectionCase?.contacts ?? [];
+    onSave({
+      id: collectionCase?.id ?? crypto.randomUUID(),
+      findingId: account.findingId,
+      customer: account.customer,
+      status,
+      owner: collectionCase?.owner ?? account.owner,
+      promiseAmount: status === "promised" && promiseAmount ? Number(promiseAmount) : undefined,
+      promiseDate: status === "promised" ? promiseDate || undefined : undefined,
+      disputeReason: status === "disputed" ? disputeReason.trim() || undefined : undefined,
+      contacts: nextContacts,
+      updatedAt: now,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-label="Collection case" onClick={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase text-muted">Collection Case</p>
+            <h2 className="mt-1 text-xl font-black">{account.customer}</h2>
+            <p className="mt-1 text-sm text-muted">£{Math.round(account.balance).toLocaleString("en-GB")} · {account.ageLabel} · owner {collectionCase?.owner ?? account.owner}</p>
+          </div>
+          <button className="rounded-lg border border-line px-3 py-2 text-sm font-bold" onClick={onClose}>Close</button>
+        </div>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <label className="grid gap-1">
+            <span className="text-xs font-bold uppercase text-muted">Status</span>
+            <select className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold" value={status} onChange={(event) => setStatus(event.target.value as CollectionStatus)}>
+              {(Object.keys(collectionStatusLabels) as CollectionStatus[]).map((value) => <option key={value} value={value}>{collectionStatusLabels[value]}</option>)}
+            </select>
+          </label>
+          <div className="rounded-lg border border-line bg-slate-50 p-3 text-sm">
+            <span className="text-xs font-bold uppercase text-muted">Current Priority</span>
+            <strong className="mt-1 block">{account.priorityScore}/100 · {account.action}</strong>
+          </div>
+          {status === "promised" && (
+            <>
+              <label className="grid gap-1"><span className="text-xs font-bold uppercase text-muted">Promise Amount</span><input aria-label="Promise amount" className="h-10 rounded-lg border border-line px-3" type="number" min="0" max={account.balance} value={promiseAmount} onChange={(event) => setPromiseAmount(event.target.value)} /></label>
+              <label className="grid gap-1"><span className="text-xs font-bold uppercase text-muted">Promise Date</span><input aria-label="Promise date" className="h-10 rounded-lg border border-line px-3" type="date" value={promiseDate} onChange={(event) => setPromiseDate(event.target.value)} /></label>
+            </>
+          )}
+          {status === "disputed" && (
+            <label className="grid gap-1 sm:col-span-2"><span className="text-xs font-bold uppercase text-muted">Dispute Reason</span><textarea aria-label="Dispute reason" className="min-h-24 rounded-lg border border-line p-3 text-sm" value={disputeReason} onChange={(event) => setDisputeReason(event.target.value)} /></label>
+          )}
+        </div>
+
+        <section className="mt-5 rounded-lg border border-line bg-slate-50 p-4">
+          <p className="text-xs font-bold uppercase text-muted">Log Contact</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-[160px_1fr]">
+            <select aria-label="Contact channel" className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold" value={channel} onChange={(event) => setChannel(event.target.value as typeof channel)}>
+              <option value="phone">Phone</option><option value="email">Email</option><option value="meeting">Meeting</option><option value="note">Internal note</option>
+            </select>
+            <textarea aria-label="Contact note" className="min-h-20 rounded-lg border border-line bg-white p-3 text-sm" value={contactNote} onChange={(event) => setContactNote(event.target.value)} placeholder="Outcome, commitment, dispute detail, or next action." />
+          </div>
+        </section>
+
+        <section className="mt-5">
+          <p className="text-xs font-bold uppercase text-muted">Contact History</p>
+          <div className="mt-3 grid gap-2">
+            {contacts.length ? contacts.map((contact) => (
+              <div key={contact.id} className="rounded-lg border border-line p-3 text-sm"><strong className="capitalize">{contact.channel}</strong><p className="mt-1">{contact.note}</p><span className="mt-1 block text-xs text-muted">{contact.contactedBy} · {new Date(contact.contactedAt).toLocaleString("en-GB")}</span></div>
+            )) : <p className="text-sm text-muted">No contact history yet.</p>}
+          </div>
+        </section>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={onClose}>Cancel</button>
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={save}>Save Collection Case</button>
+        </div>
+      </section>
     </div>
   );
 }
