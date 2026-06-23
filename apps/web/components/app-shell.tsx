@@ -2655,13 +2655,21 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     if (active === "Upload Finance Pack") return <UploadAnalyse analyseUploads={analyseUploads} isAnalysing={isAnalysing} uploadMessage={uploadMessage} validationChecks={validationChecks} uploads={uploads} importProfiles={importProfiles} confirmImportProfile={confirmImportProfile} findings={findings} recommendations={recommendations} onDelete={deleteUpload} onClear={clearCurrentReview} />;
     if (active === "Close Review") return <MonthEndClose findings={findings} recommendations={recommendations} completeRecommendation={completeRecommendation} updateFindingStatus={updateFindingStatus} />;
     if (active === "Cash Intelligence") return <CashflowPanel forecast={forecast} findings={findings} uploads={uploads} />;
-    if (active === "Collections Intelligence") return <CollectionsPanel findings={findings} />;
+    if (active === "Collections Intelligence") return <CollectionsPanel findings={findings} openFindingEvidence={(findingId) => {
+      if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
+      setFocusedFindingId(findingId);
+      setActive("Findings");
+    }} />;
     if (active === "VAT Assurance") return <VatAssuranceModule vatReview={vatReview} findings={findings} updateFindingStatus={updateFindingStatus} setActive={setActive} userName={userName} tenantId={tenant.id} companyId={currentCompany.id} onVatReviewChange={setVatReview} />;
     if (active === "Controls & Fraud") return <RiskModule title="Controls & Fraud" category="controls" findings={findings} updateFindingStatus={updateFindingStatus} />;
     if (active === "Audit Readiness") return <AuditReadiness findings={findings} validationChecks={validationChecks} uploads={uploads} score={score} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} expectedAuditQueries={expectedAuditQueries} financialExposure={financialExposure} company={currentCompany} tenant={tenant} setActive={setActive} />;
     if (active === "Review Pack") return <ReviewPack company={currentCompany} tenant={tenant} userName={userName} score={score} risk={risk} findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} recommendations={recommendations} validationChecks={validationChecks} uploads={uploads} financialExposure={financialExposure} cashAtRisk={cashAtRisk} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
     if (active === "Change Intelligence") return <ChangeIntelligence findings={findings} uploads={uploads} />;
-    if (active === "Ask ClosePilot") return <AICopilot question={question} setQuestion={setQuestion} score={score} findings={findings} findingActivities={findingActivities} validationChecks={validationChecks} uploads={uploads} company={currentCompany} forecast={forecast} assistantResult={assistantResult?.companyId === currentCompany.id ? assistantResult : null} setAssistantResult={setAssistantResult} updateFindingStatus={updateFindingStatus} updateManagerReview={updateManagerReview} openFindingEvidence={(findingId) => { setFocusedFindingId(findingId); setActive("Findings"); }} setActive={setActive} />;
+    if (active === "Ask ClosePilot") return <AICopilot question={question} setQuestion={setQuestion} score={score} findings={findings} findingActivities={findingActivities} validationChecks={validationChecks} uploads={uploads} company={currentCompany} forecast={forecast} assistantResult={assistantResult?.companyId === currentCompany.id ? assistantResult : null} setAssistantResult={setAssistantResult} updateFindingStatus={updateFindingStatus} updateManagerReview={updateManagerReview} openFindingEvidence={(findingId) => {
+      if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
+      setFocusedFindingId(findingId);
+      setActive("Findings");
+    }} setActive={setActive} />;
     if (active === "User Guide") return <UserGuide isPilotDemo={isPilotDemo} hasData={hasUploadedData} loadPilotDemo={loadPilotDemo} setActive={setActive} setPilotWalkthroughStep={setPilotWalkthroughStep} />;
     if (active === "Settings") return <SettingsPanel tenant={tenant} company={currentCompany} userEmail={userEmail} userName={userName} onIntegrationAnalysis={applyIntegrationAnalysis} />;
     return <PracticePortal tenant={tenant} clients={portfolioClients} currentCompanyId={currentCompany.id} switchCompany={switchCompany} companySnapshots={companySnapshots} />;
@@ -7280,57 +7288,202 @@ function CashflowPanel({ forecast, findings, uploads }: { forecast: CashForecast
   );
 }
 
-function CollectionsPanel({ findings }: { findings: Finding[] }) {
-  const arFindings = findings.filter((f) => f.category === "ar");
-  type Debtor = { name: string; amount: number; risk: RiskLevel; action: string };
-  const debtors: Debtor[] = arFindings.flatMap((f) => {
-    const names = f.evidence.accountCode.split("/").map((n) => n.trim()).filter(Boolean);
-    const total = parseImpactAmount(f.expectedImpact);
-    const perDebtor = names.length ? Math.round(total / names.length) : 0;
-    return names.map((name, i) => ({
-      name,
-      amount: perDebtor,
-      risk: (i === 0 ? f.severity : f.severity === "critical" ? "high" : f.severity) as RiskLevel,
-      action: f.severity === "critical" ? "Call CFO today" : f.severity === "high" ? "Send payment plan" : "Escalate to sales owner",
-    }));
+type CollectionAccount = {
+  id: string;
+  findingId: string;
+  customer: string;
+  balance: number;
+  ageDays: number;
+  ageLabel: string;
+  priorityScore: number;
+  risk: RiskLevel;
+  owner: string;
+  dueDate: string;
+  action: string;
+  sourceFile: string;
+  rowIndex?: number;
+  recoveryRate: number;
+  acceptedRisk: boolean;
+};
+
+function sourceRowValue(sourceRow: Record<string, string>, names: string[]) {
+  const entry = Object.entries(sourceRow).find(([key]) => names.some((name) => key.toLowerCase().replace(/[^a-z0-9]/g, "_").includes(name)));
+  return entry?.[1]?.trim() ?? "";
+}
+
+function collectionAge(sourceRow: Record<string, string>, finding: Finding) {
+  const buckets = [
+    { keys: ["over_120", "120_plus"], days: 120, label: "120+ days" },
+    { keys: ["over_90", "91_120"], days: 90, label: "90+ days" },
+    { keys: ["over_60", "61_90"], days: 60, label: "60+ days" },
+    { keys: ["over_30", "31_60"], days: 30, label: "30+ days" },
+  ];
+  for (const bucket of buckets) {
+    const value = sourceRowValue(sourceRow, bucket.keys);
+    if (Number(value.replace(/[,£]/g, "")) > 0) return bucket;
+  }
+  if (/120/.test(finding.title)) return buckets[0];
+  if (/90/.test(finding.title)) return buckets[1];
+  if (/60|overdue/.test(finding.title.toLowerCase())) return buckets[2];
+  return { days: 0, label: "Current / unspecified" };
+}
+
+function collectionAction(finding: Finding, ageDays: number) {
+  if (finding.status === "accepted_risk") return "Confirm post-period receipt and update the weekly collection plan.";
+  if (finding.ruleId === "AR_026" || ageDays >= 120) return "Escalate legal recovery and assess a full bad-debt provision.";
+  if (ageDays >= 90) return "Senior collection call; agree a dated payment plan and provision assessment.";
+  if (finding.ruleId === "AR_006") return "Place the account on credit hold pending approval.";
+  if (["AR_008", "AR_009"].includes(finding.ruleId ?? "")) return "Assign an owner-level collection plan and review credit insurance.";
+  return "Contact the customer and record the promised payment date.";
+}
+
+function collectionAccounts(findings: Finding[]) {
+  const relevant = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
+  const raw = new Map<string, Omit<CollectionAccount, "priorityScore" | "recoveryRate">>();
+
+  relevant.forEach((finding) => {
+    (finding.evidence.rows ?? []).forEach((row, index) => {
+      const customer = sourceRowValue(row.sourceRow, ["customer_name", "customer", "debtor", "account_name", "name"]) || row.accountCode || finding.evidence.accountCode;
+      const parsedBalance = Number(sourceRowValue(row.sourceRow, ["outstanding", "balance", "amount"]).replace(/[,£]/g, ""));
+      const balance = Math.abs(row.amount ?? (Number.isFinite(parsedBalance) ? parsedBalance : 0));
+      if (!customer || !balance) return;
+      const age = collectionAge(row.sourceRow, finding);
+      const id = `${finding.id}:${row.sourceFile}:${row.rowIndex ?? index}:${customer}`;
+      raw.set(id, {
+        id,
+        findingId: finding.id,
+        customer,
+        balance,
+        ageDays: age.days,
+        ageLabel: age.label,
+        risk: finding.severity,
+        owner: findingOwner(finding),
+        dueDate: findingDueDate(finding),
+        action: collectionAction(finding, age.days),
+        sourceFile: row.sourceFile || finding.evidence.sourceFile,
+        rowIndex: row.rowIndex,
+        acceptedRisk: finding.status === "accepted_risk",
+      });
+    });
   });
 
+  const maxBalance = Math.max(...Array.from(raw.values()).map((account) => account.balance), 1);
+  const severityPoints: Record<RiskLevel, number> = { critical: 45, high: 35, medium: 24, low: 12 };
+  return Array.from(raw.values()).map<CollectionAccount>((account) => {
+    const agePoints = account.ageDays >= 120 ? 30 : account.ageDays >= 90 ? 26 : account.ageDays >= 60 ? 20 : account.ageDays >= 30 ? 12 : 5;
+    const amountPoints = Math.round((account.balance / maxBalance) * 25);
+    const recoveryRate = account.ageDays >= 120 ? 0.35 : account.ageDays >= 90 ? 0.5 : account.ageDays >= 60 ? 0.7 : account.ageDays >= 30 ? 0.85 : 0.95;
+    return { ...account, priorityScore: Math.min(100, severityPoints[account.risk] + agePoints + amountPoints), recoveryRate };
+  }).sort((a, b) => b.priorityScore - a.priorityScore || b.balance - a.balance);
+}
+
+function CollectionsPanel({ findings, openFindingEvidence }: { findings: Finding[]; openFindingEvidence: (findingId: string) => void }) {
+  const [emailAccount, setEmailAccount] = useState<CollectionAccount | null>(null);
+  const arFindings = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
+  const accounts = collectionAccounts(findings);
+  const sourceLinked = accounts.reduce((sum, account) => sum + account.balance, 0);
+  const totalExposure = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
+  const residual = Math.max(0, totalExposure - sourceLinked);
+  const coverage = totalExposure ? Math.min(100, Math.round((sourceLinked / totalExposure) * 100)) : 0;
+  const expectedRecovery = accounts.reduce((sum, account) => sum + account.balance * account.recoveryRate, 0);
+  const priorityAccounts = accounts.filter((account) => account.priorityScore >= 70).length;
+  const acceptedRisks = arFindings.filter((finding) => finding.status === "accepted_risk").length;
+
+  const emailSubject = emailAccount ? `Payment date confirmation: ${emailAccount.customer}` : "";
+  const emailBody = emailAccount
+    ? `Hello,\n\nWe are reviewing the outstanding balance of £${emailAccount.balance.toLocaleString("en-GB")} for ${emailAccount.customer}. Please confirm the expected payment date and advise if any invoice is disputed.\n\nRegards,\nFinance Team`
+    : "";
+
   return (
-    <Panel title="Collections Intelligence">
-      {debtors.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted">No AR findings found. Upload your aged debtors file to see collection priorities.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse text-left">
-            <thead className="text-xs uppercase text-muted">
-              <tr><th className="border-b border-line p-3">Debtor</th><th className="border-b border-line p-3">Amount</th><th className="border-b border-line p-3">Risk</th><th className="border-b border-line p-3">Recovery Action</th><th className="border-b border-line p-3"></th></tr>
-            </thead>
-            <tbody>
-              {debtors.map((d) => (
-                <tr key={d.name}>
-                  <td className="border-b border-line p-3 font-bold">{d.name}</td>
-                  <td className="border-b border-line p-3">{d.amount ? `£${d.amount.toLocaleString()}` : "—"}</td>
-                  <td className="border-b border-line p-3"><Pill level={d.risk}>{riskCopy(d.risk)}</Pill></td>
-                  <td className="border-b border-line p-3">{d.action}</td>
-                  <td className="border-b border-line p-3">
-                    <button
-                      className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white"
-                      onClick={() => {
-                        const subject = encodeURIComponent(`Payment follow-up: ${d.name}`);
-                        const body = encodeURIComponent(`Hello,\n\nWe are reviewing the outstanding balance for ${d.name}. Please can you confirm the expected payment date for the balance currently showing as ${d.amount ? `£${d.amount.toLocaleString()}` : "outstanding"}?\n\nRegards,\nFinance Team`);
-                        window.location.href = `mailto:?subject=${subject}&body=${body}`;
-                      }}
-                    >
-                      Draft Email
-                    </button>
-                  </td>
+    <div className="grid gap-4">
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Collections summary">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase text-muted">Collections Intelligence</p>
+            <h2 className="mt-1 text-2xl font-black">Turn aged debt into a prioritised cash plan</h2>
+            <p className="mt-1 text-sm text-muted">Customer balances are taken from captured source rows; finding-level residuals remain explicitly unallocated.</p>
+          </div>
+          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Evidence-backed queue</span>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Metric title="AR Exposure" value={totalExposure ? `£${Math.round(totalExposure).toLocaleString("en-GB")}` : "—"} detail={`${acceptedRisks} accepted risk${acceptedRisks === 1 ? "" : "s"}`} tone={totalExposure ? "high" : "low"} />
+          <Metric title="Source-Linked" value={sourceLinked ? `£${Math.round(sourceLinked).toLocaleString("en-GB")}` : "—"} detail={`${coverage}% of finding exposure`} tone={coverage >= 90 ? "low" : "medium"} />
+          <Metric title="30-Day Recovery" value={expectedRecovery ? `£${Math.round(expectedRecovery).toLocaleString("en-GB")}` : "—"} detail="Age-weighted estimate" tone={expectedRecovery ? "low" : "medium"} />
+          <Metric title="Priority Accounts" value={String(priorityAccounts)} detail="Priority score 70+" tone={priorityAccounts ? "high" : "low"} />
+          <Metric title="Unallocated" value={residual ? `£${Math.round(residual).toLocaleString("en-GB")}` : "£0"} detail="Finding balance without captured row" tone={residual ? "medium" : "low"} />
+        </div>
+        {residual > 0 && (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+            <strong>Source reconciliation:</strong> captured debtor rows support £{Math.round(sourceLinked).toLocaleString("en-GB")} of £{Math.round(totalExposure).toLocaleString("en-GB")} exposure. The £{Math.round(residual).toLocaleString("en-GB")} residual remains visible at finding level and has not been assigned to a customer.
+          </div>
+        )}
+      </section>
+
+      <Panel title="Prioritised Collection Queue">
+        {accounts.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted">No source-linked AR rows found. Upload an aged debtors file to create the collection queue.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
+              <thead className="text-xs uppercase text-muted">
+                <tr>
+                  <th className="border-b border-line p-3">Customer / Evidence</th>
+                  <th className="border-b border-line p-3">Balance</th>
+                  <th className="border-b border-line p-3">Age</th>
+                  <th className="border-b border-line p-3">Priority</th>
+                  <th className="border-b border-line p-3">Owner / Due</th>
+                  <th className="border-b border-line p-3">Next Action</th>
+                  <th className="border-b border-line p-3">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {accounts.map((account) => (
+                  <tr key={account.id}>
+                    <td className="border-b border-line p-3">
+                      <strong className="block">{account.customer}</strong>
+                      <span className="mt-1 block text-xs text-muted">{account.sourceFile}{account.rowIndex ? ` · row ${account.rowIndex}` : ""}</span>
+                    </td>
+                    <td className="border-b border-line p-3 font-black">£{Math.round(account.balance).toLocaleString("en-GB")}</td>
+                    <td className="border-b border-line p-3">{account.ageLabel}</td>
+                    <td className="border-b border-line p-3">
+                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${account.priorityScore >= 80 ? "bg-red-100 text-red-800" : account.priorityScore >= 70 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>{account.priorityScore}/100</span>
+                      {account.acceptedRisk && <span className="mt-1 block text-xs font-semibold text-violet-700">Accepted risk</span>}
+                    </td>
+                    <td className="border-b border-line p-3"><strong className="block">{account.owner}</strong><span className="text-xs text-muted">Due {account.dueDate}</span></td>
+                    <td className="border-b border-line p-3">{account.action}</td>
+                    <td className="border-b border-line p-3">
+                      <div className="flex gap-2">
+                        <button aria-label={`View evidence for ${account.customer}`} className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold" onClick={() => openFindingEvidence(account.findingId)}>View Evidence</button>
+                        <button aria-label={`Draft email for ${account.customer}`} className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-white" onClick={() => setEmailAccount(account)}>Draft Email</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+
+      {emailAccount && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-label="Collection email preview" onClick={(event) => event.target === event.currentTarget && setEmailAccount(null)}>
+          <section className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div><p className="text-xs font-bold uppercase text-muted">Email Preview</p><h2 className="mt-1 text-xl font-black">{emailAccount.customer}</h2></div>
+              <button className="rounded-lg border border-line px-3 py-2 text-sm font-bold" onClick={() => setEmailAccount(null)}>Close</button>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <div className="rounded-lg border border-line bg-slate-50 p-3"><span className="text-xs font-bold uppercase text-muted">Subject</span><p className="mt-1 font-semibold">{emailSubject}</p></div>
+              <div className="whitespace-pre-line rounded-lg border border-line bg-slate-50 p-3 text-sm">{emailBody}</div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => navigator.clipboard?.writeText(`Subject: ${emailSubject}\n\n${emailBody}`)}>Copy Draft</button>
+                <a className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" href={`mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`}>Open Email App</a>
+              </div>
+            </div>
+          </section>
         </div>
       )}
-    </Panel>
+    </div>
   );
 }
 

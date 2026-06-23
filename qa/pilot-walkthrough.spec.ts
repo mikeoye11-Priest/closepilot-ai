@@ -91,4 +91,17 @@ test("presentation route opens a clean preloaded demo", async ({ page }) => {
 
   await page.getByRole("button", { name: "Review Pack", exact: true }).click();
   await expect(page.getByRole("button", { name: /5 Export Pack/ })).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "Collections Intelligence", exact: true }).click();
+  const collectionsSummary = page.getByRole("region", { name: "Collections summary" });
+  await expect(collectionsSummary.getByText("£42,600").first()).toBeVisible();
+  await expect(collectionsSummary.getByText("£33,400").first()).toBeVisible();
+  await expect(collectionsSummary.getByText("£9,200").first()).toBeVisible();
+  await expect(page.getByText("Harbour Components")).toBeVisible();
+  await expect(page.getByText("Cobalt Retail Group")).toBeVisible();
+  await page.getByRole("button", { name: "Draft email for Harbour Components" }).click();
+  await expect(page.getByRole("dialog", { name: "Collection email preview" })).toContainText("Payment date confirmation: Harbour Components");
+  await page.getByRole("dialog", { name: "Collection email preview" }).getByRole("button", { name: "Close" }).click();
+  await page.getByRole("button", { name: "View evidence for Harbour Components" }).click();
+  await expect(page.getByRole("region", { name: "Evidence-to-decision trace" })).toBeVisible();
 });
