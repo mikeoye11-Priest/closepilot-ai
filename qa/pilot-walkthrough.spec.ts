@@ -32,6 +32,7 @@ test("pilot demo walkthrough opens the right workflow context", async ({ page })
   await expect(page.getByText("Pilot Walkthrough")).toBeVisible();
   await expect(page.locator("header p").filter({ hasText: "Brightlane Manufacturing Ltd" })).toBeVisible();
   await expect(page.getByText("Partner conclusion recorded")).toBeVisible();
+  await expect(page.locator("header").getByText("85%", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: /Inspect Evidence/ }).click();
   await expect(page.getByText("VAT control difference resolved").first()).toBeVisible();
@@ -53,6 +54,10 @@ test("pilot demo walkthrough opens the right workflow context", async ({ page })
   await expect(page.getByRole("heading", { name: "Review Pack" })).toBeVisible();
   await expect(page.getByText("Partner Sign-Off").first()).toBeVisible();
   await expect(page.getByText("Signed by Priya Desai")).toBeVisible();
+  await expect(page.getByLabel("Conclusion")).toHaveValue("Approved and locked following partner sign-off.");
+
+  await page.getByRole("button", { name: "VAT Assurance", exact: true }).click();
+  await expect(page.getByText("Pilot Walkthrough")).toHaveCount(0);
 
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Reload Demo" }).click();

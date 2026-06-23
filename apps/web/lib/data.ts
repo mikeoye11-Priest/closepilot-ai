@@ -324,14 +324,14 @@ export const pilotAnalysisResult: AnalysisResult = {
       evidenceOutstanding: 0,
       validationBlockers: 0,
       managerReviewComplete: true,
-      readiness: 89,
+      readiness: 85,
       findingCount: 4,
       uploadCount: 6
     },
     approval: {
       approvedBy: "Priya Desai",
       approvedAt: signedAt,
-      readinessScore: 89,
+      readinessScore: 85,
       confidenceScore: 92,
       openFindings: 0,
       acceptedRisks: 1,

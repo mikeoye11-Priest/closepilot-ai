@@ -332,7 +332,7 @@ const LAYER_RULE_COUNTS = {
 const TOTAL_RULES = Object.values(LAYER_RULE_COUNTS).reduce((s, v) => s + v, 0);
 
 function assuranceMetrics(findings: Finding[], validationChecks: ValidationCheck[], uploads: Upload[]): AssuranceMetrics {
-  const scoredFindings = findings.filter((item) => item.evidenceStrength !== "advisory");
+  const scoredFindings = findings.filter((item) => item.evidenceStrength !== "advisory" && isOpenFinding(item));
   const critical = scoredFindings.filter((item) => item.severity === "critical").length;
   const high = scoredFindings.filter((item) => item.severity === "high").length;
   const medium = scoredFindings.filter((item) => item.severity === "medium").length;
@@ -1738,6 +1738,15 @@ export function AppShell({ userEmail }: { userEmail: string }) {
   const isPilotDemo = currentCompany.id === pilotCompany.id;
   const reviewLocked = partnerSignOff?.reviewPackStatus === "LOCKED" || partnerSignOff?.status === "locked" || partnerSignOff?.status === "signed";
 
+  useEffect(() => {
+    if (!isPilotDemo) return;
+    if (active === "Review Pack") {
+      setPilotWalkthroughStep(pilotWalkthroughSteps.length - 1);
+    } else if (active === "Findings" && pilotWalkthroughSteps[pilotWalkthroughStep]?.page !== "Findings") {
+      setPilotWalkthroughStep(0);
+    }
+  }, [active, isPilotDemo, pilotWalkthroughStep]);
+
   // Outcome metrics — what ClosePilot delivers vs manual review
   const HOURLY_RATE = 80; // £80/hr default manager rate
   const manualReviewMins = uploads.length * 30 + findings.length * 20 + validationChecks.length * 5;
@@ -2742,7 +2751,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
             <HeaderStat label="Actions" value={String(headerActionsValue)} level={headerActionsValue ? "medium" : "low"} />
           </div>
         </header>
-        {isPilotDemo && uploads.length > 0 && (
+        {isPilotDemo && uploads.length > 0 && pilotWalkthroughSteps.some((step) => step.page === active) && (
           <PilotWalkthroughRail
             step={pilotWalkthroughStep}
             setStep={setPilotWalkthroughStep}
@@ -4286,12 +4295,12 @@ function ReviewPack({
   company: Company; tenant: Tenant; userName: string; score: number; risk: RiskLevel; findings: Finding[]; findingEvidence: Evidence[]; findingComments: FindingComment[]; findingActivities: FindingActivity[]; partnerSignOff?: PartnerSignOff; reviewLocked: boolean; recommendations: Recommendation[]; validationChecks: ValidationCheck[]; uploads: Upload[]; financialExposure: number; cashAtRisk: number; onCreateNewReviewCycle: () => void; setActive: (value: string) => void;
 }) {
   const [preparedBy, setPreparedBy] = useState(userName || "ClosePilot Reviewer");
-  const [reviewedBy, setReviewedBy] = useState("");
+  const [reviewedBy, setReviewedBy] = useState(partnerSignOff?.reviewedBy ?? "");
   const [approvedBy, setApprovedBy] = useState(partnerSignOff?.approvedBy ?? partnerSignOff?.signedBy ?? "");
   const [signOffStatus, setSignOffStatus] = useState<PartnerSignOffStatus>(partnerSignOff?.status ?? "draft");
   const [reviewPackStatus, setReviewPackStatus] = useState<ReviewPackStatus>(partnerSignOff?.reviewPackStatus ?? "DRAFT");
   const [packType, setPackType] = useState<"audit" | "partner" | "client" | "evidence">("audit");
-  const [conclusion, setConclusion] = useState("Draft: manager review required before final issue.");
+  const [conclusion, setConclusion] = useState(partnerSignOff ? "Approved and locked following partner sign-off." : "Draft: manager review required before final issue.");
   const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
   const profile = evidenceProfile(findings);
   const failedChecks = validationChecks.filter((v) => v.status === "failed");
@@ -4542,6 +4551,7 @@ function ReviewPack({
               <option>Draft: manager review required before final issue.</option>
               <option>Ready for partner review subject to listed actions.</option>
               <option>Ready to issue to client.</option>
+              <option>Approved and locked following partner sign-off.</option>
               <option>Blocked: critical evidence or validation issues remain.</option>
             </select>
           </label>

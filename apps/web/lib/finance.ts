@@ -228,7 +228,7 @@ export function calculateAuditReadinessV2(findings: Finding[], validationChecks:
 
 export function calculateReadinessDrivers(findings: Finding[], validationChecks: ValidationCheck[], uploads: { fileType: string }[] = []): ReadinessDriver[] {
   const present = new Set(uploads.map((upload) => upload.fileType));
-  const tb = findValidation(validationChecks, ["trial balance balances to zero"]);
+  const tb = findValidation(validationChecks, ["trial balance balances"]);
   const vat = findValidation(validationChecks, ["vat report agrees", "vat control"]);
   const ar = findValidation(validationChecks, ["ar ledger agrees", "debtors control"]);
   const ap = findValidation(validationChecks, ["ap ledger agrees", "creditors control"]);
