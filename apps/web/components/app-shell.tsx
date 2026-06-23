@@ -6226,6 +6226,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
           evidence={findingEvidence.filter((evidence) => evidence.findingId === selectedFinding.id)}
           comments={findingComments.filter((comment) => comment.findingId === selectedFinding.id)}
           activities={findingActivities.filter((activity) => activity.findingId === selectedFinding.id)}
+          partnerSignOff={partnerSignOff}
           updateFindingStatus={updateFindingStatus}
           updateFindingAssignment={updateFindingAssignment}
           updateManagerReview={updateManagerReview}
@@ -6309,6 +6310,7 @@ function FindingDetailDrawer({
   evidence,
   comments,
   activities,
+  partnerSignOff,
   updateFindingStatus,
   updateFindingAssignment,
   updateManagerReview,
@@ -6322,6 +6324,7 @@ function FindingDetailDrawer({
   evidence: Evidence[];
   comments: FindingComment[];
   activities: FindingActivity[];
+  partnerSignOff?: PartnerSignOff;
   updateFindingStatus: (findingId: string, status: FindingStatus, reason?: string) => void;
   updateFindingAssignment: (findingId: string, assignedTo: string, dueDate: string) => void;
   updateManagerReview: (findingId: string, status: ManagerReviewStatus, note?: string) => void;
@@ -6399,6 +6402,7 @@ function FindingDetailDrawer({
         </div>
 
         <div className="grid min-w-0 flex-1 gap-4 overflow-y-auto p-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.82fr)]">
+          <EvidenceDecisionTrace finding={finding} partnerSignOff={partnerSignOff} />
           <div className="grid min-w-0 content-start gap-4">
             <section className="rounded-lg border border-line bg-slate-50 p-4">
               <p className="text-xs font-bold uppercase text-muted">Finding Details</p>
@@ -6406,7 +6410,7 @@ function FindingDetailDrawer({
                 <DrawerField label="Owner" value={findingOwner(finding)} />
                 <DrawerField label="Reviewer" value={finding.reviewer || "-"} />
                 <DrawerField label="Manager" value={finding.manager || finding.managerReviewedBy || "-"} />
-                <DrawerField label="Partner" value={finding.partner || "-"} />
+                <DrawerField label="Partner" value={finding.partner || partnerSignOff?.signedBy || "-"} />
                 <DrawerField label="Due Date" value={findingDueDate(finding)} />
                 <DrawerField label="Status" value={statusCfg.label} />
                 <DrawerField label="Category" value={finding.category.replaceAll("_", " ")} />
@@ -6416,10 +6420,10 @@ function FindingDetailDrawer({
                 <DrawerField label="Amount" value={impactAmount ? `£${Math.round(impactAmount).toLocaleString()}` : finding.expectedImpact || "-"} />
                 <DrawerField label="Evidence Attached" value={evidenceItemCount ? "Yes" : "No"} />
                 <DrawerField label="Reviewed At" value={formatDateTime(finding.reviewedAt)} />
-                <DrawerField label="Resolved By" value={finding.resolvedBy || "-"} />
-                <DrawerField label="Resolved At" value={formatDateTime(finding.resolvedAt)} />
-                <DrawerField label="Approved By" value={finding.approvedBy || "-"} />
-                <DrawerField label="Approved At" value={formatDateTime(finding.approvedAt)} />
+                <DrawerField label="Resolved By" value={finding.resolvedBy || (!isOpenFinding(finding) ? finding.reviewer || "-" : "-")} />
+                <DrawerField label="Resolved At" value={formatDateTime(finding.resolvedAt || (!isOpenFinding(finding) ? finding.reviewedAt : undefined))} />
+                <DrawerField label="Approved By" value={finding.approvedBy || (managerStatus === "approved" ? finding.managerReviewedBy || "-" : "-")} />
+                <DrawerField label="Approved At" value={formatDateTime(finding.approvedAt || (managerStatus === "approved" ? finding.managerReviewedAt : undefined))} />
                 <DrawerField label="Manager Status" value={managerStatus.replaceAll("_", " ")} />
               </div>
               {finding.resolutionNote && (
@@ -6626,6 +6630,75 @@ function DrawerField({ label, value }: { label: string; value: string }) {
       <p className="text-xs font-bold uppercase text-muted">{label}</p>
       <p className="mt-1 break-words text-sm font-semibold capitalize">{value}</p>
     </div>
+  );
+}
+
+function EvidenceDecisionTrace({ finding, partnerSignOff }: { finding: Finding; partnerSignOff?: PartnerSignOff }) {
+  const evidenceRef = findingEvidenceReference(finding);
+  const managerStatus = managerReviewStatus(finding);
+  const reviewDecision = finding.reviewAction?.replaceAll("_", " ") || STATUS_CONFIG[finding.status]?.label || finding.status.replaceAll("_", " ");
+  const signOffImpact = partnerSignOff
+    ? finding.status === "accepted_risk"
+      ? "Accepted risk retained in locked pack"
+      : "Included in locked review pack"
+    : isOpenFinding(finding)
+      ? "Blocks or qualifies sign-off"
+      : "Ready for sign-off";
+  const stages = [
+    {
+      label: "Source",
+      value: evidenceRef.sourceFile,
+      detail: evidenceRef.rowIndexes,
+      tone: "border-cyan-500 bg-cyan-50",
+    },
+    {
+      label: "Calculation",
+      value: evidenceRef.calculation,
+      detail: `${evidenceRef.rowCount} source row${evidenceRef.rowCount !== 1 ? "s" : ""}`,
+      tone: "border-blue-500 bg-blue-50",
+    },
+    {
+      label: "Finding",
+      value: finding.title,
+      detail: `${finding.severity} · ${finding.ruleId ?? finding.id}`,
+      tone: finding.severity === "critical" || finding.severity === "high" ? "border-amber-500 bg-amber-50" : "border-slate-400 bg-slate-50",
+    },
+    {
+      label: "Review",
+      value: reviewDecision,
+      detail: `Manager ${managerStatus.replaceAll("_", " ")}`,
+      tone: managerStatus === "approved" ? "border-emerald-500 bg-emerald-50" : "border-violet-500 bg-violet-50",
+    },
+    {
+      label: "Sign-off",
+      value: signOffImpact,
+      detail: partnerSignOff ? `${partnerSignOff.signedBy} · ${partnerSignOff.reviewPackStatus ?? partnerSignOff.status}` : "Partner decision pending",
+      tone: partnerSignOff ? "border-emerald-600 bg-emerald-50" : "border-slate-400 bg-slate-50",
+    },
+  ];
+
+  return (
+    <section className="rounded-lg border border-line bg-white p-4 xl:col-span-2" aria-label="Evidence-to-decision trace">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase text-muted">Evidence-to-decision trace</p>
+          <h3 className="mt-1 text-lg font-black">From source row to partner sign-off</h3>
+        </div>
+        <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Fully traceable</span>
+      </div>
+      <ol className="mt-4 grid gap-2 md:grid-cols-5">
+        {stages.map((stage, index) => (
+          <li key={stage.label} className={`relative min-w-0 rounded-lg border border-l-4 p-3 ${stage.tone}`}>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-black text-white">{index + 1}</span>
+              <span className="text-xs font-black uppercase text-slate-600">{stage.label}</span>
+            </div>
+            <strong className="mt-3 block break-words text-sm leading-snug">{stage.value}</strong>
+            <span className="mt-2 block break-words text-xs capitalize text-muted">{stage.detail}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 

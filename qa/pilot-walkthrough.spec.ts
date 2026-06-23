@@ -35,6 +35,9 @@ test("pilot demo walkthrough opens the right workflow context", async ({ page })
   await expect(page.locator("header").getByText("85%", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: /Inspect Evidence/ }).click();
+  await expect(page.getByRole("region", { name: "Evidence-to-decision trace" })).toBeVisible();
+  await expect(page.getByText("From source row to partner sign-off")).toBeVisible();
+  await expect(page.getByText("Included in locked review pack")).toBeVisible();
   await expect(page.getByText("VAT control difference resolved").first()).toBeVisible();
   await expect(page.getByRole("link", { name: /vat-control-reconciliation/ })).toBeVisible();
   await page.getByRole("button", { name: "Close", exact: true }).click();
