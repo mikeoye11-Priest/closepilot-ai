@@ -4,7 +4,10 @@ const baseURL = process.env.CLOSEPILOT_QA_URL ?? "http://127.0.0.1:3004";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    window.localStorage.clear();
+    if (!window.sessionStorage.getItem("closepilot.qa.initialised")) {
+      window.localStorage.clear();
+      window.sessionStorage.setItem("closepilot.qa.initialised", "true");
+    }
     window.print = () => {};
   });
 });
@@ -50,6 +53,16 @@ test("pilot demo walkthrough opens the right workflow context", async ({ page })
   await expect(page.getByRole("heading", { name: "Review Pack" })).toBeVisible();
   await expect(page.getByText("Partner Sign-Off").first()).toBeVisible();
   await expect(page.getByText("Signed by Priya Desai")).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Reload Demo" }).click();
+  await expect(page.getByRole("heading", { name: "Findings", exact: true })).toBeVisible();
+  await expect(page.locator("header").getByText(/6 finance exports reviewed, 0 items to resolve/)).toBeVisible();
+  await expect(page.getByText("Partner conclusion recorded")).toBeVisible();
+
+  await page.reload();
+  await expect(page.locator("header p").filter({ hasText: "Brightlane Manufacturing Ltd" })).toBeVisible();
+  await expect(page.locator("header").getByText(/6 finance exports reviewed, 0 items to resolve/)).toBeVisible();
 
   expect(consoleErrors).toEqual([]);
   expect(pageErrors).toEqual([]);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { evidenceGroundedAnswer, type GroundedAnswerSections } from "@/lib/ask-closepilot";
 import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompany, pilotTenant, tenant as seededTenant } from "@/lib/data";
@@ -1672,6 +1672,7 @@ function findingTypeLabel(finding: Finding) {
 }
 
 export function AppShell({ userEmail }: { userEmail: string }) {
+  const workspaceLoadCancelled = useRef(false);
   const [active, setActive] = useState("Onboarding");
   const [tenant, setTenant] = useState<Tenant>(seededTenant);
   const [currentCompany, setCurrentCompany] = useState<Company>(seededCompany);
@@ -1771,6 +1772,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
       try {
         const res = await fetch("/api/workspace");
         const { workspace } = await res.json();
+        if (workspaceLoadCancelled.current) return;
         const parsed: WorkspaceState | null = workspace ?? (userEmail ? null : (() => {
           const local = window.localStorage.getItem(storageKey);
           return local ? JSON.parse(local) : null;
@@ -1805,6 +1807,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
         : `${selectedCompany.name} workspace restored. Upload a new finance pack or continue the current review.`);
         setActive("Finance Review");
       } catch {
+        if (workspaceLoadCancelled.current) return;
         if (userEmail) {
           window.localStorage.removeItem(storageKey);
           setActive("Onboarding");
@@ -2459,6 +2462,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
     setActive("VAT Assurance");
   };
   const onboardWorkspace = (nextTenant: Tenant, nextCompany: Company) => {
+    workspaceLoadCancelled.current = true;
     setTenant(nextTenant);
     setCurrentCompany(nextCompany);
     setCompanies((items) => [nextCompany, ...items.filter((item) => item.id !== nextCompany.id)].map((item) => ({ ...item, tenantId: nextTenant.id })));
@@ -2482,6 +2486,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
   };
 
   const loadPilotDemo = () => {
+    workspaceLoadCancelled.current = true;
     const snapshot = normaliseSnapshot(pilotAnalysisResult);
     setTenant(pilotTenant);
     setCurrentCompany(pilotCompany);
