@@ -1671,24 +1671,25 @@ function findingTypeLabel(finding: Finding) {
   return "Review Exception";
 }
 
-export function AppShell({ userEmail }: { userEmail: string }) {
+export function AppShell({ userEmail, presentationMode = false }: { userEmail: string; presentationMode?: boolean }) {
   const workspaceLoadCancelled = useRef(false);
-  const [active, setActive] = useState("Onboarding");
-  const [tenant, setTenant] = useState<Tenant>(seededTenant);
-  const [currentCompany, setCurrentCompany] = useState<Company>(seededCompany);
-  const [companies, setCompanies] = useState<Company[]>([seededCompany]);
-  const [portfolioClients, setPortfolioClients] = useState<ClientCompany[]>([]);
-  const [companySnapshots, setCompanySnapshots] = useState<Record<string, AnalysisResult>>({});
-  const [findings, setFindings] = useState<Finding[]>([]);
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [uploads, setUploads] = useState<Upload[]>([]);
-  const [validationChecks, setValidationChecks] = useState<ValidationCheck[]>([]);
-  const [importProfiles, setImportProfiles] = useState<ImportMappingProfile[]>([]);
-  const [vatReview, setVatReview] = useState<VatReviewResult | undefined>();
-  const [findingEvidence, setFindingEvidence] = useState<Evidence[]>([]);
-  const [findingComments, setFindingComments] = useState<FindingComment[]>([]);
-  const [findingActivities, setFindingActivities] = useState<FindingActivity[]>([]);
-  const [partnerSignOff, setPartnerSignOff] = useState<PartnerSignOff | undefined>();
+  const initialPilotSnapshot = presentationMode ? normaliseSnapshot(pilotAnalysisResult) : undefined;
+  const [active, setActive] = useState(presentationMode ? "Overview" : "Onboarding");
+  const [tenant, setTenant] = useState<Tenant>(presentationMode ? pilotTenant : seededTenant);
+  const [currentCompany, setCurrentCompany] = useState<Company>(presentationMode ? pilotCompany : seededCompany);
+  const [companies, setCompanies] = useState<Company[]>(presentationMode ? [pilotCompany] : [seededCompany]);
+  const [portfolioClients, setPortfolioClients] = useState<ClientCompany[]>(presentationMode ? [pilotClient] : []);
+  const [companySnapshots, setCompanySnapshots] = useState<Record<string, AnalysisResult>>(presentationMode && initialPilotSnapshot ? { [pilotCompany.id]: initialPilotSnapshot } : {});
+  const [findings, setFindings] = useState<Finding[]>(initialPilotSnapshot?.findings ?? []);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>(initialPilotSnapshot?.recommendations ?? []);
+  const [uploads, setUploads] = useState<Upload[]>(initialPilotSnapshot?.uploads ?? []);
+  const [validationChecks, setValidationChecks] = useState<ValidationCheck[]>(initialPilotSnapshot?.validationChecks ?? []);
+  const [importProfiles, setImportProfiles] = useState<ImportMappingProfile[]>(initialPilotSnapshot?.importProfiles ?? []);
+  const [vatReview, setVatReview] = useState<VatReviewResult | undefined>(initialPilotSnapshot?.vatReview);
+  const [findingEvidence, setFindingEvidence] = useState<Evidence[]>(initialPilotSnapshot?.findingEvidence ?? []);
+  const [findingComments, setFindingComments] = useState<FindingComment[]>(initialPilotSnapshot?.findingComments ?? []);
+  const [findingActivities, setFindingActivities] = useState<FindingActivity[]>(initialPilotSnapshot?.findingActivities ?? []);
+  const [partnerSignOff, setPartnerSignOff] = useState<PartnerSignOff | undefined>(initialPilotSnapshot?.partnerSignOff);
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("Upload your finance pack to run a real deterministic review.");
   const [question, setQuestion] = useState("Why is cash getting tighter?");
@@ -1777,6 +1778,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
   }, [currentCompany.id, findings.length, recommendations.length, uploads.length, validationChecks.length, vatReview]);
 
   useEffect(() => {
+    if (presentationMode) return;
     async function loadWorkspace() {
       try {
         const res = await fetch("/api/workspace");
@@ -1850,9 +1852,10 @@ export function AppShell({ userEmail }: { userEmail: string }) {
       }
     }
     loadWorkspace();
-  }, [userEmail]);
+  }, [presentationMode, userEmail]);
 
   useEffect(() => {
+    if (presentationMode) return;
     // Don't persist default empty state — only save once real data exists
     const hasRealData = tenant.name !== "Your Firm" || uploads.length > 0 || findings.length > 0;
     if (!hasRealData) return;
@@ -1872,7 +1875,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(workspace)
     }).catch(() => {});
-  }, [companies, companySnapshots, currentCompany.id, findingActivities, findingComments, findingEvidence, findings, importProfiles, partnerSignOff, portfolioClients, recommendations, tenant, uploads, validationChecks, vatReview]);
+  }, [companies, companySnapshots, currentCompany.id, findingActivities, findingComments, findingEvidence, findings, importProfiles, partnerSignOff, portfolioClients, presentationMode, recommendations, tenant, uploads, validationChecks, vatReview]);
 
   const completeRecommendation = (recommendation: Recommendation) => {
     if (reviewLocked) return;
@@ -2697,7 +2700,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
           <Pill level={hasUploadedData ? risk : "none"}>{hasUploadedData ? riskCopy(risk) : "Awaiting upload"}</Pill>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-4 pb-4 lg:grid lg:overflow-y-auto lg:overflow-x-hidden lg:px-5 lg:pb-5">
-          {nav.map((item, index) =>
+          {nav.filter((item) => !presentationMode || item !== "Settings").map((item, index) =>
             item === null ? (
               <hr key={index} className="hidden border-white/10 lg:my-2 lg:block" />
             ) : (
@@ -2715,11 +2718,13 @@ export function AppShell({ userEmail }: { userEmail: string }) {
           <div className="mb-4 rounded-lg border border-white/10 bg-white/5 p-3">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Workspace</p>
             <p className="mt-1 truncate text-sm font-bold text-slate-200">{tenant.name}</p>
-            <p className="truncate text-xs text-slate-500">{userEmail || "Local demo mode"}</p>
+            <p className="truncate text-xs text-slate-500">{presentationMode ? "Interactive demo · fictional data" : userEmail || "Local demo mode"}</p>
           </div>
-          <form action="/api/logout" method="POST">
-            <button className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-slate-200 transition-colors">Sign out</button>
-          </form>
+          {!presentationMode && (
+            <form action="/api/logout" method="POST">
+              <button className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-slate-200 transition-colors">Sign out</button>
+            </form>
+          )}
         </div>
       </aside>
       <main className="min-w-0 p-4 lg:p-6">
@@ -2731,16 +2736,20 @@ export function AppShell({ userEmail }: { userEmail: string }) {
               <p className="mt-1 max-w-4xl text-sm font-semibold text-cyan">{tenant.name} · {currentCompany.name} · {uploads.length} finance exports reviewed, {openFindings.length} items to resolve.{timeSavedMins > 0 ? ` · ${timeSavedHours}h manager review time saved.` : ""}</p>
             </div>
             <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
-              <select className="h-10 min-w-0 rounded-lg border border-line bg-white px-3 text-sm font-bold shadow-sm" value={currentCompany.id} onChange={(event) => switchCompany(event.target.value)}>
-                {companies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
-              <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("User Guide")}>Guide</button>
-              {isPilotDemo && (
-                <button className="h-10 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-sm font-bold text-emerald-800 shadow-sm transition-colors hover:bg-emerald-100" onClick={() => {
-                  if (confirm("Reload the original Brightlane demo? This replaces any changes made in the synthetic demo workspace.")) loadPilotDemo();
-                }}>Reload Demo</button>
+              {!presentationMode && (
+                <>
+                  <select className="h-10 min-w-0 rounded-lg border border-line bg-white px-3 text-sm font-bold shadow-sm" value={currentCompany.id} onChange={(event) => switchCompany(event.target.value)}>
+                    {companies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                  <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("User Guide")}>Guide</button>
+                  {isPilotDemo && (
+                    <button className="h-10 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-sm font-bold text-emerald-800 shadow-sm transition-colors hover:bg-emerald-100" onClick={() => {
+                      if (confirm("Reload the original Brightlane demo? This replaces any changes made in the synthetic demo workspace.")) loadPilotDemo();
+                    }}>Reload Demo</button>
+                  )}
+                  <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Onboarding")}>Onboard</button>
+                </>
               )}
-              <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Onboarding")}>Onboard</button>
               <button className="h-10 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700" onClick={() => setShowExport(true)}>Export Review</button>
             </div>
           </div>

@@ -72,3 +72,20 @@ test("pilot demo walkthrough opens the right workflow context", async ({ page })
   expect(consoleErrors).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
+
+test("presentation route opens a clean preloaded demo", async ({ page }) => {
+  await page.goto(`${baseURL}/demo`);
+
+  await expect(page.getByRole("heading", { name: "Overview", exact: true }).first()).toBeVisible();
+  await expect(page.locator("header p").filter({ hasText: "Brightlane Manufacturing Ltd" })).toBeVisible();
+  await expect(page.locator("header").getByText("85%", { exact: true })).toBeVisible();
+  await expect(page.getByText("Interactive demo · fictional data")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Onboard" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Reload Demo" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Guide", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Settings", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sign out" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Review Pack", exact: true }).click();
+  await expect(page.getByRole("button", { name: /5 Export Pack/ })).toHaveAttribute("aria-pressed", "true");
+});
