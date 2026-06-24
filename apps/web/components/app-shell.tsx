@@ -2677,7 +2677,11 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     }} />;
     if (active === "VAT Assurance") return <VatAssuranceModule vatReview={vatReview} findings={findings} updateFindingStatus={updateFindingStatus} setActive={setActive} userName={userName} tenantId={tenant.id} companyId={currentCompany.id} onVatReviewChange={setVatReview} />;
     if (active === "Controls & Fraud") return <RiskModule title="Controls & Fraud" category="controls" findings={findings} updateFindingStatus={updateFindingStatus} />;
-    if (active === "Audit Readiness") return <AuditReadiness findings={findings} validationChecks={validationChecks} uploads={uploads} score={score} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} expectedAuditQueries={expectedAuditQueries} financialExposure={financialExposure} company={currentCompany} tenant={tenant} setActive={setActive} />;
+    if (active === "Audit Readiness") return <AuditReadiness findings={findings} findingEvidence={findingEvidence} partnerSignOff={partnerSignOff} validationChecks={validationChecks} uploads={uploads} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} expectedAuditQueries={expectedAuditQueries} financialExposure={financialExposure} company={currentCompany} tenant={tenant} openFindingEvidence={(findingId) => {
+      if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
+      setFocusedFindingId(findingId);
+      setActive("Findings");
+    }} setActive={setActive} />;
     if (active === "Review Pack") return <ReviewPack company={currentCompany} tenant={tenant} userName={userName} score={score} risk={risk} findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} recommendations={recommendations} validationChecks={validationChecks} uploads={uploads} financialExposure={financialExposure} cashAtRisk={cashAtRisk} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
     if (active === "Change Intelligence") return <ChangeIntelligence findings={findings} uploads={uploads} />;
     if (active === "Ask ClosePilot") return <AICopilot question={question} setQuestion={setQuestion} score={score} findings={findings} findingActivities={findingActivities} validationChecks={validationChecks} uploads={uploads} company={currentCompany} forecast={forecast} assistantResult={assistantResult?.companyId === currentCompany.id ? assistantResult : null} setAssistantResult={setAssistantResult} updateFindingStatus={updateFindingStatus} updateManagerReview={updateManagerReview} openFindingEvidence={(findingId) => {
@@ -4171,149 +4175,175 @@ function RuleCoverageReport({ analytics }: { analytics: RuleAnalyticsReport }) {
   );
 }
 
-function AuditReadiness({ findings, validationChecks, uploads, score, timeSavedHours, timeSavedValue, expectedAuditQueries, financialExposure, company, tenant, setActive }: {
-  findings: Finding[]; validationChecks: ValidationCheck[]; uploads: Upload[]; score: number;
-  timeSavedHours: string; timeSavedValue: number; expectedAuditQueries: number; financialExposure: number;
-  company: Company; tenant: Tenant; setActive: (v: string) => void;
+function AuditReadiness({ findings, findingEvidence, partnerSignOff, validationChecks, uploads, timeSavedHours, timeSavedValue, expectedAuditQueries, financialExposure, company, tenant, openFindingEvidence, setActive }: {
+  findings: Finding[];
+  findingEvidence: Evidence[];
+  partnerSignOff?: PartnerSignOff;
+  validationChecks: ValidationCheck[];
+  uploads: Upload[];
+  timeSavedHours: string;
+  timeSavedValue: number;
+  expectedAuditQueries: number;
+  financialExposure: number;
+  company: Company;
+  tenant: Tenant;
+  openFindingEvidence: (findingId: string) => void;
+  setActive: (value: string) => void;
 }) {
-  const hasTB = uploads.some((u) => u.fileType === "trial_balance");
-  const hasBS = uploads.some((u) => u.fileType === "balance_sheet");
-  const hasAR = uploads.some((u) => u.fileType === "aged_debtors");
-  const criticalFindings = findings.filter((f) => f.severity === "critical").length;
-  const openFindings   = findings.filter((f) => f.status === "open" || f.status === "in_review");
-  const criticalOpen   = openFindings.filter((f) => f.severity === "critical").length;
-  const highOpen       = openFindings.filter((f) => f.severity === "high").length;
-  const failedChecks   = validationChecks.filter((v) => v.status === "failed").length;
-  const warningChecks  = validationChecks.filter((v) => v.status === "warning").length;
-  const requiredFiles  = ["trial_balance","profit_loss","balance_sheet","aged_debtors","aged_creditors","vat_report"];
-  const presentFiles   = new Set(uploads.map((u) => u.fileType));
-  const missingFiles   = requiredFiles.filter((r) => !presentFiles.has(r as Upload["fileType"])).map((r) => r.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
-  const auditScore = Math.max(0, Math.min(100, 100 - criticalOpen * 20 - highOpen * 10 - failedChecks * 12 - warningChecks * 3 + Math.min(uploads.length * 5, 20)));
-  const closeScore = Math.max(0, Math.min(98, 96 - criticalOpen * 18 - highOpen * 9 - failedChecks * 12 - warningChecks * 3));
-  const monthEndFindings = findings.filter((f) => f.category === "month_end");
-  const controlFindings = findings.filter((f) => f.category === "controls");
-  const tbPassed = validationChecks.some((v) => v.name.toLowerCase().includes("trial") && v.status === "passed");
-  const bsPassed = validationChecks.some((v) => v.name.toLowerCase().includes("balance") && v.status === "passed");
+  const readiness = calculateAuditReadinessV2(findings, validationChecks, uploads);
+  const confidence = calculateReviewConfidence(findings, validationChecks, uploads);
+  const drivers = calculateReadinessDrivers(findings, validationChecks, uploads);
+  const openFindings = findings.filter(isOpenFinding);
+  const criticalOpen = openFindings.filter((finding) => finding.severity === "critical").length;
+  const highOpen = openFindings.filter((finding) => finding.severity === "high").length;
+  const acceptedRisks = findings.filter((finding) => finding.status === "accepted_risk");
+  const passedWeight = drivers.filter((driver) => driver.passed).reduce((sum, driver) => sum + driver.weight, 0);
+  const targetReadiness = uploads.length ? 98 : 0;
+  const projectedUplift = Math.max(0, targetReadiness - readiness);
   const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
 
-  const checks = [
-    { name: "Missing Accruals", detail: monthEndFindings.length ? `${monthEndFindings.length} month-end finding(s) require accrual review` : hasTB ? "No accrual gaps detected in uploaded data" : "Trial balance not yet uploaded", status: monthEndFindings.some((f) => f.severity === "high" || f.severity === "critical") ? "failed" : monthEndFindings.length ? "warning" : hasTB ? "passed" : "warning" },
-    { name: "Trial Balance", detail: hasTB ? (tbPassed ? "TB balances to zero — no integrity issues" : "TB uploaded but has reconciliation issues") : "Trial balance not yet uploaded", status: hasTB ? (tbPassed ? "passed" : "warning") : "warning" },
-    { name: "Balance Sheet Equation", detail: hasBS ? (bsPassed ? "Assets equal liabilities + equity" : "Balance sheet equation has exceptions") : "Balance sheet not yet uploaded", status: hasBS ? (bsPassed ? "passed" : "failed") : "warning" },
-    { name: "Lead Schedule Completeness", detail: criticalFindings ? `${criticalFindings} critical finding(s) need schedules before sign-off` : uploads.length >= 3 ? "No critical schedule gaps detected" : "Upload finance pack to check lead schedules", status: criticalFindings ? "failed" : uploads.length >= 3 ? "passed" : "warning" },
-    { name: "Supporting Evidence", detail: uploads.length >= 4 ? `${uploads.length} files uploaded — evidence coverage good` : uploads.length ? `${uploads.length} file(s) uploaded — add more for full coverage` : "Upload your finance pack to provide supporting evidence", status: uploads.length >= 4 ? "passed" : "warning" },
-    { name: "Cut-off Testing", detail: monthEndFindings.some((f) => f.description?.toLowerCase().includes("cut-off") || f.description?.toLowerCase().includes("journal")) ? "Post-period journals detected — review for cut-off accuracy" : hasTB ? "No cut-off exceptions flagged in uploaded data" : "Trial balance not yet uploaded", status: monthEndFindings.some((f) => f.description?.toLowerCase().includes("cut-off") || f.description?.toLowerCase().includes("journal")) ? "warning" : hasTB ? "passed" : "warning" },
-    { name: "AR Ageing & Recoverability", detail: hasAR ? (findings.some((f) => f.category === "ar" && f.severity === "critical") ? "Critical AR exposure — review recoverability provisions" : "AR reviewed — no critical recoverability issues") : "Aged debtors not yet uploaded", status: hasAR ? (findings.some((f) => f.category === "ar" && f.severity === "critical") ? "warning" : "passed") : "warning" },
-    { name: "Controls & Fraud Review", detail: controlFindings.length ? `${controlFindings.length} control exception(s) need sign-off before audit` : uploads.length ? "No control breaches flagged" : "Upload finance pack to check controls", status: controlFindings.some((f) => f.severity === "high" || f.severity === "critical") ? "failed" : controlFindings.length ? "warning" : uploads.length ? "passed" : "warning" },
-  ] as const;
+  const driverConfig: Record<string, { patterns: string[]; categories: Finding["category"][]; owner: string; action: string; page: string }> = {
+    "TB balanced": { patterns: ["trial balance"], categories: ["financial_statements", "data_quality"], owner: "Finance Manager", action: "Upload the final trial balance and clear any debit/credit difference.", page: "Upload Finance Pack" },
+    "VAT reconciled": { patterns: ["vat report", "vat control"], categories: ["vat"], owner: "Tax Manager", action: "Agree the VAT return to the VAT control and retain the reconciliation.", page: "VAT Assurance" },
+    "AR reconciled": { patterns: ["ar ledger", "debtors control"], categories: ["ar"], owner: "Credit Controller", action: "Agree aged debtors to the control account and document recoverability.", page: "Collections Intelligence" },
+    "AP reconciled": { patterns: ["ap ledger", "creditors control"], categories: ["ap"], owner: "AP Manager", action: "Agree aged creditors to the control account and investigate differences.", page: "Finance Review" },
+    "Payroll posted": { patterns: ["payroll", "paye", "nic"], categories: ["month_end"], owner: "Payroll Lead", action: "Provide payroll summary and confirm payroll journals are posted.", page: "Close Review" },
+    "Depreciation posted": { patterns: ["depreciation", "fixed asset"], categories: ["month_end"], owner: "Finance Manager", action: "Provide the fixed-asset roll-forward and post depreciation.", page: "Close Review" },
+    "Bank reconciled": { patterns: ["bank reconciliation", "cash accounts"], categories: ["cashflow", "month_end"], owner: "Finance Manager", action: "Clear the outstanding bank timing item and upload the signed reconciliation.", page: "Upload Finance Pack" },
+  };
 
-  const passed = checks.filter((c) => c.status === "passed").length;
-  const warnings = checks.filter((c) => c.status === "warning").length;
-  const failed = checks.filter((c) => c.status === "failed").length;
-  const readiness = Math.round((passed / checks.length) * 100);
+  let forecastCursor = readiness;
+  const controls = drivers.map((driver) => {
+    const config = driverConfig[driver.label];
+    const validation = validationChecks.find((check) => config.patterns.some((pattern) => `${check.name} ${check.detail}`.toLowerCase().includes(pattern)));
+    const relatedFinding = findings.find((finding) => config.categories.includes(finding.category));
+    const sourceFiles = Array.from(new Set([
+      ...uploads.filter((upload) => {
+        if (driver.label === "VAT reconciled") return upload.fileType === "vat_report";
+        if (driver.label === "AR reconciled") return upload.fileType === "aged_debtors";
+        if (driver.label === "AP reconciled") return upload.fileType === "aged_creditors";
+        if (driver.label === "Payroll posted") return upload.fileType === "profit_loss" || upload.fileType === "trial_balance";
+        return upload.fileType === "trial_balance";
+      }).map((upload) => upload.fileName),
+      ...(relatedFinding?.evidence.sourceFile ? [relatedFinding.evidence.sourceFile] : []),
+    ]));
+    const status: ValidationStatus = driver.passed ? "passed" : validation?.status === "failed" ? "failed" : "warning";
+    const nextForecast = driver.passed ? forecastCursor : Math.min(targetReadiness, forecastCursor + driver.weight);
+    const uplift = Math.max(0, nextForecast - forecastCursor);
+    forecastCursor = nextForecast;
+    return {
+      ...driver,
+      status,
+      validation,
+      relatedFinding,
+      owner: relatedFinding?.assignedTo || config.owner,
+      dueDate: relatedFinding?.dueDate ? new Date(relatedFinding.dueDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "Before fieldwork",
+      action: config.action,
+      page: config.page,
+      sourceFiles,
+      uplift,
+    };
+  });
+  const actionControls = controls.filter((control) => !control.passed);
+  const evidenceReady = controls.filter((control) => control.passed && control.sourceFiles.length > 0).length;
+  const acceptedEvidence = findingEvidence.filter((evidence) => evidence.status === "accepted").length;
+  const pbcCsv = [
+    ["Control", "Weight", "Status", "Owner", "Due", "Evidence", "Required action"],
+    ...controls.map((control) => [control.label, `${control.weight}%`, control.status, control.owner, control.dueDate, control.sourceFiles.join("; "), control.action]),
+  ].map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n");
 
   return (
     <div className="grid gap-4">
-
-      {/* Hero outcome section — this is what firms buy */}
-      <section className="rounded-xl border border-line bg-white p-6 shadow-panel">
-        <div className="mb-5 flex items-start justify-between gap-4">
+      <section className="rounded-lg border border-line bg-white p-6 shadow-panel" aria-label="Audit readiness summary">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-muted">Audit Readiness Report™</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-muted">Audit Readiness Report</p>
             <h2 className="mt-1 text-2xl font-black">{company.name}</h2>
-            <p className="text-sm text-muted">{tenant.name} · Prepared {today} · {uploads.length} file{uploads.length !== 1 ? "s" : ""} reviewed</p>
+            <p className="mt-1 text-sm text-muted">{tenant.name} · Prepared {today} · {uploads.length} files reviewed · one canonical readiness model</p>
           </div>
-          <div className="flex gap-2">
-            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => setActive("Upload Finance Pack")}>Upload More Files</button>
+          <div className="flex flex-wrap gap-2">
+            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => exportFile(`${slug(company.name)}_audit_request_list.csv`, pbcCsv, "text/csv;charset=utf-8")}>Export PBC List</button>
             <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => window.print()}>Export Report</button>
           </div>
         </div>
 
-        {/* 4 outcome metrics — the product promise */}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div className={`rounded-xl p-5 text-center ${auditScore >= 80 ? "bg-emerald-50 border border-emerald-200" : auditScore >= 60 ? "bg-amber-50 border border-amber-200" : "bg-red-50 border border-red-200"}`}>
-            <strong className={`block text-5xl font-black ${auditScore >= 80 ? "text-emerald-700" : auditScore >= 60 ? "text-amber-700" : "text-red-700"}`}>{uploads.length ? `${auditScore}%` : "—"}</strong>
-            <p className="mt-1 font-bold">Audit Readiness</p>
-            <p className="text-xs text-muted">{auditScore >= 80 ? "Ready for partner review" : auditScore >= 60 ? "Needs attention" : "Not ready — critical issues"}</p>
-          </div>
-          <div className="rounded-xl border border-line bg-slate-50 p-5 text-center">
-            <strong className={`block text-5xl font-black ${criticalOpen === 0 ? "text-emerald-700" : "text-red-700"}`}>{criticalOpen}</strong>
-            <p className="mt-1 font-bold">Critical Issues</p>
-            <p className="text-xs text-muted">{highOpen > 0 ? `+${highOpen} high severity` : "No high severity findings"}</p>
-          </div>
-          <div className="rounded-xl border border-line bg-slate-50 p-5 text-center">
-            <strong className={`block text-5xl font-black ${Number(timeSavedHours) >= 2 ? "text-emerald-700" : "text-slate-600"}`}>{uploads.length ? `${timeSavedHours}h` : "—"}</strong>
-            <p className="mt-1 font-bold">Manager Time Saved</p>
-            <p className="text-xs text-muted">{timeSavedValue > 0 ? `≈ £${timeSavedValue.toLocaleString()} at your day rate` : "Upload files to calculate"}</p>
-          </div>
-          <div className="rounded-xl border border-line bg-slate-50 p-5 text-center">
-            <strong className={`block text-5xl font-black ${expectedAuditQueries === 0 ? "text-emerald-700" : "text-amber-700"}`}>{uploads.length ? expectedAuditQueries : "—"}</strong>
-            <p className="mt-1 font-bold">Expected Audit Queries</p>
-            <p className="text-xs text-muted">{expectedAuditQueries === 0 ? "Clean — low audit risk" : "Address before partner sign-off"}</p>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <Metric title="Readiness" value={uploads.length ? `${readiness}%` : "—"} detail={`${passedWeight}/100 weighted controls`} tone={readiness >= 85 ? "low" : readiness >= 65 ? "medium" : "high"} />
+          <Metric title="Target" value={uploads.length ? `${targetReadiness}%` : "—"} detail={`+${projectedUplift} available uplift`} tone={projectedUplift ? "medium" : "low"} />
+          <Metric title="Confidence" value={uploads.length ? `${confidence}%` : "—"} detail="Coverage, validation and evidence" tone={confidence >= 85 ? "low" : "medium"} />
+          <Metric title="Open Blockers" value={String(criticalOpen + highOpen)} detail={`${criticalOpen} critical · ${highOpen} high`} tone={criticalOpen ? "critical" : highOpen ? "high" : "low"} />
+          <Metric title="Evidence Ready" value={`${evidenceReady}/${controls.length}`} detail={`${acceptedEvidence} accepted attachments`} tone={evidenceReady === controls.length ? "low" : "medium"} />
+        </div>
+
+        <div className="mt-5 rounded-lg border border-line bg-slate-50 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase text-muted">Readiness Forecast</p>
+              <p className="mt-1 text-xl font-black">Current {readiness}% → {targetReadiness}% audit-ready</p>
+              <p className="mt-1 text-sm text-muted">Complete {actionControls.length} remaining control action{actionControls.length === 1 ? "" : "s"} to unlock +{projectedUplift} points.</p>
+            </div>
+            <div className="min-w-56">
+              <div className="h-3 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${readiness}%` }} /></div>
+              <div className="mt-1 flex justify-between text-xs font-bold text-muted"><span>{readiness}% current</span><span>{targetReadiness}% target</span></div>
+            </div>
           </div>
         </div>
 
-        {/* Financial exposure */}
-        {financialExposure > 0 && (
-          <div className="mt-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-4">
-            <div>
-              <p className="text-xs font-bold uppercase text-amber-800">Financial Exposure Identified</p>
-              <p className="mt-0.5 text-sm text-amber-900">ClosePilot identified <strong>£{Math.round(financialExposure / 1000)}k</strong> in potential financial exposure across VAT, AR, AP and close findings.</p>
-            </div>
-            <strong className="text-2xl font-black text-amber-800 shrink-0">£{Math.round(financialExposure / 1000)}k</strong>
-          </div>
-        )}
-
-        {/* Missing evidence warning */}
-        {missingFiles.length > 0 && uploads.length > 0 && (
-          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <p className="text-xs font-semibold text-slate-600">Upload additional files to improve readiness score: <span className="font-bold">{missingFiles.join(", ")}</span></p>
+        {partnerSignOff && (
+          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
+            <strong>Partner sign-off locked:</strong> {partnerSignOff.signedBy} approved the pack at {partnerSignOff.approval?.readinessScore ?? partnerSignOff.gateSnapshot.readiness}% readiness. {acceptedRisks.length} accepted risk{acceptedRisks.length === 1 ? " remains" : "s remain"} visible to audit.
           </div>
         )}
       </section>
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <Metric title="Audit Readiness" value={uploads.length ? `${readiness}%` : "—"} detail="Based on checklist checks" tone={readiness >= 80 ? "low" : readiness >= 60 ? "medium" : "high"} />
-        <Metric title="Checks Passed" value={passed} detail={`of ${checks.length} total`} tone="low" />
-        <Metric title="Warnings" value={warnings} detail="Need attention before audit" tone="medium" />
-        <Metric title="Blockers" value={failed} detail="Must resolve before year-end" tone={failed ? "critical" : "low"} />
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div><p className="text-xs font-bold uppercase text-muted">Weighted Control Plan</p><h2 className="mt-1 text-xl font-black">Evidence, ownership and score uplift</h2></div>
+          <span className="text-sm font-semibold text-muted">Weights total 100%</span>
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
+            <thead className="text-xs uppercase text-muted"><tr><th className="border-b border-line p-3">Control / Weight</th><th className="border-b border-line p-3">Status</th><th className="border-b border-line p-3">Evidence</th><th className="border-b border-line p-3">Owner / Due</th><th className="border-b border-line p-3">Required Action</th><th className="border-b border-line p-3">Uplift</th><th className="border-b border-line p-3">Open</th></tr></thead>
+            <tbody>
+              {controls.map((control) => (
+                <tr key={control.label} className={!control.passed ? "bg-amber-50/50" : ""}>
+                  <td className="border-b border-line p-3"><strong className="block">{control.label}</strong><span className="text-xs text-muted">{control.weight}% weight</span></td>
+                  <td className="border-b border-line p-3"><ValidationPill status={control.status} /><p className="mt-2 max-w-56 text-xs text-muted">{control.detail}</p></td>
+                  <td className="border-b border-line p-3"><strong className="block">{control.sourceFiles.length ? `${control.sourceFiles.length} source${control.sourceFiles.length === 1 ? "" : "s"}` : "Evidence required"}</strong><span className="mt-1 block max-w-56 text-xs text-muted">{control.sourceFiles.join(" · ") || "No supporting file linked"}</span></td>
+                  <td className="border-b border-line p-3"><strong className="block">{control.owner}</strong><span className="text-xs text-muted">{control.dueDate}</span></td>
+                  <td className="border-b border-line p-3">{control.passed ? "Control complete; retain evidence for fieldwork." : control.action}</td>
+                  <td className="border-b border-line p-3"><span className={`rounded-full px-3 py-1 text-xs font-black ${control.uplift ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"}`}>{control.uplift ? `+${control.uplift}` : "Complete"}</span></td>
+                  <td className="border-b border-line p-3"><button className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold" onClick={() => control.relatedFinding ? openFindingEvidence(control.relatedFinding.id) : setActive(control.page)}>{control.relatedFinding ? "View Evidence" : "Open Area"}</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
-        <Panel title="Audit Readiness Checklist">
+      <section className="grid gap-4 xl:grid-cols-[1fr_0.8fr]">
+        <Panel title="Priority Readiness Actions">
           <div className="grid gap-3">
-            {checks.map((check) => (
-              <div key={check.name} className="flex items-start justify-between gap-4 rounded-lg border border-line p-4">
-                <div>
-                  <strong>{check.name}</strong>
-                  <p className="mt-1 text-sm text-muted">{check.detail}</p>
-                </div>
-                <ValidationPill status={check.status} />
+            {actionControls.length ? actionControls.map((control, index) => (
+              <div key={control.label} className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-start justify-between gap-3"><div><span className="text-xs font-black uppercase text-amber-800">Action {index + 1}</span><strong className="mt-1 block">{control.label}</strong><p className="mt-1 text-sm text-amber-950">{control.action}</p></div><span className="shrink-0 rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-800">+{control.uplift} points</span></div>
+                <p className="mt-3 text-xs text-amber-900">Owner {control.owner} · Due {control.dueDate}</p>
               </div>
-            ))}
+            )) : <EmptyState title="No readiness actions" detail="All weighted controls are complete." />}
           </div>
         </Panel>
-
-        <div className="grid gap-4 content-start">
-          <Panel title="Audit Readiness Score">
-            <div className="rounded-lg border border-line bg-slate-50 p-5 text-center">
-              <strong className="block text-5xl font-black">{readiness}%</strong>
-              <p className="mt-2 text-muted">Ready for year-end audit</p>
-              <Pill level={readiness >= 80 ? "low" : readiness >= 60 ? "medium" : "high"} >{readiness >= 80 ? "Audit Ready" : readiness >= 60 ? "Needs Attention" : "Not Ready"}</Pill>
+        <div className="grid content-start gap-4">
+          <Panel title="Audit Outcome">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <SummaryItem label="Manager Time Saved" value={`${timeSavedHours}h`} detail={`≈ £${timeSavedValue.toLocaleString("en-GB")}`} level="low" />
+              <SummaryItem label="Expected Audit Queries" value={String(expectedAuditQueries)} detail="from open blockers" level={expectedAuditQueries ? "medium" : "low"} />
+              <SummaryItem label="Financial Exposure" value={`£${Math.round(financialExposure).toLocaleString("en-GB")}`} detail="including accepted risks" level={financialExposure ? "high" : "low"} />
+              <SummaryItem label="Review Pack" value={partnerSignOff ? "Locked" : "Draft"} detail={partnerSignOff ? `Signed by ${partnerSignOff.signedBy}` : "Partner approval pending"} level={partnerSignOff ? "low" : "medium"} />
             </div>
           </Panel>
-          <Panel title="Priority Items">
-            <div className="grid gap-3">
-              {checks.filter((c) => c.status !== "passed").map((check) => (
-                <div key={check.name} className="rounded-lg border border-line bg-slate-50 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <strong className="text-sm">{check.name}</strong>
-                    <ValidationPill status={check.status} />
-                  </div>
-                  <p className="mt-1 text-xs text-muted">{check.detail}</p>
-                </div>
-              ))}
-            </div>
+          <Panel title="Prepared-By-Client List">
+            <p className="text-sm text-muted">Export the control plan with evidence references, owners, due dates and outstanding requests for the audit team.</p>
+            <button className="mt-3 w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white" onClick={() => exportFile(`${slug(company.name)}_audit_request_list.csv`, pbcCsv, "text/csv;charset=utf-8")}>Download PBC CSV</button>
           </Panel>
         </div>
       </section>

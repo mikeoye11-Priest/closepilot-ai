@@ -123,3 +123,22 @@ test("presentation route opens a clean preloaded demo", async ({ page }) => {
   await page.getByRole("button", { name: "View evidence for Harbour Components" }).click();
   await expect(page.getByRole("region", { name: "Evidence-to-decision trace" })).toBeVisible();
 });
+
+test("audit readiness uses one evidence-backed control plan", async ({ page }) => {
+  await page.goto(`${baseURL}/demo`);
+  await page.getByRole("button", { name: "Audit Readiness", exact: true }).click();
+
+  const summary = page.getByRole("region", { name: "Audit readiness summary" });
+  await expect(summary.getByText("85%", { exact: true }).first()).toBeVisible();
+  await expect(summary.getByText("6/7", { exact: true })).toBeVisible();
+  await expect(summary.getByText("Current 85% → 98% audit-ready")).toBeVisible();
+  await expect(summary.getByText(/Partner sign-off locked:/)).toBeVisible();
+
+  const bankControl = page.locator("tr", { hasText: "Bank reconciled" });
+  await expect(bankControl.getByText("+13")).toBeVisible();
+  await expect(bankControl).toContainText("Clear the outstanding bank timing item");
+
+  const arControl = page.locator("tr", { hasText: "AR reconciled" });
+  await arControl.getByRole("button", { name: "View Evidence" }).click();
+  await expect(page.getByRole("region", { name: "Evidence-to-decision trace" })).toBeVisible();
+});
