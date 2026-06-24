@@ -118,6 +118,11 @@ create table uploads (
   file_type text not null,
   file_url text not null,
   storage_key text,
+  size_bytes bigint,
+  content_hash text,
+  ingestion_status text not null default 'stored',
+  retention_until timestamptz,
+  deleted_at timestamptz,
   uploaded_at timestamptz not null default now()
 );
 
@@ -127,9 +132,18 @@ create table analysis_jobs (
   company_id uuid not null references companies(id),
   job_type text not null,
   status text not null,
+  source_type text not null default 'upload',
   input_upload_ids uuid[] not null default '{}',
   result_summary jsonb not null default '{}',
   error_message text,
+  progress_percent integer not null default 0,
+  current_stage text,
+  checkpoint jsonb not null default '{}',
+  bytes_processed bigint not null default 0,
+  rows_processed bigint not null default 0,
+  attempt_count integer not null default 0,
+  heartbeat_at timestamptz,
+  retention_until timestamptz,
   started_at timestamptz,
   completed_at timestamptz,
   created_at timestamptz not null default now()
@@ -432,6 +446,15 @@ create policy "Users can read scoped uploads"
 create policy "Users can add scoped uploads"
   on uploads for insert
   with check (has_company_access(tenant_id, company_id));
+
+create policy "Users can update scoped uploads"
+  on uploads for update
+  using (has_company_access(tenant_id, company_id))
+  with check (has_company_access(tenant_id, company_id));
+
+create policy "Users can delete scoped uploads"
+  on uploads for delete
+  using (has_company_access(tenant_id, company_id));
 
 create policy "Users can read scoped analysis jobs"
   on analysis_jobs for select

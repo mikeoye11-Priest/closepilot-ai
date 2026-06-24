@@ -40,6 +40,17 @@ create index if not exists accounting_sync_runs_queue_idx
   on public.accounting_sync_runs(status, started_at)
   where status in ('queued', 'running');
 
+drop policy if exists "Users can update scoped uploads" on public.uploads;
+create policy "Users can update scoped uploads"
+  on public.uploads for update
+  using (public.has_company_access(tenant_id, company_id))
+  with check (public.has_company_access(tenant_id, company_id));
+
+drop policy if exists "Users can delete scoped uploads" on public.uploads;
+create policy "Users can delete scoped uploads"
+  on public.uploads for delete
+  using (public.has_company_access(tenant_id, company_id));
+
 comment on column public.uploads.retention_until is
   'Raw source-file deletion date. ClosePilot defaults to 90 days; findings and audit evidence may be retained longer.';
 comment on column public.analysis_jobs.checkpoint is
@@ -48,4 +59,3 @@ comment on column public.accounting_sync_runs.checkpoint is
   'Provider-specific cursor/page checkpoints used to resume an interrupted sync.';
 
 commit;
-

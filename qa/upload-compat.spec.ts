@@ -607,5 +607,33 @@ test("pilot upload guard rejects packs above four megabytes", async () => {
 
   const response = await fetch(`${baseURL}/api/analyse-upload`, { method: "POST", body: formData });
   expect(response.status).toBe(413);
-  await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.stringContaining("4 MB or smaller") }));
+  await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.stringContaining("background processing") }));
+});
+
+test("background upload manifest enforces the 250 MB capacity boundary", async () => {
+  const response = await fetch(`${baseURL}/api/upload-jobs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tenantId: "11111111-1111-4111-8111-111111111111",
+      companyId: "22222222-2222-4222-8222-222222222222",
+      files: ["ledger-a.csv", "ledger-b.csv", "ledger-c.csv"].map((name) => ({ name, size: 90 * 1024 * 1024, contentType: "text/csv" })),
+    }),
+  });
+  expect(response.status).toBe(413);
+  await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.stringContaining("250 MB") }));
+});
+
+test("valid background manifests require authenticated private storage", async () => {
+  const response = await fetch(`${baseURL}/api/upload-jobs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tenantId: "11111111-1111-4111-8111-111111111111",
+      companyId: "22222222-2222-4222-8222-222222222222",
+      files: [{ name: "large-ledger.csv", size: 5 * 1024 * 1024, contentType: "text/csv" }],
+    }),
+  });
+  expect(response.status).toBe(503);
+  await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.stringContaining("authenticated storage") }));
 });

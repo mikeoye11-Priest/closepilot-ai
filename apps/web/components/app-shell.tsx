@@ -11,6 +11,7 @@ import type { AnalysisResult, CashForecastPoint, ClientCompany, CollectionCase, 
 import type { VatReviewResult } from "@/lib/vat-engine/types";
 import { approveVatFiling, reopenVatFiling } from "@/lib/vat-engine/sign-off";
 import type { AccountingIntegrationState } from "@/lib/integrations/types";
+import { decideUploadMode, formatUploadBytes } from "@/lib/upload-capacity";
 
 const navGroups = [
   { label: "", items: ["Partner Summary"] },
@@ -85,6 +86,16 @@ type WorkspaceState = {
   currentCompanyId: string;
   portfolioClients: ClientCompany[];
   companySnapshots: Record<string, AnalysisResult>;
+};
+
+type UploadJobState = {
+  id: string;
+  status: string;
+  progressPercent: number;
+  currentStage: string;
+  bytesProcessed?: number;
+  rowsProcessed?: number;
+  error?: string | null;
 };
 
 type AssuranceMetrics = {
@@ -1686,6 +1697,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const [pilotWalkthroughStep, setPilotWalkthroughStep] = useState(0);
   const [assistantResult, setAssistantResult] = useState<AssistantResult | null>(null);
   const [focusedFindingId, setFocusedFindingId] = useState<string | null>(null);
+  const [uploadJob, setUploadJob] = useState<UploadJobState | null>(null);
 
   const userName = useMemo(() => {
     const local = userEmail.split("@")[0] ?? "";
@@ -2369,9 +2381,67 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const analyseUploads = async (files: FileList | null) => {
     const selected = Array.from(files ?? []);
     if (!selected.length) return;
+    const capacity = decideUploadMode(selected);
+    if (capacity.mode === "rejected") {
+      setUploadMessage(capacity.message);
+      return;
+    }
     setIsAnalysing(true);
     setAssistantResult(null);
     try {
+      if (capacity.mode === "background") {
+        setActive("Upload Finance Pack");
+        setUploadMessage(`Preparing ${selected.length} files (${formatUploadBytes(capacity.totalBytes)}) for secure background processing.`);
+        const prepareResponse = await fetch("/api/upload-jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tenantId: tenant.id,
+            companyId: currentCompany.id,
+            files: selected.map((file) => ({ name: file.name, size: file.size, contentType: file.type })),
+          }),
+        });
+        const prepared = await prepareResponse.json().catch(() => ({})) as { error?: string; bucket?: string; files?: Array<{ name: string; size: number; storageKey: string }>; job?: UploadJobState };
+        if (!prepareResponse.ok || !prepared.job || !prepared.bucket || !prepared.files) throw new Error(prepared.error || "Could not prepare background upload.");
+
+        setUploadJob(prepared.job);
+        const { createClient: createBrowserSupabaseClient } = await import("@/lib/supabase-browser");
+        const supabase = createBrowserSupabaseClient();
+        const uploadedKeys: string[] = [];
+        let completedBytes = 0;
+        try {
+          const { uploadFinanceFileResumably } = await import("@/lib/resumable-storage-upload");
+          for (let index = 0; index < selected.length; index += 1) {
+            const file = selected[index];
+            const target = prepared.files[index];
+            if (!target || target.name !== file.name) throw new Error("Background upload manifest changed before transfer.");
+            setUploadJob((job) => job ? { ...job, progressPercent: Math.max(1, Math.round(completedBytes / capacity.totalBytes * 80)), currentStage: `Uploading ${file.name}`, bytesProcessed: completedBytes } : job);
+            await uploadFinanceFileResumably({
+              supabase,
+              bucket: prepared.bucket,
+              storageKey: target.storageKey,
+              file,
+              onProgress: (fileBytes) => setUploadJob((job) => job ? { ...job, progressPercent: Math.max(1, Math.round((completedBytes + fileBytes) / capacity.totalBytes * 80)), currentStage: `Uploading ${file.name}`, bytesProcessed: completedBytes + fileBytes } : job),
+            });
+            completedBytes += file.size;
+            uploadedKeys.push(target.storageKey);
+          }
+          const queueResponse = await fetch("/api/upload-jobs", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jobId: prepared.job.id, action: "start", uploadedKeys }),
+          });
+          const queued = await queueResponse.json().catch(() => ({})) as { error?: string; job?: UploadJobState };
+          if (!queueResponse.ok || !queued.job) throw new Error(queued.error || "Could not queue background review.");
+          setUploadJob(queued.job);
+          setUploadMessage(`${selected.length} files uploaded securely. The review is queued and can continue without keeping this tab open.`);
+        } catch (error) {
+          await fetch("/api/upload-jobs", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId: prepared.job.id, action: "fail", uploadedKeys, error: error instanceof Error ? error.message : "Upload failed" }) }).catch(() => {});
+          throw error;
+        }
+        return;
+      }
+
       let result: AnalysisResult;
       try {
         const form = new FormData();
@@ -2391,7 +2461,10 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           method: "POST",
           body: form
         });
-        if (!response.ok) throw new Error("Server parser failed");
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({})) as { error?: string };
+          throw new Error(payload.error || "Server parser failed");
+        }
         result = await response.json();
       } catch {
         result = await analyseFinanceFiles(selected, { savedProfiles: importProfiles.filter((profile) => profile.status === "confirmed") });
@@ -2457,10 +2530,45 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       }).catch(() => {});
       setUploadMessage(scoped.findings.length ? `Analysed ${selected.length} file(s) for ${currentCompany.name} and generated ${scoped.findings.length} evidence-linked finding(s).` : `Analysed ${selected.length} file(s) for ${currentCompany.name}. No material findings were generated from parsed rows.`);
       setActive("Finance Review");
+    } catch (error) {
+      setUploadMessage(error instanceof Error ? error.message : "The finance pack could not be processed.");
     } finally {
       setIsAnalysing(false);
     }
   };
+
+  useEffect(() => {
+    if (!uploadJob || ["completed", "failed", "cancelled"].includes(uploadJob.status)) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const response = await fetch(`/api/upload-jobs?jobId=${encodeURIComponent(uploadJob.id)}`);
+        if (!response.ok) return;
+        const payload = await response.json() as { job?: UploadJobState };
+        if (!payload.job) return;
+        setUploadJob(payload.job);
+        if (payload.job.status === "completed") setUploadMessage("Background review complete. Refresh the workspace results to continue with findings.");
+        if (payload.job.status === "failed") setUploadMessage(payload.job.error || "Background review failed.");
+      } catch { /* keep the last known job state and retry */ }
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [uploadJob]);
+
+  useEffect(() => {
+    if (presentationMode) return;
+    const saved = window.localStorage.getItem(`${storageKey}.upload-job.${currentCompany.id}`);
+    if (!saved) {
+      setUploadJob(null);
+      return;
+    }
+    try { setUploadJob(JSON.parse(saved) as UploadJobState); } catch { window.localStorage.removeItem(`${storageKey}.upload-job.${currentCompany.id}`); }
+  }, [currentCompany.id, presentationMode]);
+
+  useEffect(() => {
+    if (presentationMode || !uploadJob) return;
+    const key = `${storageKey}.upload-job.${currentCompany.id}`;
+    if (["completed", "failed", "cancelled"].includes(uploadJob.status)) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, JSON.stringify(uploadJob));
+  }, [currentCompany.id, presentationMode, uploadJob]);
 
   const applyIntegrationAnalysis = (result: AnalysisResult) => {
     const scoped = scopeAnalysisResult(result, tenant, currentCompany);
@@ -2666,7 +2774,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
 
     if (active === "Findings") return <FindingsHub findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} pilotWalkthroughStep={isPilotDemo ? pilotWalkthroughStep : undefined} focusedFindingId={focusedFindingId} clearFocusedFinding={() => setFocusedFindingId(null)} validationChecks={validationChecks} uploads={uploads} updateFindingStatus={updateFindingStatus} updateFindingAssignment={updateFindingAssignment} updateManagerReview={updateManagerReview} recordPartnerSignOff={recordPartnerSignOff} addFindingComment={addFindingComment} addFindingEvidence={addFindingEvidence} updateEvidenceStatus={updateEvidenceStatus} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
     if (active === "Assurance Engine") return <AssuranceEngine assurance={assurance} coreQuality={coreQuality} findings={findings} validationChecks={validationChecks} uploads={uploads} ruleAnalytics={ruleAnalytics} setActive={setActive} />;
-    if (active === "Upload Finance Pack") return <UploadAnalyse analyseUploads={analyseUploads} isAnalysing={isAnalysing} uploadMessage={uploadMessage} validationChecks={validationChecks} uploads={uploads} importProfiles={importProfiles} confirmImportProfile={confirmImportProfile} findings={findings} recommendations={recommendations} onDelete={deleteUpload} onClear={clearCurrentReview} setActive={setActive} />;
+    if (active === "Upload Finance Pack") return <UploadAnalyse analyseUploads={analyseUploads} isAnalysing={isAnalysing} uploadMessage={uploadMessage} uploadJob={uploadJob} validationChecks={validationChecks} uploads={uploads} importProfiles={importProfiles} confirmImportProfile={confirmImportProfile} findings={findings} recommendations={recommendations} onDelete={deleteUpload} onClear={clearCurrentReview} setActive={setActive} />;
     if (active === "Close Review") return <MonthEndClose findings={findings} recommendations={recommendations} completeRecommendation={completeRecommendation} updateFindingStatus={updateFindingStatus} />;
     if (active === "Cash Intelligence") return <CashflowPanel findings={findings} uploads={uploads} collectionCases={collectionCases} openCollections={() => setActive("Collections Intelligence")} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : 1);
@@ -2703,7 +2811,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     if (active === "User Guide") return <UserGuide isPilotDemo={isPilotDemo} hasData={hasUploadedData} loadPilotDemo={loadPilotDemo} setActive={setActive} setPilotWalkthroughStep={setPilotWalkthroughStep} />;
     if (active === "Settings") return <SettingsPanel tenant={tenant} company={currentCompany} userEmail={userEmail} userName={userName} onIntegrationAnalysis={applyIntegrationAnalysis} />;
     return <PracticePortal tenant={tenant} clients={portfolioClients} currentCompanyId={currentCompany.id} switchCompany={switchCompany} companySnapshots={companySnapshots} />;
-  }, [active, assurance, assistantResult, cashAtRisk, collectionCases, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, isAnalysing, isPilotDemo, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, risk, score, tenant, timeSaved, uploadMessage, uploads, userName, validationBlockers, validationChecks, validationWarnings, vatReview]);
+  }, [active, assurance, assistantResult, cashAtRisk, collectionCases, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, isAnalysing, isPilotDemo, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, risk, score, tenant, timeSaved, uploadJob, uploadMessage, uploads, userName, validationBlockers, validationChecks, validationWarnings, vatReview]);
 
   return (
     <div className="min-h-screen bg-page text-ink lg:grid lg:grid-cols-[280px_1fr]">
@@ -7241,7 +7349,7 @@ function ImportMappingProfilesPanel({ profiles, confirmImportProfile }: { profil
   );
 }
 
-function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, validationChecks, uploads, importProfiles, confirmImportProfile, findings, recommendations, onDelete, onClear, setActive }: { analyseUploads: (files: FileList | null) => void; isAnalysing: boolean; uploadMessage: string; validationChecks: ValidationCheck[]; uploads: Upload[]; importProfiles: ImportMappingProfile[]; confirmImportProfile: (profileId: string) => void; findings: Finding[]; recommendations: Recommendation[]; onDelete: (id: string) => void; onClear: () => void; setActive: (value: string) => void }) {
+function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uploadJob, validationChecks, uploads, importProfiles, confirmImportProfile, findings, recommendations, onDelete, onClear, setActive }: { analyseUploads: (files: FileList | null) => void; isAnalysing: boolean; uploadMessage: string; uploadJob: UploadJobState | null; validationChecks: ValidationCheck[]; uploads: Upload[]; importProfiles: ImportMappingProfile[]; confirmImportProfile: (profileId: string) => void; findings: Finding[]; recommendations: Recommendation[]; onDelete: (id: string) => void; onClear: () => void; setActive: (value: string) => void }) {
   const expectedFiles: Array<{ type: Upload["fileType"]; label: string; required: boolean }> = [
     { type: "trial_balance", label: "Trial Balance", required: true },
     { type: "profit_loss", label: "Profit & Loss", required: true },
@@ -7276,6 +7384,14 @@ function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, validationC
           <Metric title="Validation" value={failedChecks ? `${failedChecks} blocked` : "Ready"} detail={`${warningChecks} warning${warningChecks === 1 ? "" : "s"}`} tone={failedChecks ? "critical" : warningChecks ? "medium" : "low"} />
           <Metric title="Review Output" value={String(findings.length)} detail={`${recommendations.length} recommended actions`} tone={findings.length ? "medium" : "low"} />
         </div>
+        {uploadJob && (
+          <div className={`mt-4 rounded-lg border p-4 ${uploadJob.status === "failed" ? "border-red-200 bg-red-50" : uploadJob.status === "completed" ? "border-emerald-200 bg-emerald-50" : "border-blue-200 bg-blue-50"}`} aria-label="Background upload progress">
+            <div className="flex items-center justify-between gap-3"><span><strong className="block">Background review</strong><span className="mt-1 block text-sm text-muted">{uploadJob.currentStage}</span></span><Pill level={uploadJob.status === "failed" ? "high" : uploadJob.status === "completed" ? "low" : "medium"}>{uploadJob.status.replaceAll("_", " ")}</Pill></div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-brand transition-all" style={{ width: `${Math.max(2, Math.min(100, uploadJob.progressPercent))}%` }} /></div>
+            <div className="mt-2 flex justify-between text-xs font-bold text-muted"><span>{uploadJob.status === "uploading" ? `${formatUploadBytes(uploadJob.bytesProcessed ?? 0)} transferred` : `${uploadJob.rowsProcessed?.toLocaleString("en-GB") ?? 0} rows processed`}</span><span>{uploadJob.progressPercent}%</span></div>
+            {uploadJob.error ? <p className="mt-2 text-sm font-semibold text-red-800">{uploadJob.error}</p> : null}
+          </div>
+        )}
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
