@@ -166,3 +166,17 @@ test("change and cash intelligence disclose evidence and assumptions", async ({ 
   await page.getByRole("button", { name: "Conservative" }).click();
   await expect(page.locator("article", { hasText: "30-Day Recovery" }).getByText("£18,800")).toBeVisible();
 });
+
+test("controls and fraud presents reviewable exceptions with evidence", async ({ page }) => {
+  await page.goto(`${baseURL}/demo`);
+  await page.getByRole("button", { name: "Controls & Fraud", exact: true }).click();
+
+  const summary = page.getByRole("region", { name: "Controls and fraud summary" });
+  await expect(summary.getByText("Control exceptions requiring professional judgement")).toBeVisible();
+  await expect(summary.getByText("£23,220")).toBeVisible();
+  await expect(summary.getByText("No open control blocker")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Control Exception Register" })).toBeVisible();
+  await expect(page.getByText("Potential duplicate supplier invoice closed")).toBeVisible();
+  await expect(page.getByText("Suspense balance cleared before close")).toBeVisible();
+  await expect(page.getByText(/not allegations or proof of fraud/i)).toBeVisible();
+});

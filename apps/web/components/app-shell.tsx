@@ -2679,7 +2679,11 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setActive("Findings");
     }} />;
     if (active === "VAT Assurance") return <VatAssuranceModule vatReview={vatReview} findings={findings} updateFindingStatus={updateFindingStatus} setActive={setActive} userName={userName} tenantId={tenant.id} companyId={currentCompany.id} onVatReviewChange={setVatReview} />;
-    if (active === "Controls & Fraud") return <RiskModule title="Controls & Fraud" category="controls" findings={findings} updateFindingStatus={updateFindingStatus} />;
+    if (active === "Controls & Fraud") return <ControlsFraudPanel findings={findings} validationChecks={validationChecks} uploads={uploads} partnerSignOff={partnerSignOff} openFindingEvidence={(findingId) => {
+      if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_close_001" ? 3 : 1);
+      setFocusedFindingId(findingId);
+      setActive("Findings");
+    }} setActive={setActive} />;
     if (active === "Audit Readiness") return <AuditReadiness findings={findings} findingEvidence={findingEvidence} partnerSignOff={partnerSignOff} validationChecks={validationChecks} uploads={uploads} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} expectedAuditQueries={expectedAuditQueries} financialExposure={financialExposure} company={currentCompany} tenant={tenant} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
       setFocusedFindingId(findingId);
@@ -8702,6 +8706,102 @@ function RiskModule({ title, category, findings, updateFindingStatus }: { title:
     <Panel title={title}>
       <FindingList findings={findings.filter((item) => item.category === category)} setActive={() => undefined} updateFindingStatus={updateFindingStatus} />
     </Panel>
+  );
+}
+
+function ControlsFraudPanel({ findings, validationChecks, uploads, partnerSignOff, openFindingEvidence, setActive }: { findings: Finding[]; validationChecks: ValidationCheck[]; uploads: Upload[]; partnerSignOff?: PartnerSignOff; openFindingEvidence: (findingId: string) => void; setActive: (value: string) => void }) {
+  const controlPattern = /control|fraud|journal|suspense|duplicate|override|authori[sz]|weekend|round number|unusual transaction|supplier payment/i;
+  const relevantFindings = findings.filter((finding) => finding.category === "controls" || finding.category === "data_quality" || (["ap", "month_end"] as Finding["category"][]).includes(finding.category) && controlPattern.test(`${finding.title} ${finding.description} ${finding.recommendation ?? ""}`));
+  const openExceptions = relevantFindings.filter(isOpenFinding);
+  const reviewedExceptions = relevantFindings.filter((finding) => !isOpenFinding(finding));
+  const exposure = relevantFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
+  const evidenceCount = relevantFindings.filter((finding) => finding.evidence?.sourceFile).length;
+  const evidenceCoverage = relevantFindings.length ? Math.round(evidenceCount / relevantFindings.length * 100) : uploads.length ? 100 : 0;
+  const escalated = relevantFindings.filter((finding) => finding.managerReviewStatus === "escalated" || finding.status === "accepted_risk").length;
+  const controlChecks = validationChecks.filter((check) => /journal|suspense|duplicate|approval|control|fraud|unusual|payment/i.test(`${check.name} ${check.detail}`));
+  const failedChecks = controlChecks.filter((check) => check.status === "failed").length;
+  const topAction = openExceptions[0];
+  const scopeAreas = [
+    { label: "Journals & suspense", pattern: /journal|suspense|late posting|round number/i },
+    { label: "Supplier payments", pattern: /duplicate|supplier|payment|creditor/i },
+    { label: "Approvals & overrides", pattern: /approval|override|authori[sz]|access/i },
+    { label: "Unusual transactions", pattern: /weekend|unusual|statistical|fraud|round number/i },
+  ].map((area) => {
+    const linked = relevantFindings.filter((finding) => area.pattern.test(`${finding.title} ${finding.description} ${finding.recommendation ?? ""}`));
+    const open = linked.filter(isOpenFinding).length;
+    return { ...area, linked: linked.length, open, status: !uploads.length ? "Awaiting data" : open ? `${open} action${open === 1 ? "" : "s"} open` : linked.length ? "Reviewed" : "No related finding" };
+  });
+
+  const signalLabel = (finding: Finding) => {
+    const text = `${finding.title} ${finding.description}`;
+    if (/duplicate/i.test(text)) return "Possible duplicate payment";
+    if (/suspense|journal/i.test(text)) return "Journal or suspense review";
+    if (/override|approval|authori[sz]/i.test(text)) return "Approval exception";
+    if (/weekend|round number|unusual/i.test(text)) return "Unusual transaction";
+    return "Control exception";
+  };
+
+  return (
+    <div className="grid gap-4">
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Controls and fraud summary">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase text-muted">Controls & Fraud</p>
+            <h2 className="mt-1 text-2xl font-black">Control exceptions requiring professional judgement</h2>
+            <p className="mt-2 max-w-3xl text-sm text-muted">Review unusual postings, payment risks and approval exceptions. Each signal remains linked to its source and reviewer decision.</p>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-black ${openExceptions.length || failedChecks ? "bg-red-100 text-red-800" : "bg-emerald-100 text-emerald-800"}`}>{openExceptions.length || failedChecks ? "Action required" : "No open control blocker"}</span>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Metric title="Exceptions Reviewed" value={String(relevantFindings.length)} detail={`${reviewedExceptions.length} decisions recorded`} tone={relevantFindings.length ? "medium" : "low"} />
+          <Metric title="Open Actions" value={String(openExceptions.length + failedChecks)} detail={`${failedChecks} failed control checks`} tone={openExceptions.length + failedChecks ? "critical" : "low"} />
+          <Metric title="Exposure Reviewed" value={`£${Math.round(exposure).toLocaleString("en-GB")}`} detail="Linked to control-related items" tone={exposure ? "high" : "low"} />
+          <Metric title="Evidence Coverage" value={`${evidenceCoverage}%`} detail={relevantFindings.length ? `${evidenceCount}/${relevantFindings.length} items supported` : "No exceptions require evidence"} tone={evidenceCoverage >= 90 ? "low" : "medium"} />
+          <Metric title="Partner Awareness" value={String(escalated)} detail={partnerSignOff ? "Included in locked pack" : "Partner sign-off pending"} tone={escalated ? "medium" : "low"} />
+        </div>
+
+        <div className={`mt-4 rounded-lg border p-4 ${topAction ? "border-amber-200 bg-amber-50 text-amber-950" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}>
+          <p className="text-xs font-black uppercase">Next control action</p>
+          <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div><strong className="block text-lg">{topAction ? topAction.title : "Retain the reviewed evidence for sign-off"}</strong><p className="mt-1 text-sm">{topAction ? topAction.recommendation || "Assign an owner and document the reviewer conclusion." : "No open control exception remains. Keep the supporting records and decisions available for audit."}</p></div>
+            <button className="shrink-0 rounded-lg bg-brand px-4 py-2.5 text-sm font-bold text-white" onClick={() => topAction ? openFindingEvidence(topAction.id) : setActive("Review Pack")}>{topAction ? "Review Exception" : "Open Review Pack"}</button>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
+        <Panel title="Control Areas Reviewed">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            {scopeAreas.map((area) => (
+              <div key={area.label} className="flex items-center justify-between gap-3 rounded-lg border border-line bg-slate-50 p-4">
+                <div><strong className="block">{area.label}</strong><span className="mt-1 block text-xs text-muted">{area.linked} related review item{area.linked === 1 ? "" : "s"}</span></div>
+                <Pill level={area.open ? "high" : uploads.length ? "low" : "medium"}>{area.status}</Pill>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-xs text-muted">“No related finding” means the uploaded review produced no exception in that area; it is not a guarantee that fraud is absent.</p>
+        </Panel>
+
+        <Panel title="Control Exception Register">
+          {relevantFindings.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] border-collapse text-left text-sm">
+                <thead className="text-xs uppercase text-muted"><tr><th className="border-b border-line p-3">Risk signal</th><th className="border-b border-line p-3">Finding</th><th className="border-b border-line p-3">Amount</th><th className="border-b border-line p-3">Evidence</th><th className="border-b border-line p-3">Decision</th><th className="border-b border-line p-3">Open</th></tr></thead>
+                <tbody>{relevantFindings.map((finding) => {
+                  const amount = finding.amount ?? parseImpactAmount(finding.expectedImpact);
+                  return <tr key={finding.id} className={isOpenFinding(finding) ? "bg-amber-50/50" : ""}><td className="border-b border-line p-3"><Pill level={finding.severity}>{signalLabel(finding)}</Pill></td><td className="border-b border-line p-3"><strong className="block">{finding.title}</strong><span className="mt-1 block max-w-72 text-xs text-muted">{finding.description}</span></td><td className="border-b border-line p-3 font-black">{amount ? `£${Math.round(amount).toLocaleString("en-GB")}` : "Not quantified"}</td><td className="border-b border-line p-3"><strong className="block">{finding.evidence?.sourceFile || "Evidence required"}</strong><span className="mt-1 block text-xs text-muted">{finding.evidence?.calculation || "No supporting calculation linked"}</span></td><td className="border-b border-line p-3"><Pill level={isOpenFinding(finding) ? "medium" : "low"}>{finding.status.replaceAll("_", " ")}</Pill><span className="mt-2 block max-w-60 text-xs text-muted">{finding.resolutionNote || finding.reviewReason || "Reviewer decision pending"}</span></td><td className="border-b border-line p-3"><button className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold" onClick={() => openFindingEvidence(finding.id)}>View Review Trail</button></td></tr>;
+                })}</tbody>
+              </table>
+            </div>
+          ) : <EmptyState title="No control exceptions identified" detail="Upload the finance pack to review unusual postings, duplicate payments and approval exceptions." />}
+        </Panel>
+      </section>
+
+      <section className="rounded-lg border border-cyan-100 bg-cyan-50 p-4 text-sm text-cyan-950">
+        <strong>Professional judgement note:</strong> these are accounting control risk signals, not allegations or proof of fraud. Reviewer investigation and corroborating evidence are required before any conclusion.
+      </section>
+    </div>
   );
 }
 
