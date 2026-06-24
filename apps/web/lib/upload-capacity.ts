@@ -4,6 +4,7 @@ export const BACKGROUND_UPLOAD_MAX_FILES = 50;
 export const BACKGROUND_UPLOAD_MAX_FILE_BYTES = 100 * 1024 * 1024;
 export const BACKGROUND_UPLOAD_MAX_BYTES = 250 * 1024 * 1024;
 export const SUPPORTED_FINANCE_FILE = /\.(csv|tsv|txt|xlsx|xls)$/i;
+export const BACKGROUND_SUPPORTED_FINANCE_FILE = /\.(csv|tsv|txt)$/i;
 
 export type UploadCapacityFile = { name: string; size: number };
 export type UploadMode = "interactive" | "background" | "rejected";
@@ -32,6 +33,10 @@ export function decideUploadMode(files: UploadCapacityFile[]): UploadCapacityDec
   }
   if (files.length <= INTERACTIVE_UPLOAD_MAX_FILES && totalBytes <= INTERACTIVE_UPLOAD_MAX_BYTES) {
     return { mode: "interactive", totalBytes, message: "This pack can be reviewed immediately." };
+  }
+  const unsupportedBackground = files.filter((file) => !BACKGROUND_SUPPORTED_FINANCE_FILE.test(file.name));
+  if (unsupportedBackground.length) {
+    return { mode: "rejected", totalBytes, message: "Large Excel workbooks are not background-ready yet. Export large workbook sheets as CSV or keep the combined Excel pack below 4 MB." };
   }
   return { mode: "background", totalBytes, message: "This pack will upload directly to secure storage and be processed in the background." };
 }

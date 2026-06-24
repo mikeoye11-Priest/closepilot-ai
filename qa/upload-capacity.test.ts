@@ -30,4 +30,5 @@ test("background capacity rejects excessive total size, individual size, file co
   assert.equal(decideUploadMode([{ name: "ledger.csv", size: BACKGROUND_UPLOAD_MAX_FILE_BYTES + 1 }]).mode, "rejected");
   assert.equal(decideUploadMode(Array.from({ length: BACKGROUND_UPLOAD_MAX_FILES + 1 }, (_, index) => ({ name: `export-${index}.csv`, size: 1 }))).mode, "rejected");
   assert.equal(decideUploadMode([{ name: "ledger.pdf", size: 1024 }]).mode, "rejected");
+  assert.equal(decideUploadMode([{ name: "large-workbook.xlsx", size: INTERACTIVE_UPLOAD_MAX_BYTES + 1 }]).mode, "rejected");
 });

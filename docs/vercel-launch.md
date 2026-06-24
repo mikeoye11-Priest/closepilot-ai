@@ -38,6 +38,8 @@ Required:
 - `NEXT_PUBLIC_SITE_URL`
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` — server-only key used by the ingestion worker; never expose it through a `NEXT_PUBLIC_` variable
+- `CRON_SECRET` or `INGESTION_WORKER_SECRET` — authenticates the scheduled worker endpoint
 
 Optional for Pilot 1:
 
@@ -45,6 +47,8 @@ Optional for Pilot 1:
 - Xero variables — configure all four together or leave all disabled
 
 After changing an environment variable, redeploy; Vercel changes do not affect an existing deployment.
+
+The scheduled worker calls `/api/internal/process-upload-jobs` once per minute, claims one queued job atomically, and retries stale or transient jobs up to three times. Large Excel workbooks remain outside the background path in this phase; export large workbook sheets as CSV.
 
 ## 4. Preview deployment
 

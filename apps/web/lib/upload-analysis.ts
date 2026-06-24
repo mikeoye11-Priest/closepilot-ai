@@ -87,7 +87,7 @@ const CORE_RULE_FILE_TYPES: Upload["fileType"][] = ["trial_balance", "profit_los
 const STATISTICAL_FILE_TYPES: Upload["fileType"][] = ["aged_debtors", "aged_creditors", "vat_report"];
 
 export async function analyseFinanceFiles(files: File[], options: { savedProfiles?: ImportMappingProfile[] } = {}): Promise<AnalysisResult> {
-  const parsed = await Promise.all(files.map(parseFile));
+  const parsed = await Promise.all(files.map(parseFinanceFile));
   return analyseParsedFiles(parsed, options);
 }
 
@@ -283,7 +283,7 @@ export function scopeAnalysisResult(result: AnalysisResult, scopeTenant: Tenant,
 
 // ─── File parsing ──────────────────────────────────────────────────────────────
 
-async function parseFile(file: File): Promise<ParsedFile> {
+export async function parseFinanceFile(file: File): Promise<ParsedFile> {
   const fileType = inferFileType(file.name);
   const canParse = /\.(csv|tsv|txt)$/i.test(file.name);
   const upload: Upload = { id: `up_${crypto.randomUUID()}`, tenantId: tenant.id, companyId: company.id, fileType, fileName: file.name, uploadedAt: new Date().toISOString().slice(0, 10) };

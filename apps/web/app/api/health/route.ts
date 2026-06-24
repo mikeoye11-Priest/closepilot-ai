@@ -8,6 +8,7 @@ export async function GET() {
     authentication: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     siteUrl: Boolean(process.env.NEXT_PUBLIC_SITE_URL),
     productionAuthEnforced: !(process.env.NODE_ENV === "production" && process.env.CLOSEPILOT_AUTH_DISABLED === "1"),
+    backgroundWorker: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY && (process.env.INGESTION_WORKER_SECRET || process.env.CRON_SECRET)),
   };
   const ready = Object.values(checks).every(Boolean);
 

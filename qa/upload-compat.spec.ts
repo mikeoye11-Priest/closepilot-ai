@@ -637,3 +637,9 @@ test("valid background manifests require authenticated private storage", async (
   expect(response.status).toBe(503);
   await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.stringContaining("authenticated storage") }));
 });
+
+test("background worker endpoint is closed when worker authentication is not configured", async () => {
+  const response = await fetch(`${baseURL}/api/internal/process-upload-jobs`, { method: "POST" });
+  expect(response.status).toBe(503);
+  await expect(response.json()).resolves.toEqual(expect.objectContaining({ error: expect.stringContaining("not configured") }));
+});

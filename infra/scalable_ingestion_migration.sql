@@ -40,6 +40,42 @@ create index if not exists analysis_jobs_queue_idx
   on public.analysis_jobs(status, created_at)
   where status in ('queued', 'running');
 
+create or replace function public.claim_next_analysis_job()
+returns setof public.analysis_jobs
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return query
+  update public.analysis_jobs job
+  set status = 'running',
+      current_stage = 'Claimed by background worker',
+      progress_percent = greatest(job.progress_percent, 6),
+      attempt_count = job.attempt_count + 1,
+      started_at = coalesce(job.started_at, now()),
+      heartbeat_at = now(),
+      error_message = null
+  where job.id = (
+    select candidate.id
+    from public.analysis_jobs candidate
+    where candidate.job_type = 'large_upload_analysis'
+      and candidate.attempt_count < 3
+      and (
+        candidate.status = 'queued'
+        or (candidate.status = 'running' and candidate.heartbeat_at < now() - interval '10 minutes')
+      )
+    order by candidate.created_at
+    for update skip locked
+    limit 1
+  )
+  returning job.*;
+end
+$$;
+
+revoke all on function public.claim_next_analysis_job() from public, anon, authenticated;
+grant execute on function public.claim_next_analysis_job() to service_role;
+
 do $$
 begin
   if to_regclass('public.accounting_sync_runs') is not null then

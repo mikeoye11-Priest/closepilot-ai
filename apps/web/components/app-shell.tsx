@@ -96,6 +96,7 @@ type UploadJobState = {
   bytesProcessed?: number;
   rowsProcessed?: number;
   error?: string | null;
+  resultSummary?: Record<string, unknown>;
 };
 
 type AssuranceMetrics = {
@@ -2546,12 +2547,36 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
         const payload = await response.json() as { job?: UploadJobState };
         if (!payload.job) return;
         setUploadJob(payload.job);
-        if (payload.job.status === "completed") setUploadMessage("Background review complete. Refresh the workspace results to continue with findings.");
+        if (payload.job.status === "completed") {
+          const rawResult = payload.job.resultSummary?.analysisResult as AnalysisResult | undefined;
+          if (rawResult && Array.isArray(rawResult.uploads) && Array.isArray(rawResult.findings) && Array.isArray(rawResult.validationChecks)) {
+            const scoped = scopeAnalysisResult(rawResult, tenant, currentCompany);
+            const completedAt = new Date().toISOString();
+            const activities: FindingActivity[] = scoped.findings.map((finding) => ({ id: crypto.randomUUID(), findingId: finding.id, action: "created", userId: userEmail || userName || "closepilot-worker", timestamp: completedAt, details: "Finding generated from background finance-pack processing." }));
+            const completedSnapshot: AnalysisResult = { ...scoped, findingEvidence: [], findingComments: [], findingActivities: activities, collectionCases: [], partnerSignOff: undefined };
+            setUploads(scoped.uploads);
+            setValidationChecks(scoped.validationChecks);
+            setImportProfiles(scoped.importProfiles ?? []);
+            setFindings(scoped.findings);
+            setFindingEvidence([]);
+            setFindingComments([]);
+            setFindingActivities(activities);
+            setCollectionCases([]);
+            setPartnerSignOff(undefined);
+            setRecommendations(scoped.recommendations);
+            setVatReview(scoped.vatReview);
+            setCompanySnapshots((items) => ({ ...items, [currentCompany.id]: completedSnapshot }));
+            setPortfolioClients((items) => updateClientSummary(items, currentCompany, completedSnapshot));
+            setUploadMessage(`Background review complete: ${scoped.uploads.length} source files and ${scoped.findings.length} findings are ready.`);
+          } else {
+            setUploadMessage("Background review completed, but its result could not be loaded into the workspace.");
+          }
+        }
         if (payload.job.status === "failed") setUploadMessage(payload.job.error || "Background review failed.");
       } catch { /* keep the last known job state and retry */ }
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [uploadJob]);
+  }, [currentCompany, tenant, uploadJob, userEmail, userName]);
 
   useEffect(() => {
     if (presentationMode) return;
