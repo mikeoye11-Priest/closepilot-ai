@@ -370,7 +370,7 @@ export function assistantAnswer(question: string, score: number, findings: Findi
     return "Month-end close should focus on missing accruals, unusual journals, and unreconciled balance sheet accounts. ClosePilot recommends resolving high-severity findings before pack sign-off.";
   }
   if (normalized.includes("score")) {
-    return `Finance Health Score is ${score}/100. The main drag is ${top?.title ?? "open finance risks"}. Completing high-priority recommendations should improve the score fastest.`;
+    return `Review Quality is ${score}/100. The main drag is ${top?.title ?? "open finance risks"}. Completing high-priority recommendations should improve the score fastest.`;
   }
   return `I would start with ${top?.title ?? "the highest risk finding"}. It has the strongest impact on close quality, cash visibility, and control confidence.`;
 }

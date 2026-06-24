@@ -28,11 +28,13 @@ test("pilot demo walkthrough opens the right workflow context", async ({ page })
   await expect(page.getByRole("heading", { name: "Onboarding" })).toBeVisible();
   await page.getByRole("button", { name: "Load Pilot Demo" }).click();
 
+  await expect(page.getByRole("heading", { name: "Partner Summary", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Next action" })).toContainText("Review the accepted debtor risk");
+  await page.getByRole("button", { name: "Findings", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Findings", exact: true })).toBeVisible();
   await expect(page.getByText("Pilot Walkthrough")).toBeVisible();
   await expect(page.locator("header p").filter({ hasText: "Brightlane Manufacturing Ltd" })).toBeVisible();
   await expect(page.getByText("Partner conclusion recorded")).toBeVisible();
-  await expect(page.locator("header").getByText("85%", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: /Inspect Evidence/ }).click();
   await expect(page.getByRole("region", { name: "Evidence-to-decision trace" })).toBeVisible();
@@ -54,7 +56,7 @@ test("pilot demo walkthrough opens the right workflow context", async ({ page })
   await page.getByRole("button", { name: "Close", exact: true }).click();
 
   await page.getByRole("button", { name: /Export Pack/ }).click();
-  await expect(page.getByRole("heading", { name: "Review Pack" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Review Pack", exact: true })).toBeVisible();
   await expect(page.getByText("Partner Sign-Off").first()).toBeVisible();
   await expect(page.getByText("Signed by Priya Desai")).toBeVisible();
   await expect(page.getByLabel("Conclusion")).toHaveValue("Approved and locked following partner sign-off.");
@@ -64,9 +66,9 @@ test("pilot demo walkthrough opens the right workflow context", async ({ page })
 
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Reload Demo" }).click();
-  await expect(page.getByRole("heading", { name: "Findings", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Partner Summary", exact: true })).toBeVisible();
   await expect(page.locator("header").getByText(/6 finance exports reviewed, 0 items to resolve/)).toBeVisible();
-  await expect(page.getByText("Partner conclusion recorded")).toBeVisible();
+  await expect(page.getByText("Review Quality").first()).toBeVisible();
 
   await page.reload();
   await expect(page.locator("header p").filter({ hasText: "Brightlane Manufacturing Ltd" })).toBeVisible();
@@ -97,9 +99,9 @@ test("pilot demo walkthrough opens the right workflow context", async ({ page })
 test("presentation route opens a clean preloaded demo", async ({ page }) => {
   await page.goto(`${baseURL}/demo`);
 
-  await expect(page.getByRole("heading", { name: "Overview", exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Partner Summary", exact: true }).first()).toBeVisible();
   await expect(page.locator("header p").filter({ hasText: "Brightlane Manufacturing Ltd" })).toBeVisible();
-  await expect(page.locator("header").getByText("85%", { exact: true })).toBeVisible();
+  await expect(page.getByText("85/100", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Interactive demo · fictional data")).toBeVisible();
   await expect(page.getByRole("button", { name: "Onboard" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Reload Demo" })).toHaveCount(0);

@@ -12,28 +12,13 @@ import type { VatReviewResult } from "@/lib/vat-engine/types";
 import { approveVatFiling, reopenVatFiling } from "@/lib/vat-engine/sign-off";
 import type { AccountingIntegrationState } from "@/lib/integrations/types";
 
-const nav: Array<string | null> = [
-  "Overview",
-  null,
-  "Finance Review",
-  "Findings",
-  "Assurance Engine",
-  "Upload Finance Pack",
-  null,
-  "Audit Readiness",
-  "Review Pack",
-  "Change Intelligence",
-  "Cash Intelligence",
-  "VAT Assurance",
-  "Controls & Fraud",
-  "Collections Intelligence",
-  "Close Review",
-  null,
-  "Ask ClosePilot",
-  "Practice Portal",
-  "User Guide",
-  "Settings",
-];
+const navGroups = [
+  { label: "", items: ["Partner Summary"] },
+  { label: "Review", items: ["Finance Review", "Findings", "Audit Readiness", "Review Pack"] },
+  { label: "Intelligence", items: ["Change Intelligence", "Cash Intelligence", "VAT Assurance", "Controls & Fraud", "Collections Intelligence", "Close Review"] },
+  { label: "Workspace", items: ["Upload Finance Pack", "Practice Portal", "Ask ClosePilot", "User Guide"] },
+  { label: "Advanced", items: ["Assurance Engine", "Settings"], advanced: true },
+] as const;
 
 const storageKey = "closepilot.workspace.v2";
 const lifecycleStatuses = ["open", "under_review", "evidence_requested", "evidence_received", "resolved", "approved", "closed"] as const;
@@ -1338,7 +1323,7 @@ function auditReviewPackWordHtml({
         <h2>Executive Summary</h2>
         <table>
           <tr>
-            <th>Health Score</th>
+            <th>Review Quality</th>
             <th>Audit Readiness</th>
             <th>Findings</th>
             <th>Open Findings</th>
@@ -1676,7 +1661,7 @@ function findingTypeLabel(finding: Finding) {
 export function AppShell({ userEmail, presentationMode = false }: { userEmail: string; presentationMode?: boolean }) {
   const workspaceLoadCancelled = useRef(false);
   const initialPilotSnapshot = presentationMode ? normaliseSnapshot(pilotAnalysisResult) : undefined;
-  const [active, setActive] = useState(presentationMode ? "Overview" : "Onboarding");
+  const [active, setActive] = useState(presentationMode ? "Partner Summary" : "Onboarding");
   const [tenant, setTenant] = useState<Tenant>(presentationMode ? pilotTenant : seededTenant);
   const [currentCompany, setCurrentCompany] = useState<Company>(presentationMode ? pilotCompany : seededCompany);
   const [companies, setCompanies] = useState<Company[]>(presentationMode ? [pilotCompany] : [seededCompany]);
@@ -1723,24 +1708,38 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const validationWarnings = validationChecks.filter((item) => item.status === "warning").length;
   const assurance = assuranceMetrics(findings, validationChecks, uploads);
   const coreQuality = useMemo(() => coreQualityMetrics(uploads, validationChecks, findings, importProfiles, findingEvidence, partnerSignOff, vatReview), [findingEvidence, findings, importProfiles, partnerSignOff, uploads, validationChecks, vatReview]);
-  const vatPageHasData = active === "VAT Assurance" && Boolean(vatReview && vatReview.source !== "empty" && (vatReview.transactionsAnalysed > 0 || Object.values(vatReview.vatReturn).some((value) => Math.abs(value) > 0)));
-  const vatPageAdjustments = vatPageHasData && vatReview ? buildVatAdjustments(vatReview.findings).length : 0;
-  const vatPageReconciliationFailures = vatPageHasData && vatReview ? vatReview.reconciliationResults.filter((item) => item.status === "failed").length : 0;
-  const vatPageExposure = vatPageHasData && vatReview
-    ? Math.round((vatReview.blockedVatRisk ?? 0) + vatReview.reconciliationResults.filter((item) => item.status === "failed").reduce((sum, item) => sum + Math.abs(item.difference), 0))
-    : 0;
-  const vatPageActions = vatPageHasData && vatReview
-    ? vatReview.findings.length + findings.filter((item) => item.category === "vat" && !reviewedFindingStatuses.includes(item.status)).length + vatPageReconciliationFailures
-    : 0;
-  const vatPageReadiness = vatPageReconciliationFailures ? "Blocked" : vatPageAdjustments ? "Adjust" : vatPageActions ? "Review" : "Ready";
-  const headerHealthValue = vatPageHasData && vatReview ? `${vatReview.healthScore}/100` : hasUploadedData ? `${score}/100` : "—";
-  const headerHealthLevel = vatPageHasData && vatReview ? riskLabel(vatReview.healthScore) : hasUploadedData ? risk : "medium";
-  const headerReadinessValue = vatPageHasData ? vatPageReadiness : `${assurance.closeReadiness || 0}%`;
-  const headerReadinessLevel: RiskLevel = vatPageHasData ? vatPageReconciliationFailures ? "critical" : vatPageAdjustments || vatPageActions ? "medium" : "low" : assurance.closeReadiness >= 80 ? "low" : assurance.closeReadiness >= 65 ? "medium" : "high";
-  const headerExposureValue = vatPageHasData ? vatPageExposure : financialExposure;
-  const headerActionsValue = vatPageHasData ? vatPageActions : recommendations.filter((item) => !item.completed).length;
   const isPilotDemo = currentCompany.id === pilotCompany.id;
   const reviewLocked = partnerSignOff?.reviewPackStatus === "LOCKED" || partnerSignOff?.status === "locked" || partnerSignOff?.status === "signed";
+  const acceptedRiskExposure = findings.filter((finding) => finding.status === "accepted_risk").reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
+  const arFindingsForAction = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
+  const arExposureForAction = arFindingsForAction.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
+  const arSourceLinkedForAction = arFindingsForAction.reduce((sum, finding) => sum + (finding.evidence.rows ?? []).reduce((rowSum, row) => rowSum + Math.abs(row.amount ?? 0), 0), 0);
+  const unsupportedArExposure = Math.max(0, arExposureForAction - arSourceLinkedForAction);
+  const overduePromisesForAction = collectionCases.filter(promiseIsOverdue).length;
+  const nextAction = (() => {
+    if (active === "Partner Summary") return acceptedRiskExposure
+      ? { title: "Review the accepted debtor risk", detail: `£${Math.round(acceptedRiskExposure).toLocaleString("en-GB")} remains visible after sign-off. Confirm the collection plan and promised receipts.`, cta: "Open Collections", target: "Collections Intelligence", tone: "amber" as const }
+      : { title: "Share the completed review", detail: "The review is complete and ready for partner or client distribution.", cta: "Open Review Pack", target: "Review Pack", tone: "green" as const };
+    if (active === "Audit Readiness") return { title: "Clear the bank reconciliation timing item", detail: "Upload the signed bank reconciliation to unlock the remaining +13 readiness points.", cta: "Upload Evidence", target: "Upload Finance Pack", tone: "amber" as const };
+    if (active === "Cash Intelligence") return unsupportedArExposure
+      ? { title: `Resolve £${Math.round(unsupportedArExposure).toLocaleString("en-GB")} of unsupported AR`, detail: "Link the residual debtor balance to customer-level evidence before relying on the recovery forecast.", cta: "Open Collections", target: "Collections Intelligence", tone: "red" as const }
+      : { title: "Review the recovery scenario", detail: "Confirm customer promises and disputes before sharing the cash forecast.", cta: "Open Collections", target: "Collections Intelligence", tone: "amber" as const };
+    if (active === "Change Intelligence") return acceptedRiskExposure
+      ? { title: "Keep the accepted risk partner-visible", detail: `£${Math.round(acceptedRiskExposure).toLocaleString("en-GB")} remains after review. Load a comparative pack before drawing period-over-period conclusions.`, cta: "Open Findings", target: "Findings", tone: "amber" as const }
+      : { title: "Load a comparative period", detail: "A prior-period pack is required before revenue, margin, cost and cash movements can be calculated.", cta: "Upload Comparative Pack", target: "Upload Finance Pack", tone: "amber" as const };
+    if (active === "Collections Intelligence") return overduePromisesForAction
+      ? { title: `${overduePromisesForAction} payment promise is overdue`, detail: "Contact the customer, confirm the revised date, and update the collection case.", cta: "Review Collection Queue", target: "Collections Intelligence", tone: "red" as const }
+      : { title: "Confirm the next customer commitment", detail: "Update promises, disputes and contact history to keep the recovery forecast current.", cta: "Review Collection Queue", target: "Collections Intelligence", tone: "amber" as const };
+    if (active === "VAT Assurance") return { title: "Add the prior-period VAT return", detail: "Comparative VAT movement remains untested until the preceding return is uploaded.", cta: "Upload VAT Evidence", target: "Upload Finance Pack", tone: "amber" as const };
+    if (active === "Findings") return acceptedRiskExposure
+      ? { title: "Monitor the accepted debtor risk", detail: "The review is signed, but the accepted balance must remain visible until collection.", cta: "Open Collections", target: "Collections Intelligence", tone: "amber" as const }
+      : { title: "Resolve the highest-impact finding", detail: "Open the first unresolved item, inspect its evidence, and record the reviewer decision.", cta: "Review Findings", target: "Findings", tone: "red" as const };
+    if (active === "Review Pack") return { title: "Share the locked review pack", detail: "Export the signed pack with findings, evidence, accepted risks and the partner conclusion.", cta: "Export Review", target: "Review Pack", tone: "green" as const, exportReview: true };
+    if (active === "Finance Review") return { title: "Inspect the decision trail", detail: "Review the findings, supporting evidence and recorded manager decisions.", cta: "Open Findings", target: "Findings", tone: "amber" as const };
+    if (active === "Controls & Fraud") return { title: "Retain control evidence", detail: "No open control blocker remains; keep the reviewed evidence available for audit.", cta: "Open Review Pack", target: "Review Pack", tone: "green" as const };
+    if (active === "Close Review") return { title: "Retain the close adjustment support", detail: "The suspense adjustment is closed and should remain in the signed evidence pack.", cta: "Open Review Pack", target: "Review Pack", tone: "green" as const };
+    return null;
+  })();
 
   useEffect(() => {
     if (!isPilotDemo) return;
@@ -1820,7 +1819,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setUploadMessage(isDefault
         ? "Upload your finance pack to run a real deterministic review."
         : `${selectedCompany.name} workspace restored. Upload a new finance pack or continue the current review.`);
-        setActive("Finance Review");
+        setActive("Partner Summary");
       } catch {
         if (workspaceLoadCancelled.current) return;
         if (userEmail) {
@@ -1852,7 +1851,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           setPartnerSignOff(snapshot.partnerSignOff);
           setRecommendations(snapshot.recommendations);
           setVatReview(snapshot.vatReview);
-          setActive("Finance Review");
+          setActive("Partner Summary");
         } catch { window.localStorage.removeItem(storageKey); setActive("Onboarding"); }
       }
     }
@@ -2532,7 +2531,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     setRuleAnalytics(null);
     setUploadMessage(`${pilotCompany.name} pilot demo loaded with upload, findings, evidence, manager review, partner sign-off and export pack.`);
     setPilotWalkthroughStep(0);
-    setActive("Findings");
+    setActive("Partner Summary");
   };
 
   const switchCompany = (companyId: string) => {
@@ -2554,12 +2553,12 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     setRecommendations(nextSnapshot.recommendations);
     setVatReview(nextSnapshot.vatReview);
     setUploadMessage(nextSnapshot.uploads.length ? `${selectedCompany.name} review loaded.` : `${selectedCompany.name} has no uploaded pack yet. Upload files to begin the review.`);
-    setActive("Finance Review");
+    setActive("Partner Summary");
   };
 
   const content = useMemo(() => {
     if (active === "Onboarding") return <OnboardingPanel tenant={tenant} company={currentCompany} onboardWorkspace={onboardWorkspace} loadPilotDemo={loadPilotDemo} />;
-    if (active === "Overview" || active === "Dashboard") return <DashboardPanel score={score} risk={risk} assurance={assurance} findings={findings} openFindings={openFindings.length} cashAtRisk={cashAtRisk} financialExposure={financialExposure} timeSaved={timeSaved} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} validationWarnings={validationWarnings} validationBlockers={validationBlockers} validationChecks={validationChecks} recommendations={recommendations} clients={portfolioClients} uploads={uploads} setActive={setActive} />;
+    if (active === "Partner Summary" || active === "Dashboard") return <DashboardPanel score={score} risk={risk} assurance={assurance} findings={findings} partnerSignOff={partnerSignOff} openFindings={openFindings.length} cashAtRisk={cashAtRisk} financialExposure={financialExposure} timeSaved={timeSaved} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} validationWarnings={validationWarnings} validationBlockers={validationBlockers} validationChecks={validationChecks} recommendations={recommendations} clients={portfolioClients} uploads={uploads} setActive={setActive} />;
     if (active === "Finance Review") {
       return (
         <>
@@ -2732,22 +2731,25 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
               <span className="block truncate text-xs font-semibold uppercase tracking-wide text-slate-400">Assurance Platform</span>
             </div>
           </div>
-          <Pill level={hasUploadedData ? risk : "none"}>{hasUploadedData ? riskCopy(risk) : "Awaiting upload"}</Pill>
+          <Pill level={hasUploadedData ? (openFindings.length ? "medium" : "low") : "none"}>{hasUploadedData ? (openFindings.length ? "Review open" : "Review complete") : "Awaiting upload"}</Pill>
         </div>
-        <nav className="flex gap-1 overflow-x-auto px-4 pb-4 lg:grid lg:overflow-y-auto lg:overflow-x-hidden lg:px-5 lg:pb-5">
-          {nav.filter((item) => !presentationMode || item !== "Settings").map((item, index) =>
-            item === null ? (
-              <hr key={index} className="hidden border-white/10 lg:my-2 lg:block" />
-            ) : (
-              <button
-                key={item}
-                className={`whitespace-nowrap rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors lg:whitespace-normal ${active === item ? "bg-white text-[#111827] shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`}
-                onClick={() => setActive(item)}
-              >
-                {item}
-              </button>
-            )
-          )}
+        <nav className="flex gap-1 overflow-x-auto px-4 pb-4 lg:block lg:overflow-y-auto lg:overflow-x-hidden lg:px-5 lg:pb-5">
+          {navGroups.filter((group) => !presentationMode || !("advanced" in group && group.advanced)).map((group) => (
+            <div key={group.label || "summary"} className="contents lg:mb-4 lg:block">
+              {group.label && <p className="hidden px-3 pb-1 pt-2 text-[11px] font-black uppercase tracking-wider text-slate-600 lg:block">{group.label}</p>}
+              <div className="contents lg:grid lg:gap-1">
+                {group.items.map((item) => (
+                  <button
+                    key={item}
+                    className={`whitespace-nowrap rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors lg:whitespace-normal ${active === item ? "bg-white text-[#111827] shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`}
+                    onClick={() => setActive(item)}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </nav>
         <div className="mt-auto hidden border-t border-white/10 p-5 lg:block">
           <div className="mb-4 rounded-lg border border-white/10 bg-white/5 p-3">
@@ -2768,7 +2770,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
             <div className="min-w-0">
               <p className="text-xs font-bold uppercase text-muted">ClosePilot Assurance</p>
               <h1 className="mt-1 text-2xl font-black sm:text-3xl">{active}</h1>
-              <p className="mt-1 max-w-4xl text-sm font-semibold text-cyan">{tenant.name} · {currentCompany.name} · {uploads.length} finance exports reviewed, {openFindings.length} items to resolve.{timeSavedMins > 0 ? ` · ${timeSavedHours}h manager review time saved.` : ""}</p>
+              <p className="mt-1 max-w-4xl text-sm font-semibold text-cyan">{tenant.name} · {currentCompany.name} · {uploads.length} finance exports reviewed, {openFindings.length} items to resolve.{timeSavedMins > 0 ? ` · Estimated time saved ${timeSavedHours}h (£${timeSavedValue.toLocaleString("en-GB")} manager capacity).` : ""}</p>
             </div>
             <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
               {!presentationMode && (
@@ -2788,13 +2790,16 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
               <button className="h-10 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700" onClick={() => setShowExport(true)}>Export Review</button>
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <HeaderStat label="Health" value={headerHealthValue} level={headerHealthLevel} />
-            <HeaderStat label="Readiness" value={headerReadinessValue} level={headerReadinessLevel} />
-            <HeaderStat label="Exposure" value={`£${headerExposureValue.toLocaleString()}`} level={headerExposureValue ? "critical" : "low"} />
-            <HeaderStat label="Actions" value={String(headerActionsValue)} level={headerActionsValue ? "medium" : "low"} />
-          </div>
         </header>
+        {nextAction && (
+          <NextActionBanner
+            title={nextAction.title}
+            detail={nextAction.detail}
+            cta={nextAction.cta}
+            tone={nextAction.tone}
+            onClick={() => nextAction.exportReview ? setShowExport(true) : setActive(nextAction.target)}
+          />
+        )}
         {isPilotDemo && uploads.length > 0 && pilotWalkthroughSteps.some((step) => step.page === active) && (
           <PilotWalkthroughRail
             step={pilotWalkthroughStep}
@@ -3018,14 +3023,17 @@ function slug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || crypto.randomUUID();
 }
 
-function HeaderStat({ label, value, level }: { label: string; value: string; level: RiskLevel }) {
-  const dot = level === "low" ? "bg-emerald-500" : level === "medium" ? "bg-amber-500" : "bg-red-500";
+function NextActionBanner({ title, detail, cta, tone, onClick }: { title: string; detail: string; cta: string; tone: "green" | "amber" | "red"; onClick: () => void }) {
+  const sectionClass = tone === "green" ? "border-emerald-200 bg-emerald-50 text-emerald-950" : tone === "red" ? "border-red-200 bg-red-50 text-red-950" : "border-amber-200 bg-amber-50 text-amber-950";
   return (
-    <div className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-line bg-slate-50 px-3 text-sm">
-      <span className={`h-2 w-2 rounded-full ${dot}`} aria-hidden="true" />
-      <span className="text-xs font-bold uppercase text-muted">{label}</span>
-      <strong>{value}</strong>
-    </div>
+    <section className={`mb-5 flex flex-col gap-3 rounded-lg border p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between ${sectionClass}`} aria-label="Next action">
+      <div>
+        <p className="text-xs font-black uppercase tracking-wide">Next Action Required</p>
+        <h2 className="mt-1 text-lg font-black">{title}</h2>
+        <p className="mt-1 text-sm">{detail}</p>
+      </div>
+      <button className="shrink-0 rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white" onClick={onClick}>{cta}</button>
+    </section>
   );
 }
 
@@ -3125,9 +3133,9 @@ function defaultReviewReason(status: FindingStatus) {
 }
 
 function DashboardPanel({
-  score, risk, assurance, findings, openFindings, cashAtRisk, financialExposure, timeSaved, timeSavedHours, timeSavedValue, validationWarnings, validationBlockers, validationChecks, recommendations, clients, uploads, setActive
+  score, risk, assurance, findings, partnerSignOff, openFindings, cashAtRisk, financialExposure, timeSaved, timeSavedHours, timeSavedValue, validationWarnings, validationBlockers, validationChecks, recommendations, clients, uploads, setActive
 }: {
-  score: number; risk: RiskLevel; assurance: AssuranceMetrics; findings: Finding[]; openFindings: number; cashAtRisk: number; financialExposure: number; timeSaved: number; timeSavedHours: string; timeSavedValue: number; validationWarnings: number; validationBlockers: number; validationChecks: ValidationCheck[]; recommendations: Recommendation[]; clients: ClientCompany[]; uploads: Upload[]; setActive: (v: string) => void;
+  score: number; risk: RiskLevel; assurance: AssuranceMetrics; findings: Finding[]; partnerSignOff?: PartnerSignOff; openFindings: number; cashAtRisk: number; financialExposure: number; timeSaved: number; timeSavedHours: string; timeSavedValue: number; validationWarnings: number; validationBlockers: number; validationChecks: ValidationCheck[]; recommendations: Recommendation[]; clients: ClientCompany[]; uploads: Upload[]; setActive: (v: string) => void;
 }) {
   const [showExposure, setShowExposure] = useState(false);
   const highRisk = clients.filter((c) => c.risk === "high" || c.risk === "critical").length;
@@ -3151,8 +3159,11 @@ function DashboardPanel({
       risk={risk}
       assurance={assurance}
       findings={findings}
+      partnerSignOff={partnerSignOff}
       openFindings={openFindings}
       financialExposure={financialExposure}
+      timeSavedHours={timeSavedHours}
+      timeSavedValue={timeSavedValue}
       validationWarnings={validationWarnings}
       validationBlockers={validationBlockers}
       validationChecks={validationChecks}
@@ -3171,7 +3182,7 @@ function DashboardPanel({
               <SummaryItem label="Tests Executed" value={String(assurance.testsExecuted)} detail="across uploaded files" level="low" />
               <SummaryItem label="Findings" value={String(openFindings)} detail={`${assurance.critical} critical, ${assurance.high} high`} level={assurance.critical ? "critical" : assurance.high ? "high" : "medium"} />
               <SummaryItem label="Confidence" value={`${assurance.confidence}%`} detail="evidence quality" level={assurance.confidence >= 85 ? "low" : "medium"} />
-              <SummaryItem label="Health Score" value={`${score}/100`} detail={riskCopy(risk)} level={risk} />
+              <SummaryItem label="Review Quality" value={`${score}/100`} detail="Completeness of the reviewed pack" level={risk} />
             </div>
           </Panel>
           <Panel title="Review Status">
@@ -3224,7 +3235,7 @@ function DashboardPanel({
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Metric title="Finance Health Score" value={uploads.length ? `${score}/100` : "—"} detail={uploads.length ? riskCopy(risk) : "Awaiting upload"} tone={uploads.length ? risk : "medium"} />
+        <Metric title="Review Quality" value={uploads.length ? `${score}/100` : "—"} detail={uploads.length ? "Completeness of the reviewed pack" : "Awaiting upload"} tone={uploads.length ? risk : "medium"} />
         <Metric title="Audit Readiness" value={uploads.length ? `${assurance.closeReadiness}%` : "—"} detail={uploads.length ? "Manager review required" : "Awaiting finance pack"} tone={uploads.length ? (assurance.closeReadiness >= 80 ? "low" : assurance.closeReadiness >= 65 ? "medium" : "high") : "medium"} />
         <Metric title="Review Confidence" value={uploads.length ? `${assurance.confidence}%` : "—"} detail={uploads.length ? "Evidence and validation quality" : "Awaiting evidence"} tone={uploads.length ? (assurance.confidence >= 85 ? "low" : "medium") : "medium"} />
         <Metric title="Month-End Time Saved" value={`${timeSaved}h`} detail="Estimated this close" tone="low" />
@@ -3320,8 +3331,11 @@ function OperationalOverviewDashboard({
   risk,
   assurance,
   findings,
+  partnerSignOff,
   openFindings,
   financialExposure,
+  timeSavedHours,
+  timeSavedValue,
   validationWarnings,
   validationBlockers,
   validationChecks,
@@ -3333,8 +3347,11 @@ function OperationalOverviewDashboard({
   risk: RiskLevel;
   assurance: AssuranceMetrics;
   findings: Finding[];
+  partnerSignOff?: PartnerSignOff;
   openFindings: number;
   financialExposure: number;
+  timeSavedHours: string;
+  timeSavedValue: number;
   validationWarnings: number;
   validationBlockers: number;
   validationChecks: ValidationCheck[];
@@ -3370,13 +3387,6 @@ function OperationalOverviewDashboard({
   const openHighFindings = findings.filter((finding) => isOpenFinding(finding) && (finding.severity === "critical" || finding.severity === "high")).length;
   const readinessAction = missingEvidenceItems.length ? "Upload missing evidence" : openHighFindings ? "Resolve high-risk findings" : validationBlockers ? "Clear validation blockers" : "Prepare sign-off";
   const forecastReadiness = readinessForecast(findings, validationChecks, uploads);
-  const trend = ["Dec", "Jan", "Feb", "Mar", "Apr", "May"].map((period, index) => ({
-    period,
-    Critical: Math.max(0, severityCounts.critical + 5 - index),
-    High: Math.max(0, severityCounts.high + 4 - index),
-    Medium: Math.max(0, severityCounts.medium + 3 - index),
-    Low: Math.max(0, severityCounts.low + 1 - Math.floor(index / 2)),
-  }));
   const activity = [
     uploads[0] ? { tone: "low" as RiskLevel, title: "Files uploaded", detail: uploads[0].fileName } : null,
     findings[0] ? { tone: "medium" as RiskLevel, title: "Review completed", detail: `${findings.length} finding(s) generated` } : null,
@@ -3388,11 +3398,11 @@ function OperationalOverviewDashboard({
     <div className="grid gap-4 xl:grid-cols-[1fr_300px]">
       <div className="grid gap-4">
         <section>
-          <h2 className="mb-3 text-xl font-black">Overview</h2>
+          <div className="mb-3"><p className="text-xs font-bold uppercase text-muted">Partner Summary</p><h2 className="mt-1 text-xl font-black">Review outcome at a glance</h2></div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <OverviewMetricCard title="Finance Health Score" value={uploads.length ? score : 0} suffix="/100" tone={risk} badge={uploads.length ? riskCopy(risk) : "Awaiting upload"} />
+            <OverviewMetricCard title="Review Quality" value={uploads.length ? score : 0} suffix="/100" tone={risk} badge={uploads.length ? "Review complete" : "Awaiting upload"} />
             <OverviewMetricCard title="Audit Readiness" value={uploads.length ? assurance.closeReadiness : 0} suffix="/100" tone={assurance.closeReadiness >= 80 ? "low" : assurance.closeReadiness >= 65 ? "medium" : "high"} badge={assurance.closeReadiness >= 80 ? "Good" : "Fair"} />
-            <OverviewMetricCard title="Review Confidence" value={uploads.length ? assurance.confidence : 0} suffix="/100" tone={assurance.confidence >= 85 ? "low" : "medium"} badge={assurance.confidence >= 85 ? "High" : "Review"} />
+            <article className="rounded-lg border border-line bg-white p-5 shadow-panel"><p className="text-sm font-bold text-muted">Estimated Time Saved</p><strong className="mt-4 block text-3xl font-black text-emerald-700">{timeSavedHours}h</strong><p className="mt-4 text-sm font-black text-emerald-700">£{timeSavedValue.toLocaleString("en-GB")} manager value</p><p className="mt-4 text-sm text-muted">This review cycle</p></article>
             <article className="rounded-lg border border-line bg-white p-5 shadow-panel">
               <p className="text-sm font-bold text-muted">Est. Exposure</p>
               <strong className="mt-4 block text-3xl font-black text-red-600">£{financialExposure.toLocaleString()}</strong>
@@ -3403,7 +3413,7 @@ function OperationalOverviewDashboard({
         </section>
 
         <section className="grid gap-4 xl:grid-cols-[0.95fr_1.1fr_0.85fr]">
-          <OverviewCard title="Findings by Severity">
+          <OverviewCard title="Findings Reviewed by Severity">
             <div className="grid items-center gap-4 sm:grid-cols-[140px_1fr]">
               <SeverityDonut counts={severityCounts} total={totalFindings} />
               <div className="grid gap-3 text-sm">
@@ -3447,20 +3457,13 @@ function OperationalOverviewDashboard({
               </button>
             </div>
           </OverviewCard>
-          <OverviewCard title="Findings Trend">
-            <div className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trend} margin={{ left: -20, right: 8, top: 10, bottom: 0 }}>
-                  <CartesianGrid stroke="#e5e7eb" strokeDasharray="4 4" vertical={false} />
-                  <XAxis dataKey="period" tickLine={false} axisLine={false} />
-                  <YAxis tickLine={false} axisLine={false} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="Critical" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="High" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="Medium" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="Low" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-                </LineChart>
-              </ResponsiveContainer>
+          <OverviewCard title="Review Status" action={<button className="text-sm font-bold text-brand" onClick={() => setActive("Review Pack")}>Open pack</button>}>
+            <div className="grid gap-3">
+              <SummaryLine label="Files reviewed" value={uploads.length} />
+              <SummaryLine label="Findings identified" value={findings.length} />
+              <SummaryLine label="Open items" value={openFindings} />
+              <SummaryLine label="Accepted risks" value={findings.filter((finding) => finding.status === "accepted_risk").length} />
+              <SummaryLine label="Sign-off" value={partnerSignOff ? `Locked · ${partnerSignOff.signedBy}` : "Pending"} />
             </div>
           </OverviewCard>
           <OverviewCard title="Missing Evidence">
@@ -3824,7 +3827,7 @@ function ReviewCommandCenter({
           </div>
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <CommandMetric label="Health" value={`${score}/100`} detail={riskCopy(risk)} level={risk} />
+            <CommandMetric label="Review Quality" value={`${score}/100`} detail="Reviewed pack completeness" level={risk} />
             <CommandMetric label="Readiness" value={hasData ? `${assurance.closeReadiness}%` : "—"} detail={`${passedDrivers.length}/${assurance.readinessDrivers.length} controls passed`} level={hasData ? (assurance.closeReadiness >= 80 ? "low" : assurance.closeReadiness >= 65 ? "medium" : "high") : "medium"} />
             <CommandMetric label="Confidence" value={hasData ? `${assurance.confidence}%` : "—"} detail="evidence quality" level={hasData ? (assurance.confidence >= 85 ? "low" : "medium") : "medium"} />
             <CommandMetric label="Exposure" value={`£${financialExposure.toLocaleString()}`} detail={`cash risk £${cashAtRisk.toLocaleString()}`} level={financialExposure ? "critical" : "low"} />
@@ -4397,7 +4400,7 @@ function ReviewPack({
   const collection = collectionOpportunities(findings);
   const supplierRisk = supplierRiskOpportunities(findings);
   const ecl = expectedCreditLoss(findings);
-  const reportAudience = packType === "audit" ? "Audit Review Pack" : packType === "partner" ? "Partner Review Pack" : packType === "client" ? "Client Finance Health Report" : "Evidence Appendix";
+  const reportAudience = packType === "audit" ? "Audit Review Pack" : packType === "partner" ? "Partner Review Pack" : packType === "client" ? "Client Review Quality Report" : "Evidence Appendix";
   const visibleFindings = packType === "client"
     ? findings.filter((f) => f.evidenceStrength !== "advisory" && (f.severity === "critical" || f.severity === "high" || ["accepted", "resolved", "accepted_risk"].includes(f.status)))
     : findings;
@@ -4673,7 +4676,7 @@ function ReviewPack({
           </div>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <ReportMetric label="Finance Health" value={`${score}/100`} detail={riskCopy(risk)} />
+            <ReportMetric label="Review Quality" value={`${score}/100`} detail="Completeness of the reviewed pack" />
             <ReportMetric label="Audit Readiness" value={reviewReady ? "Ready" : "Blocked"} detail={`${failedChecks.length} blockers`} />
             <ReportMetric label="Review Confidence" value={`${reviewedPct}%`} detail="reviewer decision coverage" />
             <ReportMetric label="Open Findings" value={String(openFindings.length)} detail="remaining workflow items" />
@@ -5451,8 +5454,8 @@ function ScorePanel({ score, risk, company, uploads, setActive }: { score: numbe
           </div>
         </div>
         <div>
-          <p className="text-xs font-bold uppercase text-muted">Finance Health Score</p>
-          <h2 className="mt-2 text-3xl font-black">{company.name}'s finance pack is {riskCopy(risk).toLowerCase()}.</h2>
+          <p className="text-xs font-bold uppercase text-muted">Review Quality</p>
+          <h2 className="mt-2 text-3xl font-black">{company.name}'s reviewed pack scores {score}/100 for completeness.</h2>
           <p className="mt-3 max-w-xl text-muted">{uploads.length ? "ClosePilot converted uploaded finance exports into a finance review covering anomalies, cash risk, VAT exceptions, commentary and next actions." : "Upload your finance pack to generate an evidence-linked review. Score will update based on your actual findings."}</p>
           <div className="mt-5 flex flex-wrap gap-3">
             <button className="rounded-lg bg-brand px-4 py-3 font-bold text-white" onClick={() => setActive("Upload Finance Pack")}>Upload New Pack</button>
@@ -9361,7 +9364,7 @@ function ExportModal({
           )}
           <section className="mb-6 grid gap-4 sm:grid-cols-4">
             <div className="rounded-lg border border-line bg-slate-50 p-4 text-center">
-              <p className="text-xs font-bold uppercase text-muted">Finance Health Score</p>
+              <p className="text-xs font-bold uppercase text-muted">Review Quality</p>
               <strong className="mt-1 block text-4xl font-black">{score}</strong>
               <span className="text-muted">/100 · {riskCopy(risk)}</span>
             </div>
@@ -9918,7 +9921,7 @@ function PracticePortal({ tenant, clients, currentCompanyId, switchCompany, comp
         <div className="grid gap-4 sm:grid-cols-4">
           <div className="rounded-lg border border-line bg-slate-50 p-4 text-center">
             <strong className={`block text-3xl font-black ${average >= 80 ? "text-emerald-700" : average >= 65 ? "text-amber-700" : "text-red-700"}`}>{average || "—"}</strong>
-            <p className="mt-1 text-sm font-bold text-muted">Avg Health Score</p>
+            <p className="mt-1 text-sm font-bold text-muted">Avg Review Quality</p>
           </div>
           <div className="rounded-lg border border-line bg-slate-50 p-4 text-center">
             <strong className={`block text-3xl font-black ${clients.length > 0 ? "text-brand" : "text-slate-400"}`}>{clients.length}</strong>

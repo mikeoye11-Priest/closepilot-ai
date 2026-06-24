@@ -245,7 +245,7 @@ function executiveSummaryForQuestion(question: string, score: number, findings: 
     return `${findings.length} open finding(s) remain before month-end sign-off, led by ${findingLabel(top)}.`;
   }
   if (/score|health|why.*low|rating/.test(question)) {
-    return `Finance Health Score is ${score}/100. The main score driver is ${findingLabel(top)}.`;
+    return `Review Quality is ${score}/100. The main score driver is ${findingLabel(top)}.`;
   }
   return `Start with ${findingLabel(top)} because it is the highest-priority relevant finding.`;
 }

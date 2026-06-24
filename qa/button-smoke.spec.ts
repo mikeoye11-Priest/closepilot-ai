@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 const baseURL = process.env.CLOSEPILOT_QA_URL ?? "http://127.0.0.1:3007";
 
 const navItems = [
-  "Overview",
+  "Partner Summary",
   "Finance Review",
   "Assurance Engine",
   "Upload Finance Pack",
@@ -167,7 +167,7 @@ test("clearing uploaded data resets review statistics", async ({ page }) => {
   await expect(page.getByText("No validation checks yet. Upload a finance pack to begin.")).toBeVisible();
   await expect(page.getByText("VAT Report uploaded")).not.toBeVisible();
 
-  await clickSidebarNav(page, "Overview");
+  await clickSidebarNav(page, "Partner Summary");
   await expect(page.getByText(/0 finance exports reviewed, 0 items to resolve/)).toBeVisible();
   await expect(page.getByText("Awaiting upload").first()).toBeVisible();
   await expect(page.getByText("93/100")).not.toBeVisible();
