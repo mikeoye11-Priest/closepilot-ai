@@ -6,7 +6,8 @@ const navItems = [
   "Partner Summary",
   "Finance Review",
   "Assurance Engine",
-  "Upload Finance Pack",
+  "Import Prepared Accounts",
+  "Compatibility",
   "Audit Readiness",
   "Review Pack",
   "Change Intelligence",
@@ -53,8 +54,8 @@ async function onboardCompany(page: import("@playwright/test").Page) {
 }
 
 async function uploadDemoPack(page: import("@playwright/test").Page) {
-  await clickSidebarNav(page, "Upload Finance Pack");
-  await expect(page.getByRole("heading", { level: 1, name: "Upload Finance Pack" })).toBeVisible();
+  await clickSidebarNav(page, "Import Prepared Accounts");
+  await expect(page.getByRole("heading", { level: 1, name: "Import Prepared Accounts" })).toBeVisible();
   await page.locator('input[type="file"]').setInputFiles([
     "demo-data/trial-balance-may.csv",
     "demo-data/profit-loss-may.csv",
@@ -159,7 +160,7 @@ test("clearing uploaded data resets review statistics", async ({ page }) => {
   await uploadDemoPack(page);
 
   page.on("dialog", (dialog) => dialog.accept());
-  await clickSidebarNav(page, "Upload Finance Pack");
+  await clickSidebarNav(page, "Import Prepared Accounts");
   await page.getByRole("button", { name: "Clear Review" }).click();
 
   await expect(page.getByText("No files uploaded yet.").first()).toBeVisible();
@@ -180,7 +181,7 @@ test("clearing uploaded data resets review statistics", async ({ page }) => {
 test("VAT review pack controls render after VAT upload", async ({ page }) => {
   test.setTimeout(60000);
   await onboardCompany(page);
-  await clickSidebarNav(page, "Upload Finance Pack");
+  await clickSidebarNav(page, "Import Prepared Accounts");
   await page.locator('input[type="file"]').setInputFiles(["demo-data/vat-detail-may.csv"]);
   await expect(page.getByRole("heading", { level: 1, name: "Finance Review" })).toBeVisible({ timeout: 30000 });
 

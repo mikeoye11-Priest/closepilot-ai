@@ -17,9 +17,13 @@ const navGroups = [
   { label: "", items: ["Partner Summary"] },
   { label: "Review workflow", items: ["Findings", "Finance Review", "Audit Readiness", "Review Pack"] },
   { label: "Intelligence", items: ["Change Intelligence", "Cash Intelligence", "VAT Assurance", "Controls & Fraud", "Collections Intelligence", "Close Review"] },
-  { label: "Workspace", items: ["Upload Finance Pack", "Practice Portal", "Ask ClosePilot", "User Guide"] },
+  { label: "Workspace", items: ["Upload Finance Pack", "Compatibility", "Practice Portal", "Ask ClosePilot", "User Guide"] },
   { label: "Admin", items: ["Assurance Engine", "Settings"], advanced: true },
 ] as const;
+
+function pageLabel(value: string) {
+  return value === "Upload Finance Pack" ? "Import Prepared Accounts" : value;
+}
 
 const storageKey = "closepilot.workspace.v2";
 const lifecycleStatuses = ["open", "under_review", "evidence_requested", "evidence_received", "resolved", "approved", "closed"] as const;
@@ -2800,6 +2804,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     if (active === "Findings") return <FindingsHub findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} pilotWalkthroughStep={isPilotDemo ? pilotWalkthroughStep : undefined} focusedFindingId={focusedFindingId} clearFocusedFinding={() => setFocusedFindingId(null)} validationChecks={validationChecks} uploads={uploads} updateFindingStatus={updateFindingStatus} updateFindingAssignment={updateFindingAssignment} updateManagerReview={updateManagerReview} recordPartnerSignOff={recordPartnerSignOff} addFindingComment={addFindingComment} addFindingEvidence={addFindingEvidence} updateEvidenceStatus={updateEvidenceStatus} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
     if (active === "Assurance Engine") return <AssuranceEngine assurance={assurance} coreQuality={coreQuality} findings={findings} validationChecks={validationChecks} uploads={uploads} ruleAnalytics={ruleAnalytics} setActive={setActive} />;
     if (active === "Upload Finance Pack") return <UploadAnalyse analyseUploads={analyseUploads} isAnalysing={isAnalysing} uploadMessage={uploadMessage} uploadJob={uploadJob} validationChecks={validationChecks} uploads={uploads} importProfiles={importProfiles} confirmImportProfile={confirmImportProfile} findings={findings} recommendations={recommendations} onDelete={deleteUpload} onClear={clearCurrentReview} setActive={setActive} />;
+    if (active === "Compatibility") return <CompatibilityPanel setActive={setActive} />;
     if (active === "Close Review") return <MonthEndClose findings={findings} recommendations={recommendations} completeRecommendation={completeRecommendation} updateFindingStatus={updateFindingStatus} />;
     if (active === "Cash Intelligence") return <CashflowPanel findings={findings} uploads={uploads} collectionCases={collectionCases} openCollections={() => setActive("Collections Intelligence")} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : 1);
@@ -2865,7 +2870,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-cyan to-brand font-black shadow-lg shadow-blue-950/30">CP</div>
             <div className="min-w-0">
               <strong className="block truncate">ClosePilot</strong>
-              <span className="block truncate text-xs font-semibold uppercase tracking-wide text-slate-400">Assurance Platform</span>
+              <span className="block truncate text-xs font-semibold uppercase tracking-wide text-slate-400">System of Review</span>
             </div>
           </div>
           <Pill level={hasUploadedData ? (openFindings.length ? "medium" : "low") : "none"}>{hasUploadedData ? (openFindings.length ? "Review open" : "Review complete") : "Awaiting upload"}</Pill>
@@ -2881,7 +2886,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
                     className={`whitespace-nowrap rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors lg:whitespace-normal ${active === item ? "bg-white text-[#111827] shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`}
                     onClick={() => setActive(item)}
                   >
-                    {item}
+                    {pageLabel(item)}
                   </button>
                 ))}
               </div>
@@ -2905,8 +2910,8 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
         <header className="mb-5 rounded-lg border border-line bg-white/95 p-4 shadow-panel">
           <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
             <div className="min-w-0">
-              <p className="text-xs font-bold uppercase text-muted">ClosePilot Assurance</p>
-              <h1 className="mt-1 text-2xl font-black sm:text-3xl">{active}</h1>
+              <p className="text-xs font-bold uppercase text-muted">ClosePilot Review</p>
+              <h1 className="mt-1 text-2xl font-black sm:text-3xl">{pageLabel(active)}</h1>
               <p className="mt-1 max-w-4xl text-sm font-semibold text-cyan">{tenant.name} · {currentCompany.name} · {uploads.length} finance exports reviewed, {openFindings.length} items to resolve.{timeSavedMins > 0 ? ` · Estimated time saved ${timeSavedHours}h (£${timeSavedValue.toLocaleString("en-GB")} manager capacity).` : ""}</p>
             </div>
             <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
@@ -2982,8 +2987,8 @@ function UserGuide({ isPilotDemo, hasData, loadPilotDemo, setActive, setPilotWal
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
           <div>
             <p className="text-xs font-black uppercase tracking-wide text-brand">Getting started</p>
-            <h2 className="mt-1 text-2xl font-black">Follow one review from evidence to partner sign-off</h2>
-            <p className="mt-2 max-w-3xl text-sm text-muted">For demonstrations, use Brightlane Manufacturing Ltd only. It contains fictional finance data and a completed, read-only decision trail.</p>
+            <h2 className="mt-1 text-2xl font-black">Prepared accounts in. Consistent partner review out.</h2>
+            <p className="mt-2 max-w-3xl text-sm text-muted">Show how an IRIS, CCH, Digita, Xero, Sage or QuickBooks export becomes findings → evidence → resolution → sign-off. Brightlane Manufacturing Ltd contains fictional data and a completed, read-only decision trail.</p>
           </div>
           {!isPilotDemo ? (
             <button className="shrink-0 rounded-lg bg-emerald-600 px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-emerald-700" onClick={loadPilotDemo}>Load Safe Pilot Demo</button>
@@ -3029,7 +3034,7 @@ function UserGuide({ isPilotDemo, hasData, loadPilotDemo, setActive, setPilotWal
             {[
               ["0–5", "Welcome, scope and synthetic-data safety"],
               ["5–10", "Sign in and workspace orientation"],
-              ["10–15", "Load and introduce the pilot demo"],
+              ["10–15", "Import prepared accounts and introduce the review"],
               ["15–25", "Finance Review and validation"],
               ["25–35", "Findings and source evidence"],
               ["35–49", "Review decisions and partner controls"],
@@ -3096,7 +3101,7 @@ function OnboardingPanel({ tenant, company, onboardWorkspace, loadPilotDemo }: {
         <div className="grid gap-3">
           <button className={`rounded-lg border p-4 text-left ${mode === "accounting_practice" ? "border-brand bg-cyan-50" : "border-line bg-white"}`} onClick={() => setMode("accounting_practice")}>
             <strong>Accounting practice</strong>
-            <p className="mt-1 text-sm text-muted">Create one tenant for the firm, then keep every client company scoped by tenant and company.</p>
+            <p className="mt-1 text-sm text-muted">Keep your existing production software and apply one consistent review process across every client.</p>
           </button>
           <button className={`rounded-lg border p-4 text-left ${mode === "company" ? "border-brand bg-cyan-50" : "border-line bg-white"}`} onClick={() => setMode("company")}>
             <strong>Single company</strong>
@@ -3130,9 +3135,9 @@ function OnboardingPanel({ tenant, company, onboardWorkspace, loadPilotDemo }: {
             <input className="h-11 rounded-lg border border-line px-3" value={industry} onChange={(event) => setIndustry(event.target.value)} />
           </label>
           <label className="grid gap-2">
-            <span className="text-sm font-bold text-muted">Accounting system</span>
+            <span className="text-sm font-bold text-muted">Accounts production or bookkeeping source</span>
             <select className="h-11 rounded-lg border border-line px-3" value={accountingSystem} onChange={(event) => setAccountingSystem(event.target.value)}>
-              {["Sage", "Xero", "QuickBooks", "Business Central", "Unit4", "SAP", "Oracle", "Excel"].map((system) => <option key={system}>{system}</option>)}
+              {["IRIS Accounts Production", "CCH Accounts Production", "Digita Accounts Production", "Xero", "Sage", "QuickBooks", "Business Central", "Excel / CSV", "Other"].map((system) => <option key={system}>{system}</option>)}
             </select>
           </label>
           <label className="grid gap-2">
@@ -3151,6 +3156,33 @@ function OnboardingPanel({ tenant, company, onboardWorkspace, loadPilotDemo }: {
           <p className="mt-2 text-sm text-muted">All uploads, validation checks, findings, recommendations, AI conversations and reports are written with both tenant and company scope. Practice users only see companies granted through user-company access.</p>
         </div>
         <button className="mt-5 rounded-lg bg-brand px-5 py-3 font-bold text-white" onClick={submit}>Create Workspace</button>
+      </Panel>
+    </div>
+  );
+}
+
+function CompatibilityPanel({ setActive }: { setActive: (value: string) => void }) {
+  const systems = [
+    ["IRIS Accounts Production", "Prepared-accounts export", "Regression tested"],
+    ["CCH Accounts Production", "Guided export import", "Supported"],
+    ["Digita Accounts Production", "Guided export import", "Supported"],
+    ["Xero", "Connection or export", "Supported"],
+    ["Sage", "Accounting export", "Regression tested"],
+    ["QuickBooks", "Accounting export", "Regression tested"],
+  ];
+  return (
+    <div className="grid gap-4">
+      <section className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 p-6 shadow-panel">
+        <p className="text-xs font-black uppercase tracking-wide text-brand">Integrations and compatibility</p>
+        <h2 className="mt-2 max-w-4xl text-3xl font-black">Keep your accounts production software. Add a consistent review layer.</h2>
+        <p className="mt-3 max-w-3xl text-muted">Import prepared accounts, turn exceptions into evidence-backed findings, and produce a consistent partner sign-off pack.</p>
+        <div className="mt-5 flex flex-wrap gap-3"><button className="rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white" onClick={() => setActive("Upload Finance Pack")}>Import Prepared Accounts</button><a className="rounded-lg border border-blue-300 bg-white px-4 py-2.5 text-sm font-black text-brand" href="/compatibility" target="_blank" rel="noreferrer">Open Public Compatibility Page</a></div>
+      </section>
+      <Panel title="Compatible Source Systems">
+        <div className="grid gap-3">
+          {systems.map(([name, route, status]) => <article key={name} className="grid gap-2 rounded-lg border border-line p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-center"><strong>{name}</strong><span className="text-sm text-muted">{route}</span><span className="w-fit rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">{status}</span></article>)}
+        </div>
+        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong>Compatibility means import support, not vendor endorsement.</strong> Unless a connection is explicitly shown, ClosePilot reviews files exported from the source system. CCH and Digita use guided import and do not yet have vendor-specific regression suites.</p>
       </Panel>
     </div>
   );
@@ -3431,7 +3463,7 @@ function DashboardPanel({
             {[
               { label: "Run Finance Review", sub: "Full month-end review", page: "Finance Review" },
               { label: "Review Findings", sub: "Work through issues and evidence", page: "Findings" },
-              { label: "Upload Finance Pack", sub: "Upload TB, P&L and more", page: "Upload Finance Pack" },
+              { label: "Import Prepared Accounts", sub: "Bring in the TB, P&L and supporting schedules", page: "Upload Finance Pack" },
               { label: "Audit Readiness", sub: "Year-end and audit checks", page: "Audit Readiness" },
               { label: "Change Intelligence", sub: "What changed this period?", page: "Change Intelligence" },
               { label: "Ask ClosePilot", sub: "Ask anything about the numbers", page: "Ask ClosePilot" },
@@ -3543,7 +3575,7 @@ function OperationalOverviewDashboard({
     <div className="grid gap-4 xl:grid-cols-[1fr_300px]">
       <div className="grid gap-4">
         <section>
-          <div className="mb-3"><p className="text-xs font-bold uppercase text-muted">Partner Summary</p><h2 className="mt-1 text-xl font-black">Review outcome at a glance</h2></div>
+          <div className="mb-3"><p className="text-xs font-bold uppercase text-muted">Partner Summary</p><h2 className="mt-1 text-xl font-black">One consistent review, whoever prepared the accounts</h2><p className="mt-1 text-sm text-muted">Prepared accounts in. Evidence-backed partner decision out.</p></div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <OverviewMetricCard title="Review Quality" value={uploads.length ? score : 0} suffix="/100" tone={risk} badge={uploads.length ? "Review complete" : "Awaiting upload"} />
             <OverviewMetricCard title="Audit Readiness" value={uploads.length ? assurance.closeReadiness : 0} suffix="/100" tone={assurance.closeReadiness >= 80 ? "low" : assurance.closeReadiness >= 65 ? "medium" : "high"} badge={assurance.closeReadiness >= 80 ? "Good" : "Fair"} />
@@ -3727,7 +3759,7 @@ function OperationalOverviewDashboard({
         <OverviewCard title="Quick Actions">
           <div className="grid grid-cols-2 gap-2">
             {[
-              ["Upload Files", "Upload Finance Pack"],
+              ["Import Accounts", "Upload Finance Pack"],
               ["Run Review", "Finance Review"],
               ["View Findings", "Findings"],
               ["Generate Report", "Review Pack"],
@@ -3974,8 +4006,8 @@ function ReviewCommandCenter({
               <h2 className="mt-1 text-2xl font-black sm:text-3xl">Every ledger. Every balance. Every risk.</h2>
               <p className="mt-2 max-w-3xl text-sm text-muted">
                 {hasData
-                  ? `${assurance.testsExecuted} assurance tests executed across ${uploads.length} uploaded finance exports.`
-                  : `Upload a finance pack to run ${TOTAL_RULES}+ assurance tests across 8 review layers.`}
+                  ? `${assurance.testsExecuted} assurance tests executed across ${uploads.length} imported finance exports.`
+                  : `Import prepared accounts to run ${TOTAL_RULES}+ assurance tests across 8 review layers.`}
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -3984,7 +4016,7 @@ function ReviewCommandCenter({
                 Open Findings
               </button>
               <button className="rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-blue-700" onClick={() => setActive(hasData ? "Review Pack" : "Upload Finance Pack")}>
-                {hasData ? "Open Review Pack" : "Upload Pack"}
+                {hasData ? "Open Review Pack" : "Import Accounts"}
               </button>
             </div>
           </div>
@@ -4739,7 +4771,7 @@ function ReviewPack({
             <p className="mt-1 text-sm text-muted">{tenant.name} · Prepared {today} · {uploads.length} file{uploads.length !== 1 ? "s" : ""} reviewed</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:text-muted" disabled={reviewLocked} onClick={() => setActive("Upload Finance Pack")}>Upload More</button>
+            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:text-muted" disabled={reviewLocked} onClick={() => setActive("Upload Finance Pack")}>Import More</button>
             <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => exportFile(`${fileSlug}_findings.csv`, findingsCsv(findings), "text/csv;charset=utf-8")}>Findings Schedule</button>
             <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={downloadEvidencePack}>Evidence Archive</button>
             <button className="rounded-lg border border-brand px-4 py-2 text-sm font-bold text-brand" onClick={downloadWordPack}>Export Word Report</button>
@@ -5577,7 +5609,7 @@ function ChangeIntelligence({ findings, findingActivities, partnerSignOff, valid
         {!hasComparativePeriod && uploads.length > 0 && (
           <div className="mt-4 flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div><strong>Period movement unavailable.</strong><p className="mt-1 text-sm text-amber-950">Load a prior-period finance pack to calculate revenue, margin, cost and cash movements. The review-movement analysis below remains fully evidenced.</p></div>
-            <button className="shrink-0 rounded-lg bg-amber-700 px-4 py-2 text-sm font-bold text-white" onClick={() => setActive("Upload Finance Pack")}>Upload Comparative Pack</button>
+            <button className="shrink-0 rounded-lg bg-amber-700 px-4 py-2 text-sm font-bold text-white" onClick={() => setActive("Upload Finance Pack")}>Import Comparative Accounts</button>
           </div>
         )}
       </section>
@@ -5653,7 +5685,7 @@ function ScorePanel({ score, risk, company, uploads, setActive }: { score: numbe
           <h2 className="mt-2 text-3xl font-black">{company.name}'s reviewed pack scores {score}/100 for completeness.</h2>
           <p className="mt-3 max-w-xl text-muted">{uploads.length ? "ClosePilot converted uploaded finance exports into a finance review covering anomalies, cash risk, VAT exceptions, commentary and next actions." : "Upload your finance pack to generate an evidence-linked review. Score will update based on your actual findings."}</p>
           <div className="mt-5 flex flex-wrap gap-3">
-            <button className="rounded-lg bg-brand px-4 py-3 font-bold text-white" onClick={() => setActive("Upload Finance Pack")}>Upload New Pack</button>
+            <button className="rounded-lg bg-brand px-4 py-3 font-bold text-white" onClick={() => setActive("Upload Finance Pack")}>Import New Accounts</button>
             <button className="rounded-lg border border-line px-4 py-3 font-bold" onClick={() => setActive("Ask ClosePilot")}>Explain Score</button>
           </div>
         </div>
@@ -6271,7 +6303,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
             <p className="mt-1 text-sm text-muted">{findings.length ? `${findings.length} finding(s) tracked through the review workflow.` : "Upload a finance pack to create the first review queue."}</p>
           </div>
           <button className="rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white" onClick={() => setActive(uploads.length ? "Review Pack" : "Upload Finance Pack")}>
-            {uploads.length ? "Open Review Pack" : "Upload Pack"}
+            {uploads.length ? "Open Review Pack" : "Import Accounts"}
           </button>
         </div>
         <div className="mt-5 overflow-x-auto">
@@ -7399,7 +7431,7 @@ function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uploadJob, 
     <div className="grid gap-4">
       <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Finance pack readiness">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div><p className="text-xs font-bold uppercase text-muted">Guided Finance Pack Intake</p><h2 className="mt-1 text-2xl font-black">Upload once, then follow the exceptions</h2><p className="mt-2 max-w-3xl text-sm text-muted">ClosePilot identifies each finance export, checks whether the pack agrees, and creates findings linked to the original rows.</p></div>
+          <div><p className="text-xs font-bold uppercase text-muted">Prepared Accounts Intake</p><h2 className="mt-1 text-2xl font-black">Import prepared accounts, then follow the exceptions</h2><p className="mt-2 max-w-3xl text-sm text-muted">ClosePilot identifies each exported schedule, checks whether the accounts agree, and creates findings linked to the original rows.</p></div>
           <Pill level={!uploads.length || mappingIssues || failedChecks ? "medium" : "low"}>{intakeStatus}</Pill>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -7421,24 +7453,24 @@ function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uploadJob, 
 
       <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="grid content-start gap-4">
-        <Panel title="Upload Finance Pack">
+        <Panel title="Import Prepared Accounts">
           <div className="rounded-lg border-2 border-dashed border-line bg-slate-50 p-8 text-center">
-            <strong>Choose the finance exports for this review</strong>
-            <p className="mt-2 text-sm text-muted">Upload CSV or Excel files together. Trial balance, P&amp;L, balance sheet, debtors, creditors and VAT provide the strongest review coverage.</p>
+            <strong>Choose the prepared-account exports for this review</strong>
+            <p className="mt-2 text-sm text-muted">Import CSV or Excel files together. Trial balance, P&amp;L, balance sheet, debtors, creditors and VAT provide the strongest review coverage.</p>
             <label className="mt-5 inline-flex cursor-pointer rounded-lg bg-brand px-4 py-3 font-bold text-white">
-              {isAnalysing ? "Reviewing files…" : uploads.length ? "Add More Files" : "Choose Finance Files"}
+              {isAnalysing ? "Reviewing files…" : uploads.length ? "Add More Exports" : "Choose Prepared-Account Exports"}
               <input className="sr-only" type="file" multiple accept=".csv,.tsv,.txt,.xlsx,.xls" onChange={(event) => analyseUploads(event.target.files)} />
             </label>
             <p className="mt-3 text-sm text-muted">{uploadMessage}</p>
           </div>
         </Panel>
-        <Panel title="Uploaded Files">
+        <Panel title="Imported Files">
           <UploadList uploads={uploads} onDelete={onDelete} onClear={uploads.length ? onClear : undefined} />
         </Panel>
         </div>
 
         <div className="grid content-start gap-4">
-          <Panel title="Finance Pack Checklist">
+          <Panel title="Prepared Accounts Checklist">
             <div className="grid gap-2 sm:grid-cols-2">
               {expectedFiles.map((file) => {
                 const present = uploadedTypes.has(file.type);
@@ -7451,7 +7483,7 @@ function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uploadJob, 
           <Panel title="What To Do Next">
             <div className={`rounded-lg border p-4 ${canContinue ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
               <p className="text-xs font-black uppercase text-muted">Next action</p>
-              <h3 className="mt-1 text-lg font-black">{!uploads.length ? "Upload the finance pack" : isAnalysing ? "Wait while the review completes" : mappingIssues ? "Confirm the file mapping" : findings.length ? "Work through the findings" : "Open the finance review"}</h3>
+              <h3 className="mt-1 text-lg font-black">{!uploads.length ? "Import the prepared accounts" : isAnalysing ? "Wait while the review completes" : mappingIssues ? "Confirm the file mapping" : findings.length ? "Work through the findings" : "Open the finance review"}</h3>
               <p className="mt-1 text-sm text-muted">{!uploads.length ? "Start with the six core exports shown in the checklist." : mappingIssues ? "Confirm the suggested columns before relying on the results." : failedChecks ? "The review ran, but failed checks require attention before sign-off." : "The files have been reviewed and the next decision is ready."}</p>
               {canContinue && <button className="mt-4 rounded-lg bg-brand px-4 py-2.5 text-sm font-bold text-white" onClick={() => setActive(findings.length ? "Findings" : "Finance Review")}>{findings.length ? "Open Review Findings" : "Open Finance Review"}</button>}
             </div>

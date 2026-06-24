@@ -188,10 +188,10 @@ test("controls and fraud presents reviewable exceptions with evidence", async ({
 
 test("finance pack intake shows coverage and a clear next action", async ({ page }) => {
   await page.goto(`${baseURL}/demo`);
-  await page.getByRole("button", { name: "Upload Finance Pack", exact: true }).click();
+  await page.getByRole("button", { name: "Import Prepared Accounts", exact: true }).click();
 
   const readiness = page.getByRole("region", { name: "Finance pack readiness" });
-  await expect(readiness.getByText("Upload once, then follow the exceptions")).toBeVisible();
+  await expect(readiness.getByText("Import prepared accounts, then follow the exceptions")).toBeVisible();
   await expect(readiness.getByText("100%")).toBeVisible();
   await expect(page.getByText("All core review files are present.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Open Review Findings" })).toBeVisible();

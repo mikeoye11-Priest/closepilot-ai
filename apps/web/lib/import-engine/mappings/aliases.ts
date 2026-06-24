@@ -25,7 +25,7 @@ export interface MappingSuggestion {
 export const fieldAliases: Record<CanonicalField, string[]> = {
   accountCode: ["account_code", "code", "account", "acct", "nominal", "nominal_code", "gl_account", "gl_code", "account_no"],
   accountName: ["account_name", "name", "description", "desc", "account_description", "nominal_name", "gl_account_name"],
-  balance: ["balance", "closing_balance", "period_balance", "amount", "net", "movement", "net_movement"],
+  balance: ["balance", "closing_balance", "period_balance", "current_year", "this_year", "current_year_balance", "cy_balance", "amount", "net", "movement", "net_movement"],
   debit: ["debit", "debits", "dr", "debit_amount"],
   credit: ["credit", "credits", "cr", "credit_amount"],
   customerName: ["customer", "customer_name", "contact", "contact_name", "debtor", "debtor_name", "client", "client_name", "account_name", "name"],

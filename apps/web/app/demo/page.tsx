@@ -3,7 +3,7 @@ import { AppShell } from "@/components/app-shell";
 
 export const metadata: Metadata = {
   title: "ClosePilot Interactive Demo",
-  description: "Explore a completed ClosePilot finance assurance review using fictional Brightlane Manufacturing data.",
+  description: "See how prepared accounts become a consistent, evidence-backed partner review using fictional Brightlane Manufacturing data.",
 };
 
 export default function DemoPage() {

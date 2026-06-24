@@ -6,12 +6,15 @@ const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const AUTH_DISABLED = process.env.CLOSEPILOT_AUTH_DISABLED === "1" && process.env.NODE_ENV !== "production";
 
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const publicPaths = new Set(["/login", "/demo", "/compatibility"]);
+
   if (AUTH_DISABLED) {
     return NextResponse.next();
   }
 
   if (!SUPABASE_URL || !SUPABASE_KEY) {
-    if (process.env.NODE_ENV === "production" && request.nextUrl.pathname !== "/login") {
+    if (process.env.NODE_ENV === "production" && !publicPaths.has(pathname)) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
     return NextResponse.next();
@@ -33,9 +36,7 @@ export async function proxy(request: NextRequest) {
   });
 
   const { data: { user } } = await supabase.auth.getUser();
-  const { pathname } = request.nextUrl;
-
-  if (!user && pathname !== "/login") {
+  if (!user && !publicPaths.has(pathname)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

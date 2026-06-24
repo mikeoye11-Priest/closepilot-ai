@@ -57,7 +57,7 @@ export default function LoginPage() {
           <div className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 font-black text-white text-lg">CP</div>
           <div>
             <strong className="block text-white text-xl">ClosePilot</strong>
-            <span className="text-sm text-slate-400 font-semibold uppercase tracking-wide">Assurance Platform</span>
+            <span className="text-sm text-slate-400 font-semibold uppercase tracking-wide">System of Review</span>
           </div>
         </div>
 
@@ -100,7 +100,8 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <p className="mt-6 text-center text-xs text-slate-500">Secure · Multi-tenant · Evidence-linked finance review</p>
+        <p className="mt-6 text-center text-xs text-slate-400">Standardise review and partner sign-off without replacing your accounts production software.</p>
+        <p className="mt-2 text-center text-xs text-slate-500"><a className="underline hover:text-slate-300" href="/compatibility">View integrations and compatibility</a></p>
       </div>
     </div>
   );

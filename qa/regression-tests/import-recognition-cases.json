@@ -12,6 +12,18 @@
     ]
   },
   {
+    "id": "iris-accounts-production-tb",
+    "fileName": "IRIS_Accounts_Production_Trial_Balance.csv",
+    "expectedFileType": "trial_balance",
+    "expectedVendor": "IRIS",
+    "minConfidence": 90,
+    "expectedGateStatus": "ready",
+    "rows": [
+      { "Account Number": "4000", "Account Description": "Turnover", "Current Year": "-1000.00", "Previous Year": "-900.00" },
+      { "Account Number": "1200", "Account Description": "Bank", "Current Year": "1000.00", "Previous Year": "850.00" }
+    ]
+  },
+  {
     "id": "xero-aged-receivables",
     "fileName": "Xero_Aged_Receivables.csv",
     "expectedFileType": "aged_debtors",
