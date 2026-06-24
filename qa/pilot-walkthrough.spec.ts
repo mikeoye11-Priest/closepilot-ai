@@ -112,6 +112,11 @@ test("presentation route opens a clean preloaded demo", async ({ page }) => {
 
   await page.getByRole("button", { name: "Review Pack", exact: true }).click();
   await expect(page.getByRole("button", { name: /5 Export Pack/ })).toHaveAttribute("aria-pressed", "true");
+  const decisionPage = page.getByRole("region", { name: "Partner decision page" });
+  await expect(decisionPage.getByText("Approved with accepted risk")).toBeVisible();
+  await expect(decisionPage.getByText("4.7h")).toBeVisible();
+  await expect(decisionPage.getByText("£373 manager value")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Export Partner PDF" })).toBeVisible();
 
   await page.getByRole("button", { name: "Collections Intelligence", exact: true }).click();
   const collectionsSummary = page.getByRole("region", { name: "Collections summary" });

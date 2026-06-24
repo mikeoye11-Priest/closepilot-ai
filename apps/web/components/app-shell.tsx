@@ -2689,7 +2689,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setFocusedFindingId(findingId);
       setActive("Findings");
     }} setActive={setActive} />;
-    if (active === "Review Pack") return <ReviewPack company={currentCompany} tenant={tenant} userName={userName} score={score} risk={risk} findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} recommendations={recommendations} validationChecks={validationChecks} uploads={uploads} financialExposure={financialExposure} cashAtRisk={cashAtRisk} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
+    if (active === "Review Pack") return <ReviewPack company={currentCompany} tenant={tenant} userName={userName} score={score} risk={risk} findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} recommendations={recommendations} validationChecks={validationChecks} uploads={uploads} financialExposure={financialExposure} cashAtRisk={cashAtRisk} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
     if (active === "Change Intelligence") return <ChangeIntelligence findings={findings} findingActivities={findingActivities} partnerSignOff={partnerSignOff} validationChecks={validationChecks} uploads={uploads} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
       setFocusedFindingId(findingId);
@@ -4393,16 +4393,16 @@ function AuditReadiness({ findings, findingEvidence, partnerSignOff, validationC
 }
 
 function ReviewPack({
-  company, tenant, userName, score, risk, findings, findingEvidence, findingComments, findingActivities, partnerSignOff, reviewLocked, recommendations, validationChecks, uploads, financialExposure, cashAtRisk, onCreateNewReviewCycle, setActive
+  company, tenant, userName, score, risk, findings, findingEvidence, findingComments, findingActivities, partnerSignOff, reviewLocked, recommendations, validationChecks, uploads, financialExposure, cashAtRisk, timeSavedHours, timeSavedValue, onCreateNewReviewCycle, setActive
 }: {
-  company: Company; tenant: Tenant; userName: string; score: number; risk: RiskLevel; findings: Finding[]; findingEvidence: Evidence[]; findingComments: FindingComment[]; findingActivities: FindingActivity[]; partnerSignOff?: PartnerSignOff; reviewLocked: boolean; recommendations: Recommendation[]; validationChecks: ValidationCheck[]; uploads: Upload[]; financialExposure: number; cashAtRisk: number; onCreateNewReviewCycle: () => void; setActive: (value: string) => void;
+  company: Company; tenant: Tenant; userName: string; score: number; risk: RiskLevel; findings: Finding[]; findingEvidence: Evidence[]; findingComments: FindingComment[]; findingActivities: FindingActivity[]; partnerSignOff?: PartnerSignOff; reviewLocked: boolean; recommendations: Recommendation[]; validationChecks: ValidationCheck[]; uploads: Upload[]; financialExposure: number; cashAtRisk: number; timeSavedHours: string; timeSavedValue: number; onCreateNewReviewCycle: () => void; setActive: (value: string) => void;
 }) {
   const [preparedBy, setPreparedBy] = useState(userName || "ClosePilot Reviewer");
   const [reviewedBy, setReviewedBy] = useState(partnerSignOff?.reviewedBy ?? "");
   const [approvedBy, setApprovedBy] = useState(partnerSignOff?.approvedBy ?? partnerSignOff?.signedBy ?? "");
   const [signOffStatus, setSignOffStatus] = useState<PartnerSignOffStatus>(partnerSignOff?.status ?? "draft");
   const [reviewPackStatus, setReviewPackStatus] = useState<ReviewPackStatus>(partnerSignOff?.reviewPackStatus ?? "DRAFT");
-  const [packType, setPackType] = useState<"audit" | "partner" | "client" | "evidence">("audit");
+  const [packType, setPackType] = useState<"audit" | "partner" | "client" | "evidence">("partner");
   const [conclusion, setConclusion] = useState(partnerSignOff ? "Approved and locked following partner sign-off." : "Draft: manager review required before final issue.");
   const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
   const profile = evidenceProfile(findings);
@@ -4541,6 +4541,13 @@ function ReviewPack({
     validationBlockers: failedChecks.length,
     openHigh: openHigh.length + openCritical.length,
   });
+  const acceptedRiskExposure = acceptedRiskFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
+  const evidenceCompletePct = findings.length ? Math.round(profile.evidenceLinked / findings.length * 100) : uploads.length ? 100 : 0;
+  const signOffBlockers = openCritical.length + openHigh.length + failedChecks.length + evidenceOutstanding + managerReturned;
+  const decisionHeadline = partnerSignOff
+    ? acceptedRiskFindings.length ? "Approved with accepted risk" : "Approved and locked"
+    : reviewReady && !signOffBlockers ? "Ready for partner decision" : "Not ready for sign-off";
+  const decisionTone = partnerSignOff ? acceptedRiskFindings.length ? "border-violet-200 bg-violet-50 text-violet-950" : "border-emerald-200 bg-emerald-50 text-emerald-950" : reviewReady && !signOffBlockers ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-amber-200 bg-amber-50 text-amber-950";
   const pdfFindings = visibleFindings
     .slice()
     .sort((a, b) => findingSeverityRank(b.severity) - findingSeverityRank(a.severity))
@@ -4600,10 +4607,10 @@ function ReviewPack({
           </div>
           <div className="flex flex-wrap gap-2">
             <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:text-muted" disabled={reviewLocked} onClick={() => setActive("Upload Finance Pack")}>Upload More</button>
-            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => exportFile(`${fileSlug}_findings.csv`, findingsCsv(findings), "text/csv;charset=utf-8")}>Findings CSV</button>
-            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={downloadEvidencePack}>Evidence JSON</button>
-            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={downloadWordPack}>Word Pack</button>
-            <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => printWithTitle(`${company.name} Partner Review Report`)}>Export PDF</button>
+            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => exportFile(`${fileSlug}_findings.csv`, findingsCsv(findings), "text/csv;charset=utf-8")}>Findings Schedule</button>
+            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={downloadEvidencePack}>Evidence Archive</button>
+            <button className="rounded-lg border border-brand px-4 py-2 text-sm font-bold text-brand" onClick={downloadWordPack}>Export Word Report</button>
+            <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => printWithTitle(`${company.name} Partner Review Report`)}>Export Partner PDF</button>
           </div>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-5">
@@ -4639,7 +4646,7 @@ function ReviewPack({
             </select>
           </label>
           <label className="grid gap-1">
-            <span className="text-xs font-bold uppercase text-muted">Legacy Sign-Off</span>
+            <span className="text-xs font-bold uppercase text-muted">Workflow Status</span>
             <select className="h-10 rounded-lg border border-line px-3 text-sm font-bold" value={partnerSignOff?.status ?? signOffStatus} onChange={(e) => setSignOffStatus(e.target.value as PartnerSignOffStatus)} disabled={Boolean(partnerSignOff)}>
               <option value="draft">Draft</option>
               <option value="under_review">Under Review</option>
@@ -4662,30 +4669,55 @@ function ReviewPack({
       </section>
 
       <section id="practice-review-pack" className="rounded-lg border border-line bg-white p-6 shadow-panel print:border-0 print:p-0 print:shadow-none">
-        {packType === "audit" && (
-          <div className="print-page rounded-lg border border-slate-900 bg-white p-6 print-cover print:rounded-none print:border-0">
-            <div className="flex min-h-[520px] flex-col justify-between gap-8">
-              <div>
-                <p className="text-xs font-black uppercase tracking-wide text-muted">ClosePilot Assurance</p>
-                <h1 className="mt-3 text-4xl font-black">Partner Review Report</h1>
-                <p className="mt-2 max-w-2xl text-sm text-muted">Evidence-led finance assurance pack generated from uploaded finance exports, validation checks, findings workflow and sign-off gate status.</p>
+        <section className="print-page rounded-lg border border-slate-900 bg-white p-6 print-cover print:rounded-none print:border-0" aria-label="Partner decision page">
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div><p className="text-xs font-black uppercase tracking-wide text-muted">ClosePilot · Partner Decision Page</p><h1 className="mt-2 text-3xl font-black">{company.name}</h1><p className="mt-1 text-sm text-muted">{tenant.name} · Prepared {today} · {uploads.length} files reviewed</p></div>
+              <div className="text-left sm:text-right"><Pill level={partnerSignOff ? "low" : signOffBlockers ? "medium" : "low"}>{partnerSignOff ? "Locked" : signOffBlockers ? "Action required" : "Ready"}</Pill><p className="mt-2 text-xs font-bold text-muted">{effectiveReviewPackStatus.replaceAll("_", " ")}</p></div>
+            </div>
+
+            <div className={`rounded-lg border p-5 ${decisionTone}`}>
+              <p className="text-xs font-black uppercase">Partner conclusion</p>
+              <h2 className="mt-1 text-2xl font-black">{decisionHeadline}</h2>
+              <p className="mt-2 text-sm">{partnerSignOff?.note || partnerConclusion}</p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <ReportMetric label="Audit Readiness" value={`${generatedPack.executiveSummary.auditReadinessScore}%`} detail={`${signOffBlockers} sign-off blocker${signOffBlockers === 1 ? "" : "s"}`} />
+              <ReportMetric label="Financial Exposure" value={`£${Math.round(financialExposure).toLocaleString("en-GB")}`} detail={`${acceptedRiskExposure ? `£${Math.round(acceptedRiskExposure).toLocaleString("en-GB")} accepted risk` : "No accepted risk exposure"}`} />
+              <ReportMetric label="Evidence Complete" value={`${evidenceCompletePct}%`} detail={`${profile.evidenceLinked}/${findings.length || 0} findings supported`} />
+              <ReportMetric label="Time Saved" value={`${timeSavedHours}h`} detail={`£${timeSavedValue.toLocaleString("en-GB")} manager value`} />
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+              <div className="rounded-lg border border-line bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase text-muted">Review outcome</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <SummaryLine label="Findings identified" value={findings.length} />
+                  <SummaryLine label="Open items" value={openFindings.length} />
+                  <SummaryLine label="Accepted risks" value={acceptedRiskFindings.length} />
+                  <SummaryLine label="Validation blockers" value={failedChecks.length} />
+                  <SummaryLine label="Evidence outstanding" value={evidenceOutstanding} />
+                  <SummaryLine label="Manager decisions" value={`${managerApproved} approved · ${managerEscalated} escalated`} />
+                </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <SummaryLine label="Client" value={company.name} />
-                <SummaryLine label="Period" value="May 2026" />
-                <SummaryLine label="Prepared" value={today} />
-                <SummaryLine label="Prepared By" value={preparedBy || "ClosePilot"} />
-                <SummaryLine label="Status" value={auditTraffic.label} />
-                <SummaryLine label="Files Reviewed" value={uploads.length} />
-              </div>
-              <div className={`rounded-lg border p-4 ${auditTrafficClass.box}`}>
-                <p className={`text-xs font-black uppercase ${auditTrafficClass.text}`}>Partner Conclusion</p>
-                <p className="mt-2 text-lg font-black">{auditTraffic.headline}</p>
-                <p className="mt-2 text-sm text-muted">{partnerConclusion}</p>
+              <div className="rounded-lg border border-line bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase text-muted">Items requiring partner awareness</p>
+                <div className="mt-3 grid gap-2">
+                  {[...openCritical, ...openHigh, ...acceptedRiskFindings].length ? [...openCritical, ...openHigh, ...acceptedRiskFindings].slice(0, 4).map((finding) => (
+                    <div key={finding.id} className="flex items-start justify-between gap-3 rounded-lg border border-line bg-white p-3"><span><strong className="block text-sm">{finding.title}</strong><span className="mt-1 block text-xs text-muted">{finding.status.replaceAll("_", " ")} · {finding.amount ? `£${Math.round(finding.amount).toLocaleString("en-GB")}` : finding.expectedImpact}</span></span><Pill level={finding.severity}>{finding.severity}</Pill></div>
+                  )) : <p className="text-sm text-muted">No open high-risk items or accepted risks require partner awareness.</p>}
+                </div>
               </div>
             </div>
+
+            <div className="grid gap-3 border-t border-line pt-4 sm:grid-cols-3">
+              <SummaryLine label="Prepared By" value={partnerSignOff?.preparedBy || preparedBy || "-"} />
+              <SummaryLine label="Reviewed By" value={partnerSignOff?.reviewedBy || reviewedBy || "-"} />
+              <SummaryLine label="Approved By" value={partnerSignOff?.approvedBy || partnerSignOff?.signedBy || approvedBy || "Pending"} />
+            </div>
           </div>
-        )}
+        </section>
 
         <div className="print-page border-b border-line pb-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

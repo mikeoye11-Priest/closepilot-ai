@@ -116,14 +116,14 @@ test("workflow buttons, downloads and review pack controls work", async ({ page 
   await expect(page.getByText("P&L agrees to trial balance movement").first()).toBeVisible();
 
   const csvDownload = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Findings CSV" }).click();
+  await page.getByRole("button", { name: "Findings Schedule" }).click();
   await expect((await csvDownload).suggestedFilename()).toContain("findings.csv");
 
   const jsonDownload = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Evidence JSON" }).click();
+  await page.getByRole("button", { name: "Evidence Archive" }).click();
   await expect((await jsonDownload).suggestedFilename()).toMatch(/review_pack\.json$/);
 
-  await page.getByRole("button", { name: "Export PDF" }).click();
+  await page.getByRole("button", { name: "Export Partner PDF" }).click();
 
   await clickSidebarNav(page, "Settings");
   await page.getByRole("button", { name: "Save Settings" }).click();
