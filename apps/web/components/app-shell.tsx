@@ -2666,7 +2666,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
 
     if (active === "Findings") return <FindingsHub findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} pilotWalkthroughStep={isPilotDemo ? pilotWalkthroughStep : undefined} focusedFindingId={focusedFindingId} clearFocusedFinding={() => setFocusedFindingId(null)} validationChecks={validationChecks} uploads={uploads} updateFindingStatus={updateFindingStatus} updateFindingAssignment={updateFindingAssignment} updateManagerReview={updateManagerReview} recordPartnerSignOff={recordPartnerSignOff} addFindingComment={addFindingComment} addFindingEvidence={addFindingEvidence} updateEvidenceStatus={updateEvidenceStatus} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
     if (active === "Assurance Engine") return <AssuranceEngine assurance={assurance} coreQuality={coreQuality} findings={findings} validationChecks={validationChecks} uploads={uploads} ruleAnalytics={ruleAnalytics} setActive={setActive} />;
-    if (active === "Upload Finance Pack") return <UploadAnalyse analyseUploads={analyseUploads} isAnalysing={isAnalysing} uploadMessage={uploadMessage} validationChecks={validationChecks} uploads={uploads} importProfiles={importProfiles} confirmImportProfile={confirmImportProfile} findings={findings} recommendations={recommendations} onDelete={deleteUpload} onClear={clearCurrentReview} />;
+    if (active === "Upload Finance Pack") return <UploadAnalyse analyseUploads={analyseUploads} isAnalysing={isAnalysing} uploadMessage={uploadMessage} validationChecks={validationChecks} uploads={uploads} importProfiles={importProfiles} confirmImportProfile={confirmImportProfile} findings={findings} recommendations={recommendations} onDelete={deleteUpload} onClear={clearCurrentReview} setActive={setActive} />;
     if (active === "Close Review") return <MonthEndClose findings={findings} recommendations={recommendations} completeRecommendation={completeRecommendation} updateFindingStatus={updateFindingStatus} />;
     if (active === "Cash Intelligence") return <CashflowPanel findings={findings} uploads={uploads} collectionCases={collectionCases} openCollections={() => setActive("Collections Intelligence")} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : 1);
@@ -7241,16 +7241,51 @@ function ImportMappingProfilesPanel({ profiles, confirmImportProfile }: { profil
   );
 }
 
-function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, validationChecks, uploads, importProfiles, confirmImportProfile, findings, recommendations, onDelete, onClear }: { analyseUploads: (files: FileList | null) => void; isAnalysing: boolean; uploadMessage: string; validationChecks: ValidationCheck[]; uploads: Upload[]; importProfiles: ImportMappingProfile[]; confirmImportProfile: (profileId: string) => void; findings: Finding[]; recommendations: Recommendation[]; onDelete: (id: string) => void; onClear: () => void }) {
+function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, validationChecks, uploads, importProfiles, confirmImportProfile, findings, recommendations, onDelete, onClear, setActive }: { analyseUploads: (files: FileList | null) => void; isAnalysing: boolean; uploadMessage: string; validationChecks: ValidationCheck[]; uploads: Upload[]; importProfiles: ImportMappingProfile[]; confirmImportProfile: (profileId: string) => void; findings: Finding[]; recommendations: Recommendation[]; onDelete: (id: string) => void; onClear: () => void; setActive: (value: string) => void }) {
+  const expectedFiles: Array<{ type: Upload["fileType"]; label: string; required: boolean }> = [
+    { type: "trial_balance", label: "Trial Balance", required: true },
+    { type: "profit_loss", label: "Profit & Loss", required: true },
+    { type: "balance_sheet", label: "Balance Sheet", required: true },
+    { type: "aged_debtors", label: "Aged Debtors", required: true },
+    { type: "aged_creditors", label: "Aged Creditors", required: true },
+    { type: "vat_report", label: "VAT Report", required: true },
+    { type: "bank_reconciliation", label: "Bank Reconciliation", required: false },
+  ];
+  const uploadedTypes = new Set(uploads.map((upload) => upload.fileType));
+  const requiredFiles = expectedFiles.filter((file) => file.required);
+  const requiredPresent = requiredFiles.filter((file) => uploadedTypes.has(file.type)).length;
+  const missingRequired = requiredFiles.filter((file) => !uploadedTypes.has(file.type));
+  const coverage = Math.round(requiredPresent / requiredFiles.length * 100);
+  const mappingIssues = uploads.filter((upload) => upload.importGateStatus && upload.importGateStatus !== "ready").length;
+  const failedChecks = validationChecks.filter((check) => check.status === "failed").length;
+  const warningChecks = validationChecks.filter((check) => check.status === "warning").length;
+  const intakeStatus = !uploads.length ? "Awaiting finance pack" : isAnalysing ? "Review running" : mappingIssues ? "File mapping required" : failedChecks ? "Validation review required" : missingRequired.length ? "Review available with missing files" : "Finance pack ready";
+  const canContinue = uploads.length > 0 && !isAnalysing && mappingIssues === 0;
+
   return (
-    <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-      <div className="grid gap-4">
+    <div className="grid gap-4">
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Finance pack readiness">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div><p className="text-xs font-bold uppercase text-muted">Guided Finance Pack Intake</p><h2 className="mt-1 text-2xl font-black">Upload once, then follow the exceptions</h2><p className="mt-2 max-w-3xl text-sm text-muted">ClosePilot identifies each finance export, checks whether the pack agrees, and creates findings linked to the original rows.</p></div>
+          <Pill level={!uploads.length || mappingIssues || failedChecks ? "medium" : "low"}>{intakeStatus}</Pill>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Metric title="Core File Coverage" value={`${coverage}%`} detail={`${requiredPresent}/${requiredFiles.length} required files`} tone={coverage === 100 ? "low" : "medium"} />
+          <Metric title="Files Reviewed" value={String(uploads.length)} detail="Recognised finance exports" tone={uploads.length ? "low" : "medium"} />
+          <Metric title="File Mapping" value={mappingIssues ? String(mappingIssues) : "Ready"} detail={mappingIssues ? "Files need confirmation" : "No mapping hold"} tone={mappingIssues ? "high" : "low"} />
+          <Metric title="Validation" value={failedChecks ? `${failedChecks} blocked` : "Ready"} detail={`${warningChecks} warning${warningChecks === 1 ? "" : "s"}`} tone={failedChecks ? "critical" : warningChecks ? "medium" : "low"} />
+          <Metric title="Review Output" value={String(findings.length)} detail={`${recommendations.length} recommended actions`} tone={findings.length ? "medium" : "low"} />
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="grid content-start gap-4">
         <Panel title="Upload Finance Pack">
           <div className="rounded-lg border-2 border-dashed border-line bg-slate-50 p-8 text-center">
-            <strong>Drop Trial Balance, P&L, Balance Sheet, AR, AP and VAT files</strong>
-            <p className="mt-2 text-sm text-muted">ClosePilot parses CSV, TSV, TXT, XLSX and XLS finance exports server-side, then generates evidence-linked findings and validation checks.</p>
+            <strong>Choose the finance exports for this review</strong>
+            <p className="mt-2 text-sm text-muted">Upload CSV or Excel files together. Trial balance, P&amp;L, balance sheet, debtors, creditors and VAT provide the strongest review coverage.</p>
             <label className="mt-5 inline-flex cursor-pointer rounded-lg bg-brand px-4 py-3 font-bold text-white">
-              {isAnalysing ? "Analysing..." : "Choose Files"}
+              {isAnalysing ? "Reviewing files…" : uploads.length ? "Add More Files" : "Choose Finance Files"}
               <input className="sr-only" type="file" multiple accept=".csv,.tsv,.txt,.xlsx,.xls" onChange={(event) => analyseUploads(event.target.files)} />
             </label>
             <p className="mt-3 text-sm text-muted">{uploadMessage}</p>
@@ -7259,8 +7294,48 @@ function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, validationC
         <Panel title="Uploaded Files">
           <UploadList uploads={uploads} onDelete={onDelete} onClear={uploads.length ? onClear : undefined} />
         </Panel>
-        <UploadIntelligence uploads={uploads} />
-        <ImportMappingProfilesPanel profiles={importProfiles} confirmImportProfile={confirmImportProfile} />
+        </div>
+
+        <div className="grid content-start gap-4">
+          <Panel title="Finance Pack Checklist">
+            <div className="grid gap-2 sm:grid-cols-2">
+              {expectedFiles.map((file) => {
+                const present = uploadedTypes.has(file.type);
+                return <div key={file.type} className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${present ? "border-emerald-200 bg-emerald-50" : file.required ? "border-amber-200 bg-amber-50" : "border-line bg-slate-50"}`}><span><strong className="block text-sm">{file.label}</strong><span className="text-xs text-muted">{file.required ? "Core review file" : "Recommended for audit readiness"}</span></span><span className={`grid h-6 w-6 place-items-center rounded-full text-xs font-black ${present ? "bg-emerald-600 text-white" : "bg-white text-muted"}`}>{present ? "✓" : "—"}</span></div>;
+              })}
+            </div>
+            {missingRequired.length ? <p className="mt-3 text-sm text-amber-900"><strong>Missing:</strong> {missingRequired.map((file) => file.label).join(", ")}. You can continue, but these areas will have less review coverage.</p> : <p className="mt-3 text-sm font-semibold text-emerald-800">All core review files are present.</p>}
+          </Panel>
+
+          <Panel title="What To Do Next">
+            <div className={`rounded-lg border p-4 ${canContinue ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+              <p className="text-xs font-black uppercase text-muted">Next action</p>
+              <h3 className="mt-1 text-lg font-black">{!uploads.length ? "Upload the finance pack" : isAnalysing ? "Wait while the review completes" : mappingIssues ? "Confirm the file mapping" : findings.length ? "Work through the findings" : "Open the finance review"}</h3>
+              <p className="mt-1 text-sm text-muted">{!uploads.length ? "Start with the six core exports shown in the checklist." : mappingIssues ? "Confirm the suggested columns before relying on the results." : failedChecks ? "The review ran, but failed checks require attention before sign-off." : "The files have been reviewed and the next decision is ready."}</p>
+              {canContinue && <button className="mt-4 rounded-lg bg-brand px-4 py-2.5 text-sm font-bold text-white" onClick={() => setActive(findings.length ? "Findings" : "Finance Review")}>{findings.length ? "Open Review Findings" : "Open Finance Review"}</button>}
+            </div>
+          </Panel>
+
+          <Panel title="Review Progress">
+            <div className="grid gap-3">
+              {([
+                ["Files recognised", uploads.length > 0, uploads.length ? `${uploads.length} exports reviewed` : "Awaiting upload"],
+                ["Columns confirmed", uploads.length > 0 && mappingIssues === 0, mappingIssues ? `${mappingIssues} mapping confirmation required` : uploads.length ? "Ready" : "Not started"],
+                ["Balances checked", validationChecks.length > 0, validationChecks.length ? `${validationChecks.length} checks completed` : "Not started"],
+                ["Findings created", findings.length > 0, findings.length ? `${findings.length} findings ready for decision` : "No findings yet"],
+              ] as [string, boolean, string][]).map(([step, done, detail]) => (
+                <div key={step} className="flex items-center justify-between gap-3 rounded-lg border border-line p-4"><span><strong className="block">{step}</strong><span className="mt-1 block text-xs text-muted">{detail}</span></span><Pill level={done ? "low" : "medium"}>{done ? "Complete" : "Pending"}</Pill></div>
+              ))}
+            </div>
+          </Panel>
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <div className="grid content-start gap-4">
+          <UploadIntelligence uploads={uploads} />
+          <ImportMappingProfilesPanel profiles={importProfiles} confirmImportProfile={confirmImportProfile} />
+        </div>
         <Panel title="Validation Checks">
           <div className="grid gap-3">
             {validationChecks.length === 0 && <p className="text-sm text-muted">No validation checks yet. Upload a finance pack to begin.</p>}
@@ -7275,23 +7350,7 @@ function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, validationC
             ))}
           </div>
         </Panel>
-      </div>
-      <Panel title="Finance Review Pipeline">
-        <div className="grid gap-3">
-          {([
-            ["Validate exports", validationChecks.length > 0],
-            ["Map accounts and periods", uploads.length > 0],
-            ["Find anomalies and finance risks", findings.length > 0],
-            ["Generate actions and commentary", recommendations.length > 0],
-            ["Prepare board-ready finance review", findings.length > 0 && recommendations.length > 0],
-          ] as [string, boolean][]).map(([step, done]) => (
-            <div key={step} className="flex items-center justify-between rounded-lg border border-line p-4">
-              <strong>{step}</strong>
-              <Pill level={done ? "low" : "medium"}>{done ? "Complete" : "Queued"}</Pill>
-            </div>
-          ))}
-        </div>
-      </Panel>
+      </section>
     </div>
   );
 }
