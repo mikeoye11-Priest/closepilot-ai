@@ -2669,7 +2669,11 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     if (active === "Assurance Engine") return <AssuranceEngine assurance={assurance} coreQuality={coreQuality} findings={findings} validationChecks={validationChecks} uploads={uploads} ruleAnalytics={ruleAnalytics} setActive={setActive} />;
     if (active === "Upload Finance Pack") return <UploadAnalyse analyseUploads={analyseUploads} isAnalysing={isAnalysing} uploadMessage={uploadMessage} validationChecks={validationChecks} uploads={uploads} importProfiles={importProfiles} confirmImportProfile={confirmImportProfile} findings={findings} recommendations={recommendations} onDelete={deleteUpload} onClear={clearCurrentReview} />;
     if (active === "Close Review") return <MonthEndClose findings={findings} recommendations={recommendations} completeRecommendation={completeRecommendation} updateFindingStatus={updateFindingStatus} />;
-    if (active === "Cash Intelligence") return <CashflowPanel forecast={forecast} findings={findings} uploads={uploads} />;
+    if (active === "Cash Intelligence") return <CashflowPanel findings={findings} uploads={uploads} collectionCases={collectionCases} openCollections={() => setActive("Collections Intelligence")} openFindingEvidence={(findingId) => {
+      if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : 1);
+      setFocusedFindingId(findingId);
+      setActive("Findings");
+    }} />;
     if (active === "Collections Intelligence") return <CollectionsPanel findings={findings} collectionCases={collectionCases} saveCollectionCase={(nextCase) => setCollectionCases((items) => [nextCase, ...items.filter((item) => item.id !== nextCase.id)])} actor={userName || "Collections Team"} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
       setFocusedFindingId(findingId);
@@ -2683,7 +2687,11 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setActive("Findings");
     }} setActive={setActive} />;
     if (active === "Review Pack") return <ReviewPack company={currentCompany} tenant={tenant} userName={userName} score={score} risk={risk} findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} recommendations={recommendations} validationChecks={validationChecks} uploads={uploads} financialExposure={financialExposure} cashAtRisk={cashAtRisk} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
-    if (active === "Change Intelligence") return <ChangeIntelligence findings={findings} uploads={uploads} />;
+    if (active === "Change Intelligence") return <ChangeIntelligence findings={findings} findingActivities={findingActivities} partnerSignOff={partnerSignOff} validationChecks={validationChecks} uploads={uploads} openFindingEvidence={(findingId) => {
+      if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
+      setFocusedFindingId(findingId);
+      setActive("Findings");
+    }} setActive={setActive} />;
     if (active === "Ask ClosePilot") return <AICopilot question={question} setQuestion={setQuestion} score={score} findings={findings} findingActivities={findingActivities} validationChecks={validationChecks} uploads={uploads} company={currentCompany} forecast={forecast} assistantResult={assistantResult?.companyId === currentCompany.id ? assistantResult : null} setAssistantResult={setAssistantResult} updateFindingStatus={updateFindingStatus} updateManagerReview={updateManagerReview} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
       setFocusedFindingId(findingId);
@@ -5311,97 +5319,111 @@ function FindingTriageSection({ title, findings, empty, compact = false }: { tit
   );
 }
 
-function ChangeIntelligence({ findings, uploads }: { findings: Finding[]; uploads: Upload[] }) {
-  const hasData = uploads.length > 0;
-  const arFindings = findings.filter((f) => f.category === "ar");
-  const vatFindings = findings.filter((f) => f.category === "vat");
-  const controlFindings = findings.filter((f) => f.category === "controls");
-  const apFindings = findings.filter((f) => f.category === "ap");
+function ChangeIntelligence({ findings, findingActivities, partnerSignOff, validationChecks, uploads, openFindingEvidence, setActive }: {
+  findings: Finding[];
+  findingActivities: FindingActivity[];
+  partnerSignOff?: PartnerSignOff;
+  validationChecks: ValidationCheck[];
+  uploads: Upload[];
+  openFindingEvidence: (findingId: string) => void;
+  setActive: (value: string) => void;
+}) {
+  const periods = Array.from(new Set(findings.map((finding) => finding.evidence.period).filter(Boolean)));
+  const hasComparativePeriod = periods.length > 1;
+  const evidenceFindings = findings.filter((finding) => finding.evidenceStrength !== "advisory");
+  const valueFor = (finding: Finding) => finding.amount ?? parseImpactAmount(finding.expectedImpact);
+  const exposureIdentified = evidenceFindings.reduce((sum, finding) => sum + valueFor(finding), 0);
+  const residualFindings = evidenceFindings.filter((finding) => isOpenFinding(finding) || finding.status === "accepted_risk" || finding.status === "accepted");
+  const residualExposure = residualFindings.reduce((sum, finding) => sum + valueFor(finding), 0);
+  const clearedExposure = Math.max(0, exposureIdentified - residualExposure);
+  const resolvedCount = findings.filter((finding) => !isOpenFinding(finding) && finding.status !== "accepted_risk").length;
+  const acceptedRisk = findings.filter((finding) => finding.status === "accepted_risk");
+  const warningChecks = validationChecks.filter((check) => check.status === "warning").length;
+  const categoryLabels: Record<Finding["category"], string> = { ar: "Receivables", ap: "Payables", cashflow: "Cash flow", controls: "Controls", data_quality: "Data quality", financial_statements: "Financial statements", month_end: "Close", vat: "VAT" };
+  const categories = Array.from(new Set(evidenceFindings.map((finding) => finding.category)));
+  const movementData = categories.map((category) => {
+    const categoryFindings = evidenceFindings.filter((finding) => finding.category === category);
+    return {
+      category: categoryLabels[category],
+      identified: Math.round(categoryFindings.reduce((sum, finding) => sum + valueFor(finding), 0) / 1000),
+      residual: Math.round(categoryFindings.filter((finding) => isOpenFinding(finding) || finding.status === "accepted_risk" || finding.status === "accepted").reduce((sum, finding) => sum + valueFor(finding), 0) / 1000),
+    };
+  });
+  const materialFindings = evidenceFindings.slice().sort((a, b) => valueFor(b) - valueFor(a));
 
-  const changes = [
-    { metric: "Revenue",         value: "—", detail: "Connect prior period data to see comparison", tone: "low" as RiskLevel },
-    { metric: "Gross Margin",    value: "—", detail: "Connect prior period data to see comparison", tone: "low" as RiskLevel },
-    { metric: "Cash Position",   value: "—", detail: "Connect prior period data to see comparison", tone: "low" as RiskLevel },
-    { metric: "Debtor Days",     value: arFindings.length ? "Overdue" : hasData ? "Stable" : "—", detail: arFindings.length ? `${arFindings.length} AR finding(s) detected` : "No AR exceptions found", tone: arFindings.length ? "high" as RiskLevel : "low" as RiskLevel },
-    { metric: "Operating Costs", value: "—", detail: "Connect prior period data to see comparison", tone: "low" as RiskLevel },
-    { metric: "VAT Liability",   value: vatFindings.length ? "Exception" : hasData ? "On track" : "—", detail: vatFindings.length ? `${vatFindings.length} VAT issue(s) flagged` : "No VAT exceptions found", tone: vatFindings.length ? "medium" as RiskLevel : "low" as RiskLevel },
-    { metric: "AP Duplicates",   value: apFindings.length ? "Found" : hasData ? "Clear" : "—", detail: apFindings.length ? `${apFindings.length} potential duplicate(s)` : "No duplicate invoices detected", tone: apFindings.length ? "medium" as RiskLevel : "low" as RiskLevel },
-    { metric: "Controls",        value: controlFindings.length ? "Exception" : hasData ? "Clean" : "—", detail: controlFindings.length ? `${controlFindings.length} control breach(es)` : "No control exceptions", tone: controlFindings.length ? "high" as RiskLevel : "low" as RiskLevel },
-  ];
-
-  const sparkData = [
-    { period: "Oct", revenue: 182, margin: 38, cash: 210 },
-    { period: "Nov", revenue: 191, margin: 36, cash: 198 },
-    { period: "Dec", revenue: 205, margin: 37, cash: 215 },
-    { period: "Jan", revenue: 198, margin: 35, cash: 203 },
-    { period: "Feb", revenue: 212, margin: 34, cash: 219 },
-    { period: "Mar", revenue: 229, margin: 32, cash: 228 },
-  ];
-
-  const materialFindings = findings.filter((f) => f.severity === "critical" || f.severity === "high").slice(0, 4);
+  const outcomeFor = (finding: Finding) => {
+    if (finding.status === "accepted_risk") return "Risk accepted and retained";
+    if (finding.status === "false_positive") return "False positive closed";
+    if (["resolved", "approved", "closed", "accepted"].includes(finding.status)) return "Resolved during review";
+    return "Action remains open";
+  };
 
   return (
     <div className="grid gap-4">
-      <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
-        <p className="text-xs font-bold uppercase text-muted">Change Intelligence</p>
-        <h2 className="mt-1 text-2xl font-black">What changed this period — and why it matters.</h2>
-        <p className="mt-2 text-muted">ClosePilot compares this period against the prior period and surfaces material movements for management review.</p>
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Change intelligence summary">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase text-muted">Change Intelligence</p>
+            <h2 className="mt-1 text-2xl font-black">What changed during review—and what remains.</h2>
+            <p className="mt-2 text-muted">Every movement below is derived from findings, evidence rows and reviewer decisions. No comparative financial trend is shown without a prior-period pack.</p>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-black ${hasComparativePeriod ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{hasComparativePeriod ? `${periods.length} periods compared` : "1 financial period loaded"}</span>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Metric title="Exposure Identified" value={`£${Math.round(exposureIdentified).toLocaleString("en-GB")}`} detail={`${evidenceFindings.length} evidence-backed findings`} tone={exposureIdentified ? "high" : "low"} />
+          <Metric title="Cleared or Closed" value={`£${Math.round(clearedExposure).toLocaleString("en-GB")}`} detail={`${resolvedCount} review decisions`} tone="low" />
+          <Metric title="Residual Exposure" value={`£${Math.round(residualExposure).toLocaleString("en-GB")}`} detail={`${acceptedRisk.length} accepted risk${acceptedRisk.length === 1 ? "" : "s"}`} tone={residualExposure ? "high" : "low"} />
+          <Metric title="Validation Warnings" value={String(warningChecks)} detail="Current-period controls" tone={warningChecks ? "medium" : "low"} />
+          <Metric title="Decision Trail" value={String(findingActivities.length)} detail={partnerSignOff ? "Partner pack locked" : "Partner review pending"} tone={partnerSignOff ? "low" : "medium"} />
+        </div>
+        {!hasComparativePeriod && uploads.length > 0 && (
+          <div className="mt-4 flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div><strong>Period movement unavailable.</strong><p className="mt-1 text-sm text-amber-950">Load a prior-period finance pack to calculate revenue, margin, cost and cash movements. The review-movement analysis below remains fully evidenced.</p></div>
+            <button className="shrink-0 rounded-lg bg-amber-700 px-4 py-2 text-sm font-bold text-white" onClick={() => setActive("Upload Finance Pack")}>Upload Comparative Pack</button>
+          </div>
+        )}
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {changes.map(({ metric, value, detail, tone }) => (
-          <article key={metric} className={`min-h-32 rounded-lg border border-l-4 border-line bg-white p-4 shadow-panel ${tone === "low" ? "border-l-green" : tone === "medium" ? "border-l-amber" : "border-l-red"}`}>
-            <p className="text-sm font-bold text-muted">{metric}</p>
-            <strong className="mt-3 block text-3xl font-black">{value}</strong>
-            <span className="mt-1 block text-sm text-muted">{detail}</span>
-          </article>
-        ))}
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <Panel title="Revenue, Margin & Cash — 6 Months">
-          {hasData ? (
-            <>
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={sparkData} margin={{ left: -18, right: 18, top: 12, bottom: 0 }}>
-                    <CartesianGrid stroke="#e5e7eb" strokeDasharray="4 4" vertical={false} />
-                    <XAxis dataKey="period" tickLine={false} axisLine={false} />
-                    <YAxis tickLine={false} axisLine={false} />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="revenue" stroke="#1d4ed8" strokeWidth={2} dot={false} name="Revenue £k" />
-                    <Line type="monotone" dataKey="margin" stroke="#15803d" strokeWidth={2} dot={false} name="Margin %" />
-                    <Line type="monotone" dataKey="cash" stroke="#0e7490" strokeWidth={2} dot={false} name="Cash £k" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-              <p className="mt-2 text-xs italic text-muted">Upload data from multiple periods to see actual period-over-period trends.</p>
-            </>
-          ) : (
-            <div className="flex h-72 items-center justify-center rounded-lg border-2 border-dashed border-line bg-slate-50">
-              <div className="text-center">
-                <p className="font-bold text-muted">No data uploaded</p>
-                <p className="mt-1 text-sm text-muted">Upload finance exports from multiple periods to see trend analysis.</p>
-              </div>
+      <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <Panel title="Exposure Movement by Area">
+          {movementData.length ? (
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={movementData} margin={{ left: 8, right: 12, top: 12, bottom: 0 }}>
+                  <CartesianGrid stroke="#e5e7eb" strokeDasharray="4 4" vertical={false} />
+                  <XAxis dataKey="category" tickLine={false} axisLine={false} />
+                  <YAxis tickFormatter={(value) => `£${value}k`} tickLine={false} axisLine={false} />
+                  <Tooltip formatter={(value) => `£${Number(value).toLocaleString()}k`} />
+                  <Bar dataKey="identified" name="Identified" fill="#f59e0b" radius={[5, 5, 0, 0]} />
+                  <Bar dataKey="residual" name="Residual" fill="#dc2626" radius={[5, 5, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-          )}
+          ) : <EmptyState title="No review movement" detail="Upload a finance pack to identify evidence-backed movements." />}
+          <p className="mt-2 text-xs text-muted">Identified exposure is compared with the amount remaining open or accepted as risk after review.</p>
         </Panel>
 
-        <Panel title="Material Changes Driving Findings">
+        <Panel title="Material Review Movements">
           <div className="grid gap-3">
-            {materialFindings.length ? materialFindings.map((f) => (
-              <div key={f.id} className="rounded-lg border border-line bg-slate-50 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <strong className="text-sm">{f.title}</strong>
-                  <Pill level={f.severity}>{f.severity}</Pill>
+            {materialFindings.length ? materialFindings.map((finding) => (
+              <div key={finding.id} className="rounded-lg border border-line bg-slate-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Pill level={finding.severity}>{finding.severity}</Pill><span className="rounded-full bg-white px-2 py-1 text-xs font-black text-slate-600">{outcomeFor(finding)}</span></div><strong className="mt-2 block">{finding.title}</strong><p className="mt-1 text-sm text-muted">{finding.reviewReason || finding.resolutionNote || finding.description}</p><p className="mt-2 text-xs text-muted">{finding.evidence.sourceFile} · {finding.ruleId ?? finding.id}</p></div>
+                  <div className="shrink-0 text-right"><strong className="block text-xl">£{Math.round(valueFor(finding)).toLocaleString("en-GB")}</strong><button className="mt-2 rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold" onClick={() => openFindingEvidence(finding.id)}>View Evidence</button></div>
                 </div>
-                <p className="mt-1 text-xs text-muted">{f.description}</p>
               </div>
-            )) : (
-              <p className="text-sm text-muted">No material findings linked to period changes. Upload a finance pack to generate change analysis.</p>
-            )}
+            )) : <EmptyState title="No material movements" detail="No evidence-backed findings were generated." />}
           </div>
         </Panel>
+      </section>
+
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-bold uppercase text-muted">Decision Timeline</p><h2 className="mt-1 text-xl font-black">Detected → reviewed → signed off</h2></div>{partnerSignOff && <span className="text-sm font-semibold text-emerald-700">Locked by {partnerSignOff.signedBy}</span>}</div>
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          {materialFindings.map((finding, index) => (
+            <article key={finding.id} className="rounded-lg border border-line p-4"><span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs font-black text-white">{index + 1}</span><p className="mt-3 text-xs font-bold uppercase text-muted">{finding.createdAt ? new Date(finding.createdAt).toLocaleString("en-GB") : finding.evidence.period}</p><strong className="mt-1 block text-sm">{finding.title}</strong><p className="mt-2 text-xs text-muted">{outcomeFor(finding)}{finding.reviewedAt ? ` · reviewed ${new Date(finding.reviewedAt).toLocaleDateString("en-GB")}` : ""}</p></article>
+          ))}
+        </div>
       </section>
     </div>
   );
@@ -7299,36 +7321,108 @@ function MonthEndClose({ findings, recommendations, completeRecommendation, upda
   );
 }
 
-function CashflowPanel({ forecast, findings, uploads }: { forecast: CashForecastPoint[]; findings: Finding[]; uploads: Upload[] }) {
-  const hasUploads = uploads.length > 0;
-  const arFindings = findings.filter((finding) => finding.category === "ar" && finding.status !== "false_positive" && finding.status !== "not_applicable");
-  const expectedCollections = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
-  const f30 = hasUploads ? (forecast[1]?.cash ?? 0) : 0;
-  const f90 = hasUploads ? (forecast[3]?.cash ?? 0) : 0;
-  const risk30: RiskLevel = forecast[1]?.risk ?? "medium";
-  const risk90: RiskLevel = forecast[3]?.risk ?? "high";
+function CashflowPanel({ findings, uploads, collectionCases, openCollections, openFindingEvidence }: {
+  findings: Finding[];
+  uploads: Upload[];
+  collectionCases: CollectionCase[];
+  openCollections: () => void;
+  openFindingEvidence: (findingId: string) => void;
+}) {
+  const [scenario, setScenario] = useState<"conservative" | "base" | "upside">("base");
+  const accounts = collectionAccounts(findings);
+  const arFindings = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
+  const totalExposure = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
+  const sourceLinked = accounts.reduce((sum, account) => sum + account.balance, 0);
+  const residual = Math.max(0, totalExposure - sourceLinked);
+  const coverage = totalExposure ? Math.round(sourceLinked / totalExposure * 100) : 0;
+  const caseFor = (account: CollectionAccount) => collectionCases.find((collectionCase) => collectionCase.findingId === account.findingId && collectionCase.customer === account.customer);
+  const promised = collectionCases.filter((collectionCase) => collectionCase.status === "promised").reduce((sum, collectionCase) => sum + (collectionCase.promiseAmount ?? 0), 0);
+  const disputed = accounts.filter((account) => caseFor(account)?.status === "disputed").reduce((sum, account) => sum + account.balance, 0);
+  const overduePromises = collectionCases.filter(promiseIsOverdue).length;
+  const scenarioRates = {
+    conservative: { disputed: [0, 0.15, 0.3], unallocated: [0, 0, 0.15], uncommitted: [0.25, 0.45, 0.6] },
+    base: { disputed: [0.2, 0.4, 0.6], unallocated: [0, 0.2, 0.4], uncommitted: [0.4, 0.65, 0.8] },
+    upside: { disputed: [0.4, 0.7, 0.9], unallocated: [0.2, 0.5, 0.75], uncommitted: [0.6, 0.85, 0.95] },
+  }[scenario];
+  const horizons = [30, 60, 90];
+  const today = new Date();
+  const forecast = horizons.map((days, index) => {
+    const horizonDate = new Date(today.getTime() + days * 86400000);
+    const accountRecovery = accounts.reduce((sum, account) => {
+      const collectionCase = caseFor(account);
+      if (collectionCase?.status === "paid") return sum;
+      if (collectionCase?.status === "promised") {
+        const promiseDate = collectionCase.promiseDate ? new Date(`${collectionCase.promiseDate}T23:59:59`) : today;
+        return sum + (promiseDate <= horizonDate ? Math.min(account.balance, collectionCase.promiseAmount ?? account.balance) : 0);
+      }
+      if (collectionCase?.status === "disputed") return sum + account.balance * scenarioRates.disputed[index];
+      return sum + account.balance * scenarioRates.uncommitted[index];
+    }, 0);
+    return { period: `${days} days`, recovery: Math.round(accountRecovery + residual * scenarioRates.unallocated[index]) };
+  });
+  const scenarioLabel = scenario.charAt(0).toUpperCase() + scenario.slice(1);
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-      <Panel title="Cash Intelligence">
-        {hasUploads ? (
-          <CashChart forecast={forecast} />
-        ) : (
-          <div className="flex h-72 items-center justify-center rounded-lg border-2 border-dashed border-line bg-slate-50">
-            <div className="text-center">
-              <p className="font-bold text-muted">No finance data uploaded</p>
-              <p className="mt-1 text-sm text-muted">Upload a trial balance or bank export to see your cash forecast.</p>
-            </div>
-          </div>
-        )}
-      </Panel>
-      <Panel title="Working Capital Signals">
-        <div className="grid gap-3">
-          <Metric title="30-Day Forecast" value={f30 ? `£${Math.round(f30 / 1000)}k` : "—"} detail={hasUploads ? riskCopy(risk30) + " risk" : "Upload to calculate"} tone={hasUploads ? risk30 : "low"} />
-          <Metric title="90-Day Forecast" value={f90 ? `£${Math.round(f90 / 1000)}k` : "—"} detail={hasUploads ? `${riskCopy(risk90)} risk` : "Upload to calculate"} tone={hasUploads ? risk90 : "low"} />
-          <Metric title="Expected Collections" value={expectedCollections ? `£${Math.round(expectedCollections / 1000)}k` : "—"} detail={hasUploads ? "Identified from AR review" : "Upload aged debtors"} tone={expectedCollections ? "low" : "medium"} />
+    <div className="grid gap-4">
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Cash intelligence summary">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div><p className="text-xs font-bold uppercase text-muted">Cash Intelligence</p><h2 className="mt-1 text-2xl font-black">Promise-backed cash recovery—not an invented bank balance.</h2><p className="mt-2 text-muted">The forecast uses source-linked debtor balances, collection-case commitments, disputes and an explicit unallocated residual.</p></div>
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={openCollections}>Open Collections Workflow</button>
         </div>
-      </Panel>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <Metric title="AR Exposure" value={totalExposure ? `£${Math.round(totalExposure).toLocaleString("en-GB")}` : "—"} detail="Finding-level exposure" tone={totalExposure ? "high" : "low"} />
+          <Metric title="Promise-Backed" value={`£${Math.round(promised).toLocaleString("en-GB")}`} detail={`${overduePromises} overdue promise${overduePromises === 1 ? "" : "s"}`} tone={overduePromises ? "medium" : "low"} />
+          <Metric title="30-Day Recovery" value={`£${forecast[0].recovery.toLocaleString("en-GB")}`} detail={`${scenarioLabel} scenario`} tone={forecast[0].recovery ? "low" : "medium"} />
+          <Metric title="90-Day Recovery" value={`£${forecast[2].recovery.toLocaleString("en-GB")}`} detail={`${Math.round(forecast[2].recovery / Math.max(totalExposure, 1) * 100)}% of exposure`} tone={forecast[2].recovery >= totalExposure * 0.7 ? "low" : "medium"} />
+          <Metric title="Disputed" value={`£${Math.round(disputed).toLocaleString("en-GB")}`} detail="Scenario-weighted recovery" tone={disputed ? "high" : "low"} />
+          <Metric title="Evidence Coverage" value={`${coverage}%`} detail={`£${Math.round(residual).toLocaleString("en-GB")} unallocated`} tone={coverage >= 90 ? "low" : "medium"} />
+        </div>
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong>Liquidity boundary:</strong> no evidenced opening bank balance or payment schedule is loaded, so ClosePilot forecasts recoveries only. Upload bank and cash-planning evidence before treating this as an absolute cash-balance forecast.</div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <Panel title="Cumulative Recovery Forecast">
+          <div className="mb-4 flex flex-wrap gap-2">
+            {(["conservative", "base", "upside"] as const).map((value) => <button key={value} className={`rounded-lg px-3 py-2 text-sm font-bold capitalize ${scenario === value ? "bg-brand text-white" : "border border-line bg-white"}`} onClick={() => setScenario(value)}>{value}</button>)}
+          </div>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={forecast} margin={{ left: 8, right: 12, top: 12, bottom: 0 }}>
+                <CartesianGrid stroke="#e5e7eb" strokeDasharray="4 4" vertical={false} />
+                <XAxis dataKey="period" tickLine={false} axisLine={false} />
+                <YAxis tickFormatter={(value) => `£${Math.round(Number(value) / 1000)}k`} tickLine={false} axisLine={false} />
+                <Tooltip formatter={(value) => `£${Number(value).toLocaleString("en-GB")}`} />
+                <Area type="monotone" dataKey="recovery" name="Cumulative recovery" stroke="#0e7490" fill="#cffafe" strokeWidth={3} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="mt-2 text-xs text-muted">Scenario changes affect disputed, uncommitted and unallocated balances. Dated promises remain commitment-based.</p>
+        </Panel>
+
+        <Panel title="Recovery Bridge">
+          <div className="grid gap-3">
+            <ReportFormulaRow label="Total AR exposure" value={totalExposure} formula="Evidence-backed finding exposure" />
+            <ReportFormulaRow label="Source-linked customers" value={sourceLinked} formula={`${coverage}% allocated to captured debtor rows`} />
+            <ReportFormulaRow label="Promise-backed cash" value={promised} formula="Dated customer commitments" />
+            <ReportFormulaRow label="Disputed balance" value={disputed} formula="Recovery varies by selected scenario" />
+            <ReportFormulaRow label="Unallocated residual" value={residual} formula="Not assigned to a customer or promise" />
+          </div>
+        </Panel>
+      </section>
+
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
+        <div><p className="text-xs font-bold uppercase text-muted">Forecast Inputs</p><h2 className="mt-1 text-xl font-black">Customer commitments and evidence basis</h2></div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[920px] border-collapse text-left text-sm">
+            <thead className="text-xs uppercase text-muted"><tr><th className="border-b border-line p-3">Customer</th><th className="border-b border-line p-3">Balance</th><th className="border-b border-line p-3">Case Status</th><th className="border-b border-line p-3">Forecast Basis</th><th className="border-b border-line p-3">Evidence</th></tr></thead>
+            <tbody>{accounts.map((account) => {
+              const collectionCase = caseFor(account);
+              const basis = collectionCase?.status === "promised" ? `Promise £${Math.round(collectionCase.promiseAmount ?? account.balance).toLocaleString("en-GB")} by ${collectionCase.promiseDate ?? "undated"}` : collectionCase?.status === "disputed" ? "Scenario-weighted dispute recovery" : "Age and scenario-weighted recovery";
+              return <tr key={account.id}><td className="border-b border-line p-3 font-bold">{account.customer}</td><td className="border-b border-line p-3">£{Math.round(account.balance).toLocaleString("en-GB")}</td><td className="border-b border-line p-3"><span className={`rounded-full px-2 py-1 text-xs font-black ${collectionStatusClass(collectionCase?.status ?? "not_contacted")}`}>{collectionStatusLabels[collectionCase?.status ?? "not_contacted"]}</span></td><td className="border-b border-line p-3">{basis}</td><td className="border-b border-line p-3"><button className="rounded-lg border border-line px-3 py-2 text-xs font-bold" onClick={() => openFindingEvidence(account.findingId)}>View Source</button></td></tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }

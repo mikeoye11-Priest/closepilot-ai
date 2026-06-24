@@ -142,3 +142,24 @@ test("audit readiness uses one evidence-backed control plan", async ({ page }) =
   await arControl.getByRole("button", { name: "View Evidence" }).click();
   await expect(page.getByRole("region", { name: "Evidence-to-decision trace" })).toBeVisible();
 });
+
+test("change and cash intelligence disclose evidence and assumptions", async ({ page }) => {
+  await page.goto(`${baseURL}/demo`);
+  await page.getByRole("button", { name: "Change Intelligence", exact: true }).click();
+
+  const changeSummary = page.getByRole("region", { name: "Change intelligence summary" });
+  await expect(changeSummary.getByText("£78,120")).toBeVisible();
+  await expect(changeSummary.getByText("£35,520")).toBeVisible();
+  await expect(changeSummary.getByText("£42,600")).toBeVisible();
+  await expect(changeSummary.getByText("Period movement unavailable.")).toBeVisible();
+  await expect(page.getByText("Revenue, Margin & Cash — 6 Months")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Cash Intelligence", exact: true }).click();
+  const cashSummary = page.getByRole("region", { name: "Cash intelligence summary" });
+  await expect(cashSummary.getByText("£18,800")).toBeVisible();
+  await expect(cashSummary.getByText("£21,720")).toBeVisible();
+  await expect(cashSummary.getByText(/no evidenced opening bank balance/i)).toBeVisible();
+  await expect(page.getByText("Promise £18,800 by 2026-06-22")).toBeVisible();
+  await page.getByRole("button", { name: "Conservative" }).click();
+  await expect(page.locator("article", { hasText: "30-Day Recovery" }).getByText("£18,800")).toBeVisible();
+});
