@@ -14,10 +14,10 @@ import type { AccountingIntegrationState } from "@/lib/integrations/types";
 
 const navGroups = [
   { label: "", items: ["Partner Summary"] },
-  { label: "Review", items: ["Finance Review", "Findings", "Audit Readiness", "Review Pack"] },
+  { label: "Review workflow", items: ["Findings", "Finance Review", "Audit Readiness", "Review Pack"] },
   { label: "Intelligence", items: ["Change Intelligence", "Cash Intelligence", "VAT Assurance", "Controls & Fraud", "Collections Intelligence", "Close Review"] },
   { label: "Workspace", items: ["Upload Finance Pack", "Practice Portal", "Ask ClosePilot", "User Guide"] },
-  { label: "Advanced", items: ["Assurance Engine", "Settings"], advanced: true },
+  { label: "Admin", items: ["Assurance Engine", "Settings"], advanced: true },
 ] as const;
 
 const storageKey = "closepilot.workspace.v2";
@@ -1722,7 +1722,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       : { title: "Share the completed review", detail: "The review is complete and ready for partner or client distribution.", cta: "Open Review Pack", target: "Review Pack", tone: "green" as const };
     if (active === "Audit Readiness") return { title: "Clear the bank reconciliation timing item", detail: "Upload the signed bank reconciliation to unlock the remaining +13 readiness points.", cta: "Upload Evidence", target: "Upload Finance Pack", tone: "amber" as const };
     if (active === "Cash Intelligence") return unsupportedArExposure
-      ? { title: `Resolve £${Math.round(unsupportedArExposure).toLocaleString("en-GB")} of unsupported AR`, detail: "Link the residual debtor balance to customer-level evidence before relying on the recovery forecast.", cta: "Open Collections", target: "Collections Intelligence", tone: "red" as const }
+      ? { title: `Resolve £${Math.round(unsupportedArExposure).toLocaleString("en-GB")} of unsupported debtors`, detail: "Match the remaining debtor balance to customer evidence before relying on the recovery forecast.", cta: "Open Collections", target: "Collections Intelligence", tone: "red" as const }
       : { title: "Review the recovery scenario", detail: "Confirm customer promises and disputes before sharing the cash forecast.", cta: "Open Collections", target: "Collections Intelligence", tone: "amber" as const };
     if (active === "Change Intelligence") return acceptedRiskExposure
       ? { title: "Keep the accepted risk partner-visible", detail: `£${Math.round(acceptedRiskExposure).toLocaleString("en-GB")} remains after review. Load a comparative pack before drawing period-over-period conclusions.`, cta: "Open Findings", target: "Findings", tone: "amber" as const }
@@ -3293,7 +3293,7 @@ function DashboardPanel({
           <div className="grid gap-3 sm:grid-cols-2">
             {[
               { label: "Run Finance Review", sub: "Full month-end review", page: "Finance Review" },
-              { label: "Assurance Engine", sub: "Run all assurance tests", page: "Assurance Engine" },
+              { label: "Review Findings", sub: "Work through issues and evidence", page: "Findings" },
               { label: "Upload Finance Pack", sub: "Upload TB, P&L and more", page: "Upload Finance Pack" },
               { label: "Audit Readiness", sub: "Year-end and audit checks", page: "Audit Readiness" },
               { label: "Change Intelligence", sub: "What changed this period?", page: "Change Intelligence" },
@@ -3385,6 +3385,14 @@ function OperationalOverviewDashboard({
   const failedReadinessDrivers = assurance.readinessDrivers.filter((driver) => !driver.passed);
   const readinessDrivers = failedReadinessDrivers.length ? failedReadinessDrivers : assurance.readinessDrivers.slice(0, 4);
   const openHighFindings = findings.filter((finding) => isOpenFinding(finding) && (finding.severity === "critical" || finding.severity === "high")).length;
+  const evidenceLinked = findings.filter((finding) => finding.evidence?.sourceFile).length;
+  const resolvedOrAccepted = findings.filter((finding) => !isOpenFinding(finding)).length;
+  const journeySteps = [
+    { label: "Findings", detail: `${findings.length} identified`, complete: findings.length > 0, page: "Findings" },
+    { label: "Evidence", detail: `${evidenceLinked} supported`, complete: findings.length > 0 && evidenceLinked === findings.length, page: "Findings" },
+    { label: "Resolution", detail: `${resolvedOrAccepted} decided`, complete: findings.length > 0 && resolvedOrAccepted === findings.length, page: "Findings" },
+    { label: "Sign-off", detail: partnerSignOff ? `Locked by ${partnerSignOff.signedBy}` : "Partner decision pending", complete: Boolean(partnerSignOff), page: "Review Pack" },
+  ];
   const readinessAction = missingEvidenceItems.length ? "Upload missing evidence" : openHighFindings ? "Resolve high-risk findings" : validationBlockers ? "Clear validation blockers" : "Prepare sign-off";
   const forecastReadiness = readinessForecast(findings, validationChecks, uploads);
   const activity = [
@@ -3410,6 +3418,24 @@ function OperationalOverviewDashboard({
               <p className="mt-4 text-sm text-muted">{openFindings} open finding(s)</p>
             </article>
           </div>
+        </section>
+
+        <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Primary review journey">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div><p className="text-xs font-bold uppercase text-muted">Primary review journey</p><h2 className="mt-1 text-xl font-black">Findings → Evidence → Resolution → Sign-off</h2></div>
+            <p className="text-sm text-muted">One clear path from issue to partner decision.</p>
+          </div>
+          <ol className="mt-4 grid gap-3 md:grid-cols-4">
+            {journeySteps.map((step, index) => (
+              <li key={step.label}>
+                <button className={`w-full rounded-lg border p-4 text-left transition-colors hover:border-brand ${step.complete ? "border-emerald-200 bg-emerald-50" : "border-line bg-slate-50"}`} onClick={() => setActive(step.page)}>
+                  <span className={`inline-grid h-7 w-7 place-items-center rounded-full text-xs font-black ${step.complete ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700"}`}>{step.complete ? "✓" : index + 1}</span>
+                  <strong className="mt-3 block">{step.label}</strong>
+                  <span className="mt-1 block text-sm text-muted">{step.detail}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
         </section>
 
         <section className="grid gap-4 xl:grid-cols-[0.95fr_1.1fr_0.85fr]">
@@ -3697,7 +3723,7 @@ function AssuranceSnapshot({ assurance, findings, validationChecks, uploads, set
           <p className="text-xs font-bold uppercase text-muted">Continuous Finance Assurance</p>
           <h3 className="mt-2 text-2xl font-black">{hasData ? `${assurance.testsExecuted} assurance tests executed` : "Awaiting upload"}</h3>
           <p className="mt-2 text-sm text-muted">{TOTAL_RULES}+ rules across 8 assurance layers. Data Integrity first, then 8 specialist agents review every risk before sign-off.</p>
-          <button className="mt-4 rounded-lg bg-brand px-4 py-3 font-bold text-white" onClick={() => setActive("Assurance Engine")}>Open Assurance Engine</button>
+          <button className="mt-4 rounded-lg bg-brand px-4 py-3 font-bold text-white" onClick={() => setActive("Findings")}>Open Findings</button>
         </div>
         <div className="grid gap-3 md:grid-cols-4">
           <SummaryItem label="Critical" value={hasData ? String(assurance.critical) : "—"} detail="needs review" level={assurance.critical ? "critical" : "low"} />
@@ -3817,8 +3843,8 @@ function ReviewCommandCenter({
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               <Pill level={statusLevel}>{reviewStatus}</Pill>
-              <button className="rounded-lg border border-line bg-white px-4 py-2.5 text-sm font-black transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Assurance Engine")}>
-                Open Assurance Engine
+              <button className="rounded-lg border border-line bg-white px-4 py-2.5 text-sm font-black transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Findings")}>
+                Open Findings
               </button>
               <button className="rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-blue-700" onClick={() => setActive(hasData ? "Review Pack" : "Upload Finance Pack")}>
                 {hasData ? "Open Review Pack" : "Upload Pack"}
@@ -4270,7 +4296,7 @@ function AuditReadiness({ findings, findingEvidence, partnerSignOff, validationC
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-muted">Audit Readiness Report</p>
             <h2 className="mt-1 text-2xl font-black">{company.name}</h2>
-            <p className="mt-1 text-sm text-muted">{tenant.name} · Prepared {today} · {uploads.length} files reviewed · one canonical readiness model</p>
+            <p className="mt-1 text-sm text-muted">{tenant.name} · Prepared {today} · {uploads.length} files reviewed · Based on ClosePilot&apos;s audit readiness framework</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => exportFile(`${slug(company.name)}_audit_request_list.csv`, pbcCsv, "text/csv;charset=utf-8")}>Export PBC List</button>
@@ -4279,7 +4305,7 @@ function AuditReadiness({ findings, findingEvidence, partnerSignOff, validationC
         </div>
 
         <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <Metric title="Readiness" value={uploads.length ? `${readiness}%` : "—"} detail={`${passedWeight}/100 weighted controls`} tone={readiness >= 85 ? "low" : readiness >= 65 ? "medium" : "high"} />
+          <Metric title="Readiness" value={uploads.length ? `${readiness}%` : "—"} detail={`${passedWeight} of 100 readiness points complete`} tone={readiness >= 85 ? "low" : readiness >= 65 ? "medium" : "high"} />
           <Metric title="Target" value={uploads.length ? `${targetReadiness}%` : "—"} detail={`+${projectedUplift} available uplift`} tone={projectedUplift ? "medium" : "low"} />
           <Metric title="Confidence" value={uploads.length ? `${confidence}%` : "—"} detail="Coverage, validation and evidence" tone={confidence >= 85 ? "low" : "medium"} />
           <Metric title="Open Blockers" value={String(criticalOpen + highOpen)} detail={`${criticalOpen} critical · ${highOpen} high`} tone={criticalOpen ? "critical" : highOpen ? "high" : "low"} />
@@ -4309,7 +4335,7 @@ function AuditReadiness({ findings, findingEvidence, partnerSignOff, validationC
 
       <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div><p className="text-xs font-bold uppercase text-muted">Weighted Control Plan</p><h2 className="mt-1 text-xl font-black">Evidence, ownership and score uplift</h2></div>
+          <div><p className="text-xs font-bold uppercase text-muted">Audit Readiness Action Plan</p><h2 className="mt-1 text-xl font-black">Evidence, owner and readiness improvement</h2></div>
           <span className="text-sm font-semibold text-muted">Weights total 100%</span>
         </div>
         <div className="mt-4 overflow-x-auto">
@@ -4340,7 +4366,7 @@ function AuditReadiness({ findings, findingEvidence, partnerSignOff, validationC
                 <div className="flex items-start justify-between gap-3"><div><span className="text-xs font-black uppercase text-amber-800">Action {index + 1}</span><strong className="mt-1 block">{control.label}</strong><p className="mt-1 text-sm text-amber-950">{control.action}</p></div><span className="shrink-0 rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-800">+{control.uplift} points</span></div>
                 <p className="mt-3 text-xs text-amber-900">Owner {control.owner} · Due {control.dueDate}</p>
               </div>
-            )) : <EmptyState title="No readiness actions" detail="All weighted controls are complete." />}
+            )) : <EmptyState title="No readiness actions" detail="All readiness checks are complete." />}
           </div>
         </Panel>
         <div className="grid content-start gap-4">
@@ -5373,9 +5399,9 @@ function ChangeIntelligence({ findings, findingActivities, partnerSignOff, valid
           <span className={`rounded-full px-3 py-1 text-xs font-black ${hasComparativePeriod ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{hasComparativePeriod ? `${periods.length} periods compared` : "1 financial period loaded"}</span>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <Metric title="Exposure Identified" value={`£${Math.round(exposureIdentified).toLocaleString("en-GB")}`} detail={`${evidenceFindings.length} evidence-backed findings`} tone={exposureIdentified ? "high" : "low"} />
+          <Metric title="Exposure Identified" value={`£${Math.round(exposureIdentified).toLocaleString("en-GB")}`} detail={`${evidenceFindings.length} findings supported by records`} tone={exposureIdentified ? "high" : "low"} />
           <Metric title="Cleared or Closed" value={`£${Math.round(clearedExposure).toLocaleString("en-GB")}`} detail={`${resolvedCount} review decisions`} tone="low" />
-          <Metric title="Residual Exposure" value={`£${Math.round(residualExposure).toLocaleString("en-GB")}`} detail={`${acceptedRisk.length} accepted risk${acceptedRisk.length === 1 ? "" : "s"}`} tone={residualExposure ? "high" : "low"} />
+          <Metric title="Exposure Remaining" value={`£${Math.round(residualExposure).toLocaleString("en-GB")}`} detail={`${acceptedRisk.length} accepted risk${acceptedRisk.length === 1 ? "" : "s"}`} tone={residualExposure ? "high" : "low"} />
           <Metric title="Validation Warnings" value={String(warningChecks)} detail="Current-period controls" tone={warningChecks ? "medium" : "low"} />
           <Metric title="Decision Trail" value={String(findingActivities.length)} detail={partnerSignOff ? "Partner pack locked" : "Partner review pending"} tone={partnerSignOff ? "low" : "medium"} />
         </div>
@@ -5402,7 +5428,7 @@ function ChangeIntelligence({ findings, findingActivities, partnerSignOff, valid
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          ) : <EmptyState title="No review movement" detail="Upload a finance pack to identify evidence-backed movements." />}
+          ) : <EmptyState title="No review movement" detail="Upload a finance pack to identify movements supported by review evidence." />}
           <p className="mt-2 text-xs text-muted">Identified exposure is compared with the amount remaining open or accepted as risk after review.</p>
         </Panel>
 
@@ -5415,7 +5441,7 @@ function ChangeIntelligence({ findings, findingActivities, partnerSignOff, valid
                   <div className="shrink-0 text-right"><strong className="block text-xl">£{Math.round(valueFor(finding)).toLocaleString("en-GB")}</strong><button className="mt-2 rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold" onClick={() => openFindingEvidence(finding.id)}>View Evidence</button></div>
                 </div>
               </div>
-            )) : <EmptyState title="No material movements" detail="No evidence-backed findings were generated." />}
+            )) : <EmptyState title="No material movements" detail="No findings supported by records were generated." />}
           </div>
         </Panel>
       </section>
@@ -6102,7 +6128,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
           <SummaryItem label="Resolved" value={`${resolvedPercent}%`} detail="closed or approved" level={resolvedPercent >= 70 ? "low" : "medium"} />
           <SummaryItem label="Evidence Coverage" value={`${evidenceCoveragePercent}%`} detail="support linked" level={evidenceCoveragePercent >= 75 ? "low" : "high"} />
           <SummaryItem label="Manager Approved" value={`${managerApprovedPercent}%`} detail={`${managerApproved} approved`} level={managerApprovedPercent >= 70 ? "low" : "medium"} />
-          <SummaryItem label="Workflow Coverage" value={`${workflowCoverage}%`} detail="pilot quality gate" level={workflowCoverageReady ? "low" : "high"} />
+          <SummaryItem label="Review Completion" value={`${workflowCoverage}%`} detail="findings, evidence and decisions" level={workflowCoverageReady ? "low" : "high"} />
         </div>
       </section>
 
@@ -6152,8 +6178,8 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
             <SignOffCheck label="Manager Review" passed={managerReviewComplete} detail={managerReviewComplete ? "Review complete" : "Manager review open"} />
             <SignOffCheck label="Accepted Risks" passed={acceptedRiskCount === 0} warning={acceptedRiskCount > 0} detail={acceptedRiskCount ? `${acceptedRiskCount} partner-visible risk(s)` : "No accepted risks"} />
             <SignOffCheck label="Readiness" passed={readiness > 70} detail={`${readiness}%`} />
-            <SignOffCheck label="Workflow Coverage" passed={workflowCoverageReady} detail={`${workflowCoverage}%`} />
-            <SignOffCheck label="Import Gates" passed={importGateBlockers === 0} detail={importGateBlockers ? `${importGateBlockers} upload(s) need mapping` : "Imports cleared"} />
+            <SignOffCheck label="Review Completion" passed={workflowCoverageReady} detail={`${workflowCoverage}%`} />
+            <SignOffCheck label="File Checks" passed={importGateBlockers === 0} detail={importGateBlockers ? `${importGateBlockers} upload(s) need mapping` : "Files checked"} />
           </div>
           <div className={`mt-4 rounded-lg border p-4 ${trafficClasses.box}`}>
             <p className="text-xs font-bold uppercase text-muted">Partner Sign-Off</p>
@@ -6492,8 +6518,8 @@ function FindingDetailDrawer({
                 <DrawerField label="Due Date" value={findingDueDate(finding)} />
                 <DrawerField label="Status" value={statusCfg.label} />
                 <DrawerField label="Category" value={finding.category.replaceAll("_", " ")} />
-                <DrawerField label="Detection Confidence" value={`${confidencePct}%`} />
-                <DrawerField label="Evidence Strength" value={`${evidenceStrengthPct}% · ${findingEvidenceTier(finding)}`} />
+                <DrawerField label="Confidence In This Check" value={`${confidencePct}%`} />
+                <DrawerField label="Quality Of Supporting Evidence" value={`${evidenceStrengthPct}% · ${findingEvidenceTier(finding)}`} />
                 <DrawerField label="Risk Score" value={String(finding.riskScore ?? findingSeverityRank(finding.severity) * 25)} />
                 <DrawerField label="Amount" value={impactAmount ? `£${Math.round(impactAmount).toLocaleString()}` : finding.expectedImpact || "-"} />
                 <DrawerField label="Evidence Attached" value={evidenceItemCount ? "Yes" : "No"} />
@@ -6548,7 +6574,7 @@ function FindingDetailDrawer({
               <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-xs font-bold uppercase text-muted">Evidence Viewer</p>
-                  <h3 className="mt-1 font-black">Source evidence and rule trigger</h3>
+                  <h3 className="mt-1 font-black">Supporting evidence and why this was flagged</h3>
                 </div>
                 <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-800">{findingEvidenceTier(finding)} evidence</span>
               </div>
@@ -6559,9 +6585,9 @@ function FindingDetailDrawer({
                 <DrawerField label="Source Row Count" value={String(evidenceRef.rowCount)} />
                 <DrawerField label="Account / Party" value={evidenceRef.accountOrParty} />
                 <DrawerField label="Period" value={finding.evidence.period || "-"} />
-                <DrawerField label="Rule Triggered" value={finding.ruleId ?? finding.id} />
-                <DrawerField label="Detection Confidence" value={`${confidencePct}%`} />
-                <DrawerField label="Evidence Strength" value={`${evidenceStrengthPct}%`} />
+                <DrawerField label="Check Reference" value={finding.ruleId ?? finding.id} />
+                <DrawerField label="Confidence In This Check" value={`${confidencePct}%`} />
+                <DrawerField label="Quality Of Supporting Evidence" value={`${evidenceStrengthPct}%`} />
                 <DrawerField label="Evidence Items" value={String(evidenceItemCount)} />
                 <DrawerField label="Balance / Amount" value={typeof primaryRow?.amount === "number" ? `£${Math.round(primaryRow.amount).toLocaleString("en-GB")}` : impactAmount ? `£${Math.round(impactAmount).toLocaleString("en-GB")}` : "-"} />
               </div>
@@ -6756,10 +6782,10 @@ function EvidenceDecisionTrace({ finding, partnerSignOff }: { finding: Finding; 
   ];
 
   return (
-    <section className="rounded-lg border border-line bg-white p-4 xl:col-span-2" aria-label="Evidence-to-decision trace">
+    <section className="rounded-lg border border-line bg-white p-4 xl:col-span-2" aria-label="Review trail">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase text-muted">Evidence-to-decision trace</p>
+          <p className="text-xs font-bold uppercase text-muted">Review trail</p>
           <h3 className="mt-1 text-lg font-black">From source row to partner sign-off</h3>
         </div>
         <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Fully traceable</span>
@@ -7369,16 +7395,16 @@ function CashflowPanel({ findings, uploads, collectionCases, openCollections, op
     <div className="grid gap-4">
       <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Cash intelligence summary">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div><p className="text-xs font-bold uppercase text-muted">Cash Intelligence</p><h2 className="mt-1 text-2xl font-black">Promise-backed cash recovery—not an invented bank balance.</h2><p className="mt-2 text-muted">The forecast uses source-linked debtor balances, collection-case commitments, disputes and an explicit unallocated residual.</p></div>
+          <div><p className="text-xs font-bold uppercase text-muted">Cash Intelligence</p><h2 className="mt-1 text-2xl font-black">Expected cash recovery based on customer evidence.</h2><p className="mt-2 text-muted">The forecast uses customer balances with evidence, payment promises, disputes and any balance not yet matched to a customer.</p></div>
           <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={openCollections}>Open Collections Workflow</button>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          <Metric title="AR Exposure" value={totalExposure ? `£${Math.round(totalExposure).toLocaleString("en-GB")}` : "—"} detail="Finding-level exposure" tone={totalExposure ? "high" : "low"} />
+          <Metric title="AR Exposure" value={totalExposure ? `£${Math.round(totalExposure).toLocaleString("en-GB")}` : "—"} detail="Total exposure identified" tone={totalExposure ? "high" : "low"} />
           <Metric title="Promise-Backed" value={`£${Math.round(promised).toLocaleString("en-GB")}`} detail={`${overduePromises} overdue promise${overduePromises === 1 ? "" : "s"}`} tone={overduePromises ? "medium" : "low"} />
           <Metric title="30-Day Recovery" value={`£${forecast[0].recovery.toLocaleString("en-GB")}`} detail={`${scenarioLabel} scenario`} tone={forecast[0].recovery ? "low" : "medium"} />
           <Metric title="90-Day Recovery" value={`£${forecast[2].recovery.toLocaleString("en-GB")}`} detail={`${Math.round(forecast[2].recovery / Math.max(totalExposure, 1) * 100)}% of exposure`} tone={forecast[2].recovery >= totalExposure * 0.7 ? "low" : "medium"} />
-          <Metric title="Disputed" value={`£${Math.round(disputed).toLocaleString("en-GB")}`} detail="Scenario-weighted recovery" tone={disputed ? "high" : "low"} />
-          <Metric title="Evidence Coverage" value={`${coverage}%`} detail={`£${Math.round(residual).toLocaleString("en-GB")} unallocated`} tone={coverage >= 90 ? "low" : "medium"} />
+          <Metric title="Disputed" value={`£${Math.round(disputed).toLocaleString("en-GB")}`} detail="Expected recovery after disputes" tone={disputed ? "high" : "low"} />
+          <Metric title="Evidence Coverage" value={`${coverage}%`} detail={`£${Math.round(residual).toLocaleString("en-GB")} awaiting customer evidence`} tone={coverage >= 90 ? "low" : "medium"} />
         </div>
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong>Liquidity boundary:</strong> no evidenced opening bank balance or payment schedule is loaded, so ClosePilot forecasts recoveries only. Upload bank and cash-planning evidence before treating this as an absolute cash-balance forecast.</div>
       </section>
@@ -7404,11 +7430,11 @@ function CashflowPanel({ findings, uploads, collectionCases, openCollections, op
 
         <Panel title="Recovery Bridge">
           <div className="grid gap-3">
-            <ReportFormulaRow label="Total AR exposure" value={totalExposure} formula="Evidence-backed finding exposure" />
-            <ReportFormulaRow label="Source-linked customers" value={sourceLinked} formula={`${coverage}% allocated to captured debtor rows`} />
+            <ReportFormulaRow label="Total AR exposure" value={totalExposure} formula="Exposure supported by review findings" />
+            <ReportFormulaRow label="Customer balances with evidence" value={sourceLinked} formula={`${coverage}% matched to customer rows`} />
             <ReportFormulaRow label="Promise-backed cash" value={promised} formula="Dated customer commitments" />
             <ReportFormulaRow label="Disputed balance" value={disputed} formula="Recovery varies by selected scenario" />
-            <ReportFormulaRow label="Unallocated residual" value={residual} formula="Not assigned to a customer or promise" />
+            <ReportFormulaRow label="Balance awaiting customer evidence" value={residual} formula="Not yet matched to a customer or promise" />
           </div>
         </Panel>
       </section>
@@ -7420,7 +7446,7 @@ function CashflowPanel({ findings, uploads, collectionCases, openCollections, op
             <thead className="text-xs uppercase text-muted"><tr><th className="border-b border-line p-3">Customer</th><th className="border-b border-line p-3">Balance</th><th className="border-b border-line p-3">Case Status</th><th className="border-b border-line p-3">Forecast Basis</th><th className="border-b border-line p-3">Evidence</th></tr></thead>
             <tbody>{accounts.map((account) => {
               const collectionCase = caseFor(account);
-              const basis = collectionCase?.status === "promised" ? `Promise £${Math.round(collectionCase.promiseAmount ?? account.balance).toLocaleString("en-GB")} by ${collectionCase.promiseDate ?? "undated"}` : collectionCase?.status === "disputed" ? "Scenario-weighted dispute recovery" : "Age and scenario-weighted recovery";
+              const basis = collectionCase?.status === "promised" ? `Promise £${Math.round(collectionCase.promiseAmount ?? account.balance).toLocaleString("en-GB")} by ${collectionCase.promiseDate ?? "undated"}` : collectionCase?.status === "disputed" ? "Expected recovery after dispute" : "Expected recovery based on age";
               return <tr key={account.id}><td className="border-b border-line p-3 font-bold">{account.customer}</td><td className="border-b border-line p-3">£{Math.round(account.balance).toLocaleString("en-GB")}</td><td className="border-b border-line p-3"><span className={`rounded-full px-2 py-1 text-xs font-black ${collectionStatusClass(collectionCase?.status ?? "not_contacted")}`}>{collectionStatusLabels[collectionCase?.status ?? "not_contacted"]}</span></td><td className="border-b border-line p-3">{basis}</td><td className="border-b border-line p-3"><button className="rounded-lg border border-line px-3 py-2 text-xs font-bold" onClick={() => openFindingEvidence(account.findingId)}>View Source</button></td></tr>;
             })}</tbody>
           </table>
@@ -7582,13 +7608,13 @@ function CollectionsPanel({ findings, collectionCases, saveCollectionCase, actor
           <div>
             <p className="text-xs font-bold uppercase text-muted">Collections Intelligence</p>
             <h2 className="mt-1 text-2xl font-black">Turn aged debt into a prioritised cash plan</h2>
-            <p className="mt-1 text-sm text-muted">Customer balances are taken from captured source rows; finding-level residuals remain explicitly unallocated.</p>
+            <p className="mt-1 text-sm text-muted">Customer balances are supported by uploaded records; any balance without a customer row stays clearly separate.</p>
           </div>
-          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Evidence-backed queue</span>
+          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Balances supported by evidence</span>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <Metric title="AR Exposure" value={totalExposure ? `£${Math.round(totalExposure).toLocaleString("en-GB")}` : "—"} detail={`${acceptedRisks} accepted risk${acceptedRisks === 1 ? "" : "s"}`} tone={totalExposure ? "high" : "low"} />
-          <Metric title="Source-Linked" value={sourceLinked ? `£${Math.round(sourceLinked).toLocaleString("en-GB")}` : "—"} detail={`${coverage}% of finding exposure`} tone={coverage >= 90 ? "low" : "medium"} />
+          <Metric title="Supported Balance" value={sourceLinked ? `£${Math.round(sourceLinked).toLocaleString("en-GB")}` : "—"} detail={`${coverage}% of identified exposure`} tone={coverage >= 90 ? "low" : "medium"} />
           <Metric title="Recovery Forecast" value={expectedRecovery ? `£${Math.round(expectedRecovery).toLocaleString("en-GB")}` : "—"} detail="Promises and age weighting" tone={expectedRecovery ? "low" : "medium"} />
           <Metric title="Promised Cash" value={promisedTotal ? `£${Math.round(promisedTotal).toLocaleString("en-GB")}` : "£0"} detail="Active promises to pay" tone={promisedTotal ? "low" : "medium"} />
           <Metric title="Overdue Promises" value={String(overduePromises)} detail="Past promised date" tone={overduePromises ? "critical" : "low"} />
@@ -7596,14 +7622,14 @@ function CollectionsPanel({ findings, collectionCases, saveCollectionCase, actor
         </div>
         {residual > 0 && (
           <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
-            <strong>Source reconciliation:</strong> captured debtor rows support £{Math.round(sourceLinked).toLocaleString("en-GB")} of £{Math.round(totalExposure).toLocaleString("en-GB")} exposure. The £{Math.round(residual).toLocaleString("en-GB")} residual remains visible at finding level and has not been assigned to a customer.
+            <strong>Evidence check:</strong> customer rows support £{Math.round(sourceLinked).toLocaleString("en-GB")} of £{Math.round(totalExposure).toLocaleString("en-GB")} exposure. The remaining £{Math.round(residual).toLocaleString("en-GB")} is visible but has not yet been matched to a customer.
           </div>
         )}
       </section>
 
       <Panel title="Prioritised Collection Queue">
         {accounts.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted">No source-linked AR rows found. Upload an aged debtors file to create the collection queue.</p>
+          <p className="py-6 text-center text-sm text-muted">No customer balances with supporting rows found. Upload an aged debtors file to create the collection queue.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1120px] border-collapse text-left text-sm">

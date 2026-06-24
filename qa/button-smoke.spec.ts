@@ -100,8 +100,8 @@ test("workflow buttons, downloads and review pack controls work", async ({ page 
   await uploadDemoPack(page);
 
   await clickSidebarNav(page, "Finance Review");
-  await page.getByRole("button", { name: "Open Assurance Engine" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Assurance Engine" })).toBeVisible();
+  await page.getByRole("button", { name: "Open Findings", exact: true }).last().click();
+  await expect(page.getByRole("heading", { level: 1, name: "Findings" })).toBeVisible();
   await clickSidebarNav(page, "Finance Review");
   await page.getByRole("button", { name: "Explain Score" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Ask ClosePilot" })).toBeVisible();

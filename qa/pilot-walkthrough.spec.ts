@@ -29,6 +29,7 @@ test("pilot demo walkthrough opens the right workflow context", async ({ page })
   await page.getByRole("button", { name: "Load Pilot Demo" }).click();
 
   await expect(page.getByRole("heading", { name: "Partner Summary", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Primary review journey" })).toContainText("Findings → Evidence → Resolution → Sign-off");
   await expect(page.getByRole("region", { name: "Next action" })).toContainText("Review the accepted debtor risk");
   await page.getByRole("button", { name: "Findings", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Findings", exact: true })).toBeVisible();
@@ -37,7 +38,7 @@ test("pilot demo walkthrough opens the right workflow context", async ({ page })
   await expect(page.getByText("Partner conclusion recorded")).toBeVisible();
 
   await page.getByRole("button", { name: /Inspect Evidence/ }).click();
-  await expect(page.getByRole("region", { name: "Evidence-to-decision trace" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Review trail" })).toBeVisible();
   await expect(page.getByText("From source row to partner sign-off")).toBeVisible();
   await expect(page.getByText("Included in locked review pack")).toBeVisible();
   await expect(page.getByText("VAT control difference resolved").first()).toBeVisible();
@@ -123,7 +124,7 @@ test("presentation route opens a clean preloaded demo", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "Collection email preview" })).toContainText("Payment date confirmation: Harbour Components");
   await page.getByRole("dialog", { name: "Collection email preview" }).getByRole("button", { name: "Close" }).click();
   await page.getByRole("button", { name: "View evidence for Harbour Components" }).click();
-  await expect(page.getByRole("region", { name: "Evidence-to-decision trace" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Review trail" })).toBeVisible();
 });
 
 test("audit readiness uses one evidence-backed control plan", async ({ page }) => {
@@ -142,7 +143,7 @@ test("audit readiness uses one evidence-backed control plan", async ({ page }) =
 
   const arControl = page.locator("tr", { hasText: "AR reconciled" });
   await arControl.getByRole("button", { name: "View Evidence" }).click();
-  await expect(page.getByRole("region", { name: "Evidence-to-decision trace" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Review trail" })).toBeVisible();
 });
 
 test("change and cash intelligence disclose evidence and assumptions", async ({ page }) => {
