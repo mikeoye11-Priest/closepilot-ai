@@ -7,6 +7,6 @@
   "regions": ["lhr1"],
   "crons": [{
     "path": "/api/internal/process-upload-jobs",
-    "schedule": "* * * * *"
+    "schedule": "0 3 * * *"
   }]
 }
