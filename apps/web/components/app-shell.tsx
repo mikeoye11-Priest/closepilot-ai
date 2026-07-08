@@ -2864,7 +2864,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           onClose={() => setShowExport(false)}
         />
       )}
-      <aside className="no-print border-b border-white/10 bg-[#111827] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0">
+      <aside className="no-print overflow-x-hidden border-b border-white/10 bg-[#111827] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0">
         <div className="flex items-center justify-between gap-4 px-4 py-4 lg:block lg:p-5">
           <div className="flex items-center gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-cyan to-brand font-black shadow-lg shadow-blue-950/30">CP</div>
@@ -2875,7 +2875,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           </div>
           <Pill level={hasUploadedData ? (openFindings.length ? "medium" : "low") : "none"}>{hasUploadedData ? (openFindings.length ? "Review open" : "Review complete") : "Awaiting upload"}</Pill>
         </div>
-        <nav className="flex gap-1 overflow-x-auto px-4 pb-4 lg:block lg:overflow-y-auto lg:overflow-x-hidden lg:px-5 lg:pb-5">
+        <nav className="flex w-full max-w-full gap-1 overflow-x-auto px-4 pb-4 lg:block lg:overflow-y-auto lg:overflow-x-hidden lg:px-5 lg:pb-5">
           {navGroups.filter((group) => !presentationMode || !("advanced" in group && group.advanced)).map((group) => (
             <div key={group.label || "summary"} className="contents lg:mb-4 lg:block">
               {group.label && <p className="hidden px-3 pb-1 pt-2 text-[11px] font-black uppercase tracking-wider text-slate-600 lg:block">{group.label}</p>}
@@ -3572,8 +3572,8 @@ function OperationalOverviewDashboard({
   ].filter((item): item is { tone: RiskLevel; title: string; detail: string } => Boolean(item));
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[1fr_300px]">
-      <div className="grid gap-4">
+    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid min-w-0 gap-4">
         <section>
           <div className="mb-3"><p className="text-xs font-bold uppercase text-muted">Partner Summary</p><h2 className="mt-1 text-xl font-black">One consistent review, whoever prepared the accounts</h2><p className="mt-1 text-sm text-muted">Prepared accounts in. Evidence-backed partner decision out.</p></div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -3741,7 +3741,7 @@ function OperationalOverviewDashboard({
         </OverviewCard>
       </div>
 
-      <aside className="grid content-start gap-4">
+      <aside className="grid min-w-0 content-start gap-4">
         <OverviewCard title="Recent Activity" action={<button className="text-sm font-bold text-brand" onClick={() => setActive("Findings")}>View all</button>}>
           <div className="grid gap-4">
             {activity.length ? activity.map((item) => (
@@ -3788,7 +3788,7 @@ function OperationalOverviewDashboard({
 
 function OverviewCard({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
+    <section className="min-w-0 rounded-lg border border-line bg-white p-5 shadow-panel">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="font-black">{title}</h2>
         {action}
