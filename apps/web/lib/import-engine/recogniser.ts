@@ -152,6 +152,10 @@ const HEADER_ALIASES: Record<string, string> = {
   credit_year_to_date: "credit_ytd",
   annual_depreciation: "annual_depn",
   closing_balance: "closing_cash",
+  current_year: "balance",
+  this_year: "balance",
+  current_year_balance: "balance",
+  cy_balance: "balance",
 };
 
 export function recogniseFinanceDocument(contextName: string, headers: string[], rows: Record<string, string>[] = []): Pick<Upload, "fileType" | "detectionConfidence" | "detectedVendor" | "detectionBasis"> {
@@ -212,6 +216,7 @@ export function canonicalImportHeader(header: string) {
 
 export function detectImportVendor(context: string, headers: Set<string>, sampleText = "") {
   const text = `${context} ${sampleText}`.toLowerCase();
+  if (/iris(?:[\s_-]+accounts[\s_-]+production)?|iris[\s_-]?ap/.test(text)) return "IRIS";
   if (/sap|s\/4hana|bukrs|belnr|gjahr|budat/.test(text) || headers.has("company_code") && headers.has("document_number") && headers.has("amount_company_code_currency")) return "SAP";
   if (/xero/.test(text) || headers.has("contact") && (headers.has("due_local") || headers.has("invoice_ref"))) return "Xero";
   if (/quickbooks|intuit|qbo/.test(text) || headers.has("days_91_plus") && headers.has("current")) return "QuickBooks";

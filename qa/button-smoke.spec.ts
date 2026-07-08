@@ -3,10 +3,11 @@ import { expect, test } from "@playwright/test";
 const baseURL = process.env.CLOSEPILOT_QA_URL ?? "http://127.0.0.1:3007";
 
 const navItems = [
-  "Overview",
+  "Partner Summary",
   "Finance Review",
   "Assurance Engine",
-  "Upload Finance Pack",
+  "Import Prepared Accounts",
+  "Compatibility",
   "Audit Readiness",
   "Review Pack",
   "Change Intelligence",
@@ -53,8 +54,8 @@ async function onboardCompany(page: import("@playwright/test").Page) {
 }
 
 async function uploadDemoPack(page: import("@playwright/test").Page) {
-  await clickSidebarNav(page, "Upload Finance Pack");
-  await expect(page.getByRole("heading", { level: 1, name: "Upload Finance Pack" })).toBeVisible();
+  await clickSidebarNav(page, "Import Prepared Accounts");
+  await expect(page.getByRole("heading", { level: 1, name: "Import Prepared Accounts" })).toBeVisible();
   await page.locator('input[type="file"]').setInputFiles([
     "demo-data/trial-balance-may.csv",
     "demo-data/profit-loss-may.csv",
@@ -100,8 +101,8 @@ test("workflow buttons, downloads and review pack controls work", async ({ page 
   await uploadDemoPack(page);
 
   await clickSidebarNav(page, "Finance Review");
-  await page.getByRole("button", { name: "Open Assurance Engine" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Assurance Engine" })).toBeVisible();
+  await page.getByRole("button", { name: "Open Findings", exact: true }).last().click();
+  await expect(page.getByRole("heading", { level: 1, name: "Findings" })).toBeVisible();
   await clickSidebarNav(page, "Finance Review");
   await page.getByRole("button", { name: "Explain Score" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Ask ClosePilot" })).toBeVisible();
@@ -116,14 +117,14 @@ test("workflow buttons, downloads and review pack controls work", async ({ page 
   await expect(page.getByText("P&L agrees to trial balance movement").first()).toBeVisible();
 
   const csvDownload = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Findings CSV" }).click();
+  await page.getByRole("button", { name: "Findings Schedule" }).click();
   await expect((await csvDownload).suggestedFilename()).toContain("findings.csv");
 
   const jsonDownload = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Evidence JSON" }).click();
+  await page.getByRole("button", { name: "Evidence Archive" }).click();
   await expect((await jsonDownload).suggestedFilename()).toMatch(/review_pack\.json$/);
 
-  await page.getByRole("button", { name: "Export PDF" }).click();
+  await page.getByRole("button", { name: "Export Partner PDF" }).click();
 
   await clickSidebarNav(page, "Settings");
   await page.getByRole("button", { name: "Save Settings" }).click();
@@ -159,7 +160,7 @@ test("clearing uploaded data resets review statistics", async ({ page }) => {
   await uploadDemoPack(page);
 
   page.on("dialog", (dialog) => dialog.accept());
-  await clickSidebarNav(page, "Upload Finance Pack");
+  await clickSidebarNav(page, "Import Prepared Accounts");
   await page.getByRole("button", { name: "Clear Review" }).click();
 
   await expect(page.getByText("No files uploaded yet.").first()).toBeVisible();
@@ -167,7 +168,7 @@ test("clearing uploaded data resets review statistics", async ({ page }) => {
   await expect(page.getByText("No validation checks yet. Upload a finance pack to begin.")).toBeVisible();
   await expect(page.getByText("VAT Report uploaded")).not.toBeVisible();
 
-  await clickSidebarNav(page, "Overview");
+  await clickSidebarNav(page, "Partner Summary");
   await expect(page.getByText(/0 finance exports reviewed, 0 items to resolve/)).toBeVisible();
   await expect(page.getByText("Awaiting upload").first()).toBeVisible();
   await expect(page.getByText("93/100")).not.toBeVisible();
@@ -180,7 +181,7 @@ test("clearing uploaded data resets review statistics", async ({ page }) => {
 test("VAT review pack controls render after VAT upload", async ({ page }) => {
   test.setTimeout(60000);
   await onboardCompany(page);
-  await clickSidebarNav(page, "Upload Finance Pack");
+  await clickSidebarNav(page, "Import Prepared Accounts");
   await page.locator('input[type="file"]').setInputFiles(["demo-data/vat-detail-may.csv"]);
   await expect(page.getByRole("heading", { level: 1, name: "Finance Review" })).toBeVisible({ timeout: 30000 });
 

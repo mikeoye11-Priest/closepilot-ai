@@ -1,39 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { evidenceGroundedAnswer, type GroundedAnswerSections } from "@/lib/ask-closepilot";
 import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompany, pilotTenant, tenant as seededTenant } from "@/lib/data";
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
 import { analyseFinanceFiles, scopeAnalysisResult } from "@/lib/upload-analysis";
-import type { AnalysisResult, CashForecastPoint, ClientCompany, Company, Evidence, EvidenceStatus, FinanceScoreBreakdown, Finding, FindingActivity, FindingComment, FindingEvidenceRow, FindingStatus, ImportMappingProfile, ManagerReviewStatus, PartnerSignOff, PartnerSignOffGateSnapshot, PartnerSignOffStatus, Recommendation, ReviewPackStatus, RiskLevel, Tenant, TenantType, Upload, ValidationCheck, ValidationStatus } from "@/lib/types";
+import type { AnalysisResult, CashForecastPoint, ClientCompany, CollectionCase, CollectionStatus, Company, Evidence, EvidenceStatus, FinanceScoreBreakdown, Finding, FindingActivity, FindingComment, FindingEvidenceRow, FindingStatus, ImportMappingProfile, ManagerReviewStatus, PartnerSignOff, PartnerSignOffGateSnapshot, PartnerSignOffStatus, Recommendation, ReviewPackStatus, RiskLevel, Tenant, TenantType, Upload, ValidationCheck, ValidationStatus } from "@/lib/types";
 import type { VatReviewResult } from "@/lib/vat-engine/types";
 import { approveVatFiling, reopenVatFiling } from "@/lib/vat-engine/sign-off";
 import type { AccountingIntegrationState } from "@/lib/integrations/types";
+import { decideUploadMode, formatUploadBytes } from "@/lib/upload-capacity";
 
-const nav: Array<string | null> = [
-  "Overview",
-  null,
-  "Finance Review",
-  "Findings",
-  "Assurance Engine",
-  "Upload Finance Pack",
-  null,
-  "Audit Readiness",
-  "Review Pack",
-  "Change Intelligence",
-  "Cash Intelligence",
-  "VAT Assurance",
-  "Controls & Fraud",
-  "Collections Intelligence",
-  "Close Review",
-  null,
-  "Ask ClosePilot",
-  "Practice Portal",
-  "User Guide",
-  "Settings",
-];
+const navGroups = [
+  { label: "", items: ["Partner Summary"] },
+  { label: "Review workflow", items: ["Findings", "Finance Review", "Audit Readiness", "Review Pack"] },
+  { label: "Intelligence", items: ["Change Intelligence", "Cash Intelligence", "VAT Assurance", "Controls & Fraud", "Collections Intelligence", "Close Review"] },
+  { label: "Workspace", items: ["Upload Finance Pack", "Compatibility", "Practice Portal", "Ask ClosePilot", "User Guide"] },
+  { label: "Admin", items: ["Assurance Engine", "Settings"], advanced: true },
+] as const;
+
+function pageLabel(value: string) {
+  return value === "Upload Finance Pack" ? "Import Prepared Accounts" : value;
+}
 
 const storageKey = "closepilot.workspace.v2";
 const lifecycleStatuses = ["open", "under_review", "evidence_requested", "evidence_received", "resolved", "approved", "closed"] as const;
@@ -100,6 +90,17 @@ type WorkspaceState = {
   currentCompanyId: string;
   portfolioClients: ClientCompany[];
   companySnapshots: Record<string, AnalysisResult>;
+};
+
+type UploadJobState = {
+  id: string;
+  status: string;
+  progressPercent: number;
+  currentStage: string;
+  bytesProcessed?: number;
+  rowsProcessed?: number;
+  error?: string | null;
+  resultSummary?: Record<string, unknown>;
 };
 
 type AssuranceMetrics = {
@@ -241,13 +242,14 @@ const emptyAnalysisResult: AnalysisResult = {
   findingEvidence: [],
   findingComments: [],
   findingActivities: [],
+  collectionCases: [],
   partnerSignOff: undefined,
   recommendations: [],
   vatReview: undefined,
 };
 
 function emptySnapshot(): AnalysisResult {
-  return { ...emptyAnalysisResult, uploads: [], validationChecks: [], findings: [], importProfiles: [], findingEvidence: [], findingComments: [], findingActivities: [], partnerSignOff: undefined, recommendations: [] };
+  return { ...emptyAnalysisResult, uploads: [], validationChecks: [], findings: [], importProfiles: [], findingEvidence: [], findingComments: [], findingActivities: [], collectionCases: [], partnerSignOff: undefined, recommendations: [] };
 }
 
 function normaliseSnapshot(snapshot?: AnalysisResult): AnalysisResult {
@@ -261,6 +263,7 @@ function normaliseSnapshot(snapshot?: AnalysisResult): AnalysisResult {
     findingEvidence: snapshot.findingEvidence ?? [],
     findingComments: snapshot.findingComments ?? [],
     findingActivities: snapshot.findingActivities ?? [],
+    collectionCases: snapshot.collectionCases ?? [],
     partnerSignOff: snapshot.partnerSignOff,
     recommendations: (snapshot.recommendations ?? []).map((recommendation) => reviewLocked ? { ...recommendation, completed: true } : recommendation),
     vatReview: snapshot.vatReview,
@@ -332,7 +335,7 @@ const LAYER_RULE_COUNTS = {
 const TOTAL_RULES = Object.values(LAYER_RULE_COUNTS).reduce((s, v) => s + v, 0);
 
 function assuranceMetrics(findings: Finding[], validationChecks: ValidationCheck[], uploads: Upload[]): AssuranceMetrics {
-  const scoredFindings = findings.filter((item) => item.evidenceStrength !== "advisory");
+  const scoredFindings = findings.filter((item) => item.evidenceStrength !== "advisory" && isOpenFinding(item));
   const critical = scoredFindings.filter((item) => item.severity === "critical").length;
   const high = scoredFindings.filter((item) => item.severity === "high").length;
   const medium = scoredFindings.filter((item) => item.severity === "medium").length;
@@ -1336,7 +1339,7 @@ function auditReviewPackWordHtml({
         <h2>Executive Summary</h2>
         <table>
           <tr>
-            <th>Health Score</th>
+            <th>Review Quality</th>
             <th>Audit Readiness</th>
             <th>Findings</th>
             <th>Open Findings</th>
@@ -1671,23 +1674,26 @@ function findingTypeLabel(finding: Finding) {
   return "Review Exception";
 }
 
-export function AppShell({ userEmail }: { userEmail: string }) {
-  const [active, setActive] = useState("Onboarding");
-  const [tenant, setTenant] = useState<Tenant>(seededTenant);
-  const [currentCompany, setCurrentCompany] = useState<Company>(seededCompany);
-  const [companies, setCompanies] = useState<Company[]>([seededCompany]);
-  const [portfolioClients, setPortfolioClients] = useState<ClientCompany[]>([]);
-  const [companySnapshots, setCompanySnapshots] = useState<Record<string, AnalysisResult>>({});
-  const [findings, setFindings] = useState<Finding[]>([]);
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [uploads, setUploads] = useState<Upload[]>([]);
-  const [validationChecks, setValidationChecks] = useState<ValidationCheck[]>([]);
-  const [importProfiles, setImportProfiles] = useState<ImportMappingProfile[]>([]);
-  const [vatReview, setVatReview] = useState<VatReviewResult | undefined>();
-  const [findingEvidence, setFindingEvidence] = useState<Evidence[]>([]);
-  const [findingComments, setFindingComments] = useState<FindingComment[]>([]);
-  const [findingActivities, setFindingActivities] = useState<FindingActivity[]>([]);
-  const [partnerSignOff, setPartnerSignOff] = useState<PartnerSignOff | undefined>();
+export function AppShell({ userEmail, presentationMode = false }: { userEmail: string; presentationMode?: boolean }) {
+  const workspaceLoadCancelled = useRef(false);
+  const initialPilotSnapshot = presentationMode ? normaliseSnapshot(pilotAnalysisResult) : undefined;
+  const [active, setActive] = useState(presentationMode ? "Partner Summary" : "Onboarding");
+  const [tenant, setTenant] = useState<Tenant>(presentationMode ? pilotTenant : seededTenant);
+  const [currentCompany, setCurrentCompany] = useState<Company>(presentationMode ? pilotCompany : seededCompany);
+  const [companies, setCompanies] = useState<Company[]>(presentationMode ? [pilotCompany] : [seededCompany]);
+  const [portfolioClients, setPortfolioClients] = useState<ClientCompany[]>(presentationMode ? [pilotClient] : []);
+  const [companySnapshots, setCompanySnapshots] = useState<Record<string, AnalysisResult>>(presentationMode && initialPilotSnapshot ? { [pilotCompany.id]: initialPilotSnapshot } : {});
+  const [findings, setFindings] = useState<Finding[]>(initialPilotSnapshot?.findings ?? []);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>(initialPilotSnapshot?.recommendations ?? []);
+  const [uploads, setUploads] = useState<Upload[]>(initialPilotSnapshot?.uploads ?? []);
+  const [validationChecks, setValidationChecks] = useState<ValidationCheck[]>(initialPilotSnapshot?.validationChecks ?? []);
+  const [importProfiles, setImportProfiles] = useState<ImportMappingProfile[]>(initialPilotSnapshot?.importProfiles ?? []);
+  const [vatReview, setVatReview] = useState<VatReviewResult | undefined>(initialPilotSnapshot?.vatReview);
+  const [findingEvidence, setFindingEvidence] = useState<Evidence[]>(initialPilotSnapshot?.findingEvidence ?? []);
+  const [findingComments, setFindingComments] = useState<FindingComment[]>(initialPilotSnapshot?.findingComments ?? []);
+  const [findingActivities, setFindingActivities] = useState<FindingActivity[]>(initialPilotSnapshot?.findingActivities ?? []);
+  const [collectionCases, setCollectionCases] = useState<CollectionCase[]>(initialPilotSnapshot?.collectionCases ?? []);
+  const [partnerSignOff, setPartnerSignOff] = useState<PartnerSignOff | undefined>(initialPilotSnapshot?.partnerSignOff);
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("Upload your finance pack to run a real deterministic review.");
   const [question, setQuestion] = useState("Why is cash getting tighter?");
@@ -1696,6 +1702,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
   const [pilotWalkthroughStep, setPilotWalkthroughStep] = useState(0);
   const [assistantResult, setAssistantResult] = useState<AssistantResult | null>(null);
   const [focusedFindingId, setFocusedFindingId] = useState<string | null>(null);
+  const [uploadJob, setUploadJob] = useState<UploadJobState | null>(null);
 
   const userName = useMemo(() => {
     const local = userEmail.split("@")[0] ?? "";
@@ -1718,24 +1725,47 @@ export function AppShell({ userEmail }: { userEmail: string }) {
   const validationWarnings = validationChecks.filter((item) => item.status === "warning").length;
   const assurance = assuranceMetrics(findings, validationChecks, uploads);
   const coreQuality = useMemo(() => coreQualityMetrics(uploads, validationChecks, findings, importProfiles, findingEvidence, partnerSignOff, vatReview), [findingEvidence, findings, importProfiles, partnerSignOff, uploads, validationChecks, vatReview]);
-  const vatPageHasData = active === "VAT Assurance" && Boolean(vatReview && vatReview.source !== "empty" && (vatReview.transactionsAnalysed > 0 || Object.values(vatReview.vatReturn).some((value) => Math.abs(value) > 0)));
-  const vatPageAdjustments = vatPageHasData && vatReview ? buildVatAdjustments(vatReview.findings).length : 0;
-  const vatPageReconciliationFailures = vatPageHasData && vatReview ? vatReview.reconciliationResults.filter((item) => item.status === "failed").length : 0;
-  const vatPageExposure = vatPageHasData && vatReview
-    ? Math.round((vatReview.blockedVatRisk ?? 0) + vatReview.reconciliationResults.filter((item) => item.status === "failed").reduce((sum, item) => sum + Math.abs(item.difference), 0))
-    : 0;
-  const vatPageActions = vatPageHasData && vatReview
-    ? vatReview.findings.length + findings.filter((item) => item.category === "vat" && !reviewedFindingStatuses.includes(item.status)).length + vatPageReconciliationFailures
-    : 0;
-  const vatPageReadiness = vatPageReconciliationFailures ? "Blocked" : vatPageAdjustments ? "Adjust" : vatPageActions ? "Review" : "Ready";
-  const headerHealthValue = vatPageHasData && vatReview ? `${vatReview.healthScore}/100` : hasUploadedData ? `${score}/100` : "—";
-  const headerHealthLevel = vatPageHasData && vatReview ? riskLabel(vatReview.healthScore) : hasUploadedData ? risk : "medium";
-  const headerReadinessValue = vatPageHasData ? vatPageReadiness : `${assurance.closeReadiness || 0}%`;
-  const headerReadinessLevel: RiskLevel = vatPageHasData ? vatPageReconciliationFailures ? "critical" : vatPageAdjustments || vatPageActions ? "medium" : "low" : assurance.closeReadiness >= 80 ? "low" : assurance.closeReadiness >= 65 ? "medium" : "high";
-  const headerExposureValue = vatPageHasData ? vatPageExposure : financialExposure;
-  const headerActionsValue = vatPageHasData ? vatPageActions : recommendations.filter((item) => !item.completed).length;
   const isPilotDemo = currentCompany.id === pilotCompany.id;
   const reviewLocked = partnerSignOff?.reviewPackStatus === "LOCKED" || partnerSignOff?.status === "locked" || partnerSignOff?.status === "signed";
+  const acceptedRiskExposure = findings.filter((finding) => finding.status === "accepted_risk").reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
+  const arFindingsForAction = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
+  const arExposureForAction = arFindingsForAction.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
+  const arSourceLinkedForAction = arFindingsForAction.reduce((sum, finding) => sum + (finding.evidence.rows ?? []).reduce((rowSum, row) => rowSum + Math.abs(row.amount ?? 0), 0), 0);
+  const unsupportedArExposure = Math.max(0, arExposureForAction - arSourceLinkedForAction);
+  const overduePromisesForAction = collectionCases.filter(promiseIsOverdue).length;
+  const nextAction = (() => {
+    if (active === "Partner Summary") return acceptedRiskExposure
+      ? { title: "Review the accepted debtor risk", detail: `£${Math.round(acceptedRiskExposure).toLocaleString("en-GB")} remains visible after sign-off. Confirm the collection plan and promised receipts.`, cta: "Open Collections", target: "Collections Intelligence", tone: "amber" as const }
+      : { title: "Share the completed review", detail: "The review is complete and ready for partner or client distribution.", cta: "Open Review Pack", target: "Review Pack", tone: "green" as const };
+    if (active === "Audit Readiness") return { title: "Clear the bank reconciliation timing item", detail: "Upload the signed bank reconciliation to unlock the remaining +13 readiness points.", cta: "Upload Evidence", target: "Upload Finance Pack", tone: "amber" as const };
+    if (active === "Cash Intelligence") return unsupportedArExposure
+      ? { title: `Resolve £${Math.round(unsupportedArExposure).toLocaleString("en-GB")} of unsupported debtors`, detail: "Match the remaining debtor balance to customer evidence before relying on the recovery forecast.", cta: "Open Collections", target: "Collections Intelligence", tone: "red" as const }
+      : { title: "Review the recovery scenario", detail: "Confirm customer promises and disputes before sharing the cash forecast.", cta: "Open Collections", target: "Collections Intelligence", tone: "amber" as const };
+    if (active === "Change Intelligence") return acceptedRiskExposure
+      ? { title: "Keep the accepted risk partner-visible", detail: `£${Math.round(acceptedRiskExposure).toLocaleString("en-GB")} remains after review. Load a comparative pack before drawing period-over-period conclusions.`, cta: "Open Findings", target: "Findings", tone: "amber" as const }
+      : { title: "Load a comparative period", detail: "A prior-period pack is required before revenue, margin, cost and cash movements can be calculated.", cta: "Upload Comparative Pack", target: "Upload Finance Pack", tone: "amber" as const };
+    if (active === "Collections Intelligence") return overduePromisesForAction
+      ? { title: `${overduePromisesForAction} payment promise is overdue`, detail: "Contact the customer, confirm the revised date, and update the collection case.", cta: "Review Collection Queue", target: "Collections Intelligence", tone: "red" as const }
+      : { title: "Confirm the next customer commitment", detail: "Update promises, disputes and contact history to keep the recovery forecast current.", cta: "Review Collection Queue", target: "Collections Intelligence", tone: "amber" as const };
+    if (active === "VAT Assurance") return { title: "Add the prior-period VAT return", detail: "Comparative VAT movement remains untested until the preceding return is uploaded.", cta: "Upload VAT Evidence", target: "Upload Finance Pack", tone: "amber" as const };
+    if (active === "Findings") return acceptedRiskExposure
+      ? { title: "Monitor the accepted debtor risk", detail: "The review is signed, but the accepted balance must remain visible until collection.", cta: "Open Collections", target: "Collections Intelligence", tone: "amber" as const }
+      : { title: "Resolve the highest-impact finding", detail: "Open the first unresolved item, inspect its evidence, and record the reviewer decision.", cta: "Review Findings", target: "Findings", tone: "red" as const };
+    if (active === "Review Pack") return { title: "Share the locked review pack", detail: "Export the signed pack with findings, evidence, accepted risks and the partner conclusion.", cta: "Export Review", target: "Review Pack", tone: "green" as const, exportReview: true };
+    if (active === "Finance Review") return { title: "Inspect the decision trail", detail: "Review the findings, supporting evidence and recorded manager decisions.", cta: "Open Findings", target: "Findings", tone: "amber" as const };
+    if (active === "Controls & Fraud") return { title: "Retain control evidence", detail: "No open control blocker remains; keep the reviewed evidence available for audit.", cta: "Open Review Pack", target: "Review Pack", tone: "green" as const };
+    if (active === "Close Review") return { title: "Retain the close adjustment support", detail: "The suspense adjustment is closed and should remain in the signed evidence pack.", cta: "Open Review Pack", target: "Review Pack", tone: "green" as const };
+    return null;
+  })();
+
+  useEffect(() => {
+    if (!isPilotDemo) return;
+    if (active === "Review Pack") {
+      setPilotWalkthroughStep(pilotWalkthroughSteps.length - 1);
+    } else if (active === "Findings" && pilotWalkthroughSteps[pilotWalkthroughStep]?.page !== "Findings") {
+      setPilotWalkthroughStep(0);
+    }
+  }, [active, isPilotDemo, pilotWalkthroughStep]);
 
   // Outcome metrics — what ClosePilot delivers vs manual review
   const HOURLY_RATE = 80; // £80/hr default manager rate
@@ -1767,10 +1797,12 @@ export function AppShell({ userEmail }: { userEmail: string }) {
   }, [currentCompany.id, findings.length, recommendations.length, uploads.length, validationChecks.length, vatReview]);
 
   useEffect(() => {
+    if (presentationMode) return;
     async function loadWorkspace() {
       try {
         const res = await fetch("/api/workspace");
         const { workspace } = await res.json();
+        if (workspaceLoadCancelled.current) return;
         const parsed: WorkspaceState | null = workspace ?? (userEmail ? null : (() => {
           const local = window.localStorage.getItem(storageKey);
           return local ? JSON.parse(local) : null;
@@ -1796,6 +1828,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
         setFindingEvidence(snapshot.findingEvidence ?? []);
         setFindingComments(snapshot.findingComments ?? []);
         setFindingActivities(snapshot.findingActivities ?? []);
+        setCollectionCases(snapshot.collectionCases ?? []);
         setPartnerSignOff(snapshot.partnerSignOff);
         setRecommendations(snapshot.recommendations);
         setVatReview(snapshot.vatReview);
@@ -1803,8 +1836,9 @@ export function AppShell({ userEmail }: { userEmail: string }) {
       setUploadMessage(isDefault
         ? "Upload your finance pack to run a real deterministic review."
         : `${selectedCompany.name} workspace restored. Upload a new finance pack or continue the current review.`);
-        setActive("Finance Review");
+        setActive("Partner Summary");
       } catch {
+        if (workspaceLoadCancelled.current) return;
         if (userEmail) {
           window.localStorage.removeItem(storageKey);
           setActive("Onboarding");
@@ -1830,17 +1864,19 @@ export function AppShell({ userEmail }: { userEmail: string }) {
           setFindingEvidence(snapshot.findingEvidence ?? []);
           setFindingComments(snapshot.findingComments ?? []);
           setFindingActivities(snapshot.findingActivities ?? []);
+          setCollectionCases(snapshot.collectionCases ?? []);
           setPartnerSignOff(snapshot.partnerSignOff);
           setRecommendations(snapshot.recommendations);
           setVatReview(snapshot.vatReview);
-          setActive("Finance Review");
+          setActive("Partner Summary");
         } catch { window.localStorage.removeItem(storageKey); setActive("Onboarding"); }
       }
     }
     loadWorkspace();
-  }, [userEmail]);
+  }, [presentationMode, userEmail]);
 
   useEffect(() => {
+    if (presentationMode) return;
     // Don't persist default empty state — only save once real data exists
     const hasRealData = tenant.name !== "Your Firm" || uploads.length > 0 || findings.length > 0;
     if (!hasRealData) return;
@@ -1851,7 +1887,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
       portfolioClients,
       companySnapshots: {
         ...companySnapshots,
-        [currentCompany.id]: { uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, partnerSignOff, recommendations, vatReview }
+        [currentCompany.id]: { uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, collectionCases, partnerSignOff, recommendations, vatReview }
       }
     };
     window.localStorage.setItem(storageKey, JSON.stringify(workspace));
@@ -1860,7 +1896,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(workspace)
     }).catch(() => {});
-  }, [companies, companySnapshots, currentCompany.id, findingActivities, findingComments, findingEvidence, findings, importProfiles, partnerSignOff, portfolioClients, recommendations, tenant, uploads, validationChecks, vatReview]);
+  }, [collectionCases, companies, companySnapshots, currentCompany.id, findingActivities, findingComments, findingEvidence, findings, importProfiles, partnerSignOff, portfolioClients, presentationMode, recommendations, tenant, uploads, validationChecks, vatReview]);
 
   const completeRecommendation = (recommendation: Recommendation) => {
     if (reviewLocked) return;
@@ -2259,6 +2295,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
     setFindingEvidence([]);
     setFindingComments([]);
     setFindingActivities([]);
+    setCollectionCases([]);
     setPartnerSignOff(undefined);
     setRecommendations([]);
     setImportProfiles([]);
@@ -2293,6 +2330,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
       findingEvidence: findingEvidence.filter((evidence) => !removedFindingIds.has(evidence.findingId)),
       findingComments: findingComments.filter((comment) => !removedFindingIds.has(comment.findingId)),
       findingActivities: findingActivities.filter((activity) => !removedFindingIds.has(activity.findingId)),
+      collectionCases: collectionCases.filter((collectionCase) => !removedFindingIds.has(collectionCase.findingId)),
       partnerSignOff: undefined,
       recommendations: nextRecommendations,
       vatReview: nextVatReview,
@@ -2302,6 +2340,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
     setFindingEvidence(nextSnapshot.findingEvidence ?? []);
     setFindingComments(nextSnapshot.findingComments ?? []);
     setFindingActivities(nextSnapshot.findingActivities ?? []);
+    setCollectionCases(nextSnapshot.collectionCases ?? []);
     setRecommendations(nextRecommendations);
     setImportProfiles(nextSnapshot.importProfiles ?? []);
     setValidationChecks(nextValidationChecks);
@@ -2333,6 +2372,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
       findingEvidence,
       findingComments,
       findingActivities,
+      collectionCases,
       partnerSignOff,
       recommendations,
       vatReview,
@@ -2346,9 +2386,67 @@ export function AppShell({ userEmail }: { userEmail: string }) {
   const analyseUploads = async (files: FileList | null) => {
     const selected = Array.from(files ?? []);
     if (!selected.length) return;
+    const capacity = decideUploadMode(selected);
+    if (capacity.mode === "rejected") {
+      setUploadMessage(capacity.message);
+      return;
+    }
     setIsAnalysing(true);
     setAssistantResult(null);
     try {
+      if (capacity.mode === "background") {
+        setActive("Upload Finance Pack");
+        setUploadMessage(`Preparing ${selected.length} files (${formatUploadBytes(capacity.totalBytes)}) for secure background processing.`);
+        const prepareResponse = await fetch("/api/upload-jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tenantId: tenant.id,
+            companyId: currentCompany.id,
+            files: selected.map((file) => ({ name: file.name, size: file.size, contentType: file.type })),
+          }),
+        });
+        const prepared = await prepareResponse.json().catch(() => ({})) as { error?: string; bucket?: string; files?: Array<{ name: string; size: number; storageKey: string }>; job?: UploadJobState };
+        if (!prepareResponse.ok || !prepared.job || !prepared.bucket || !prepared.files) throw new Error(prepared.error || "Could not prepare background upload.");
+
+        setUploadJob(prepared.job);
+        const { createClient: createBrowserSupabaseClient } = await import("@/lib/supabase-browser");
+        const supabase = createBrowserSupabaseClient();
+        const uploadedKeys: string[] = [];
+        let completedBytes = 0;
+        try {
+          const { uploadFinanceFileResumably } = await import("@/lib/resumable-storage-upload");
+          for (let index = 0; index < selected.length; index += 1) {
+            const file = selected[index];
+            const target = prepared.files[index];
+            if (!target || target.name !== file.name) throw new Error("Background upload manifest changed before transfer.");
+            setUploadJob((job) => job ? { ...job, progressPercent: Math.max(1, Math.round(completedBytes / capacity.totalBytes * 80)), currentStage: `Uploading ${file.name}`, bytesProcessed: completedBytes } : job);
+            await uploadFinanceFileResumably({
+              supabase,
+              bucket: prepared.bucket,
+              storageKey: target.storageKey,
+              file,
+              onProgress: (fileBytes) => setUploadJob((job) => job ? { ...job, progressPercent: Math.max(1, Math.round((completedBytes + fileBytes) / capacity.totalBytes * 80)), currentStage: `Uploading ${file.name}`, bytesProcessed: completedBytes + fileBytes } : job),
+            });
+            completedBytes += file.size;
+            uploadedKeys.push(target.storageKey);
+          }
+          const queueResponse = await fetch("/api/upload-jobs", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jobId: prepared.job.id, action: "start", uploadedKeys }),
+          });
+          const queued = await queueResponse.json().catch(() => ({})) as { error?: string; job?: UploadJobState };
+          if (!queueResponse.ok || !queued.job) throw new Error(queued.error || "Could not queue background review.");
+          setUploadJob(queued.job);
+          setUploadMessage(`${selected.length} files uploaded securely. The review is queued and can continue without keeping this tab open.`);
+        } catch (error) {
+          await fetch("/api/upload-jobs", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId: prepared.job.id, action: "fail", uploadedKeys, error: error instanceof Error ? error.message : "Upload failed" }) }).catch(() => {});
+          throw error;
+        }
+        return;
+      }
+
       let result: AnalysisResult;
       try {
         const form = new FormData();
@@ -2368,7 +2466,10 @@ export function AppShell({ userEmail }: { userEmail: string }) {
           method: "POST",
           body: form
         });
-        if (!response.ok) throw new Error("Server parser failed");
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({})) as { error?: string };
+          throw new Error(payload.error || "Server parser failed");
+        }
         result = await response.json();
       } catch {
         result = await analyseFinanceFiles(selected, { savedProfiles: importProfiles.filter((profile) => profile.status === "confirmed") });
@@ -2405,6 +2506,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
         findingEvidence: [],
         findingComments: [],
         findingActivities: generatedActivities,
+        collectionCases: [],
         partnerSignOff: undefined,
       };
       setUploads(scoped.uploads);
@@ -2414,6 +2516,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
       setFindingEvidence([]);
       setFindingComments([]);
       setFindingActivities(generatedActivities);
+      setCollectionCases([]);
       setPartnerSignOff(undefined);
       setRecommendations(scoped.recommendations);
       setVatReview(scoped.vatReview);
@@ -2432,17 +2535,76 @@ export function AppShell({ userEmail }: { userEmail: string }) {
       }).catch(() => {});
       setUploadMessage(scoped.findings.length ? `Analysed ${selected.length} file(s) for ${currentCompany.name} and generated ${scoped.findings.length} evidence-linked finding(s).` : `Analysed ${selected.length} file(s) for ${currentCompany.name}. No material findings were generated from parsed rows.`);
       setActive("Finance Review");
+    } catch (error) {
+      setUploadMessage(error instanceof Error ? error.message : "The finance pack could not be processed.");
     } finally {
       setIsAnalysing(false);
     }
   };
+
+  useEffect(() => {
+    if (!uploadJob || ["completed", "failed", "cancelled"].includes(uploadJob.status)) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const response = await fetch(`/api/upload-jobs?jobId=${encodeURIComponent(uploadJob.id)}`);
+        if (!response.ok) return;
+        const payload = await response.json() as { job?: UploadJobState };
+        if (!payload.job) return;
+        setUploadJob(payload.job);
+        if (payload.job.status === "completed") {
+          const rawResult = payload.job.resultSummary?.analysisResult as AnalysisResult | undefined;
+          if (rawResult && Array.isArray(rawResult.uploads) && Array.isArray(rawResult.findings) && Array.isArray(rawResult.validationChecks)) {
+            const scoped = scopeAnalysisResult(rawResult, tenant, currentCompany);
+            const completedAt = new Date().toISOString();
+            const activities: FindingActivity[] = scoped.findings.map((finding) => ({ id: crypto.randomUUID(), findingId: finding.id, action: "created", userId: userEmail || userName || "closepilot-worker", timestamp: completedAt, details: "Finding generated from background finance-pack processing." }));
+            const completedSnapshot: AnalysisResult = { ...scoped, findingEvidence: [], findingComments: [], findingActivities: activities, collectionCases: [], partnerSignOff: undefined };
+            setUploads(scoped.uploads);
+            setValidationChecks(scoped.validationChecks);
+            setImportProfiles(scoped.importProfiles ?? []);
+            setFindings(scoped.findings);
+            setFindingEvidence([]);
+            setFindingComments([]);
+            setFindingActivities(activities);
+            setCollectionCases([]);
+            setPartnerSignOff(undefined);
+            setRecommendations(scoped.recommendations);
+            setVatReview(scoped.vatReview);
+            setCompanySnapshots((items) => ({ ...items, [currentCompany.id]: completedSnapshot }));
+            setPortfolioClients((items) => updateClientSummary(items, currentCompany, completedSnapshot));
+            setUploadMessage(`Background review complete: ${scoped.uploads.length} source files and ${scoped.findings.length} findings are ready.`);
+          } else {
+            setUploadMessage("Background review completed, but its result could not be loaded into the workspace.");
+          }
+        }
+        if (payload.job.status === "failed") setUploadMessage(payload.job.error || "Background review failed.");
+      } catch { /* keep the last known job state and retry */ }
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [currentCompany, tenant, uploadJob, userEmail, userName]);
+
+  useEffect(() => {
+    if (presentationMode) return;
+    const saved = window.localStorage.getItem(`${storageKey}.upload-job.${currentCompany.id}`);
+    if (!saved) {
+      setUploadJob(null);
+      return;
+    }
+    try { setUploadJob(JSON.parse(saved) as UploadJobState); } catch { window.localStorage.removeItem(`${storageKey}.upload-job.${currentCompany.id}`); }
+  }, [currentCompany.id, presentationMode]);
+
+  useEffect(() => {
+    if (presentationMode || !uploadJob) return;
+    const key = `${storageKey}.upload-job.${currentCompany.id}`;
+    if (["completed", "failed", "cancelled"].includes(uploadJob.status)) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, JSON.stringify(uploadJob));
+  }, [currentCompany.id, presentationMode, uploadJob]);
 
   const applyIntegrationAnalysis = (result: AnalysisResult) => {
     const scoped = scopeAnalysisResult(result, tenant, currentCompany);
     const nextImportProfiles = mergeImportProfiles(importProfiles, scoped.importProfiles ?? []);
     const generatedAt = new Date().toISOString();
     const generatedActivities: FindingActivity[] = scoped.findings.map((finding) => ({ id: crypto.randomUUID(), findingId: finding.id, action: "created", userId: userEmail || userName || "closepilot", timestamp: generatedAt, details: "Finding generated from live accounting integration evidence." }));
-    const scopedWithWorkflow: AnalysisResult = { ...scoped, importProfiles: nextImportProfiles, findingEvidence: [], findingComments: [], findingActivities: generatedActivities, partnerSignOff: undefined };
+    const scopedWithWorkflow: AnalysisResult = { ...scoped, importProfiles: nextImportProfiles, findingEvidence: [], findingComments: [], findingActivities: generatedActivities, collectionCases: [], partnerSignOff: undefined };
     setUploads(scoped.uploads);
     setValidationChecks(scoped.validationChecks);
     setImportProfiles(nextImportProfiles);
@@ -2450,6 +2612,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
     setFindingEvidence([]);
     setFindingComments([]);
     setFindingActivities(generatedActivities);
+    setCollectionCases([]);
     setPartnerSignOff(undefined);
     setRecommendations(scoped.recommendations);
     setVatReview(scoped.vatReview);
@@ -2459,6 +2622,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
     setActive("VAT Assurance");
   };
   const onboardWorkspace = (nextTenant: Tenant, nextCompany: Company) => {
+    workspaceLoadCancelled.current = true;
     setTenant(nextTenant);
     setCurrentCompany(nextCompany);
     setCompanies((items) => [nextCompany, ...items.filter((item) => item.id !== nextCompany.id)].map((item) => ({ ...item, tenantId: nextTenant.id })));
@@ -2468,6 +2632,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
     setFindingEvidence([]);
     setFindingComments([]);
     setFindingActivities([]);
+    setCollectionCases([]);
     setPartnerSignOff(undefined);
     setRecommendations([]);
     setImportProfiles([]);
@@ -2482,6 +2647,7 @@ export function AppShell({ userEmail }: { userEmail: string }) {
   };
 
   const loadPilotDemo = () => {
+    workspaceLoadCancelled.current = true;
     const snapshot = normaliseSnapshot(pilotAnalysisResult);
     setTenant(pilotTenant);
     setCurrentCompany(pilotCompany);
@@ -2495,19 +2661,20 @@ export function AppShell({ userEmail }: { userEmail: string }) {
     setFindingEvidence(snapshot.findingEvidence ?? []);
     setFindingComments(snapshot.findingComments ?? []);
     setFindingActivities(snapshot.findingActivities ?? []);
+    setCollectionCases(snapshot.collectionCases ?? []);
     setPartnerSignOff(snapshot.partnerSignOff);
     setRecommendations(snapshot.recommendations);
     setVatReview(snapshot.vatReview);
     setRuleAnalytics(null);
     setUploadMessage(`${pilotCompany.name} pilot demo loaded with upload, findings, evidence, manager review, partner sign-off and export pack.`);
     setPilotWalkthroughStep(0);
-    setActive("Findings");
+    setActive("Partner Summary");
   };
 
   const switchCompany = (companyId: string) => {
     const selectedCompany = companies.find((item) => item.id === companyId);
     if (!selectedCompany) return;
-    const currentSnapshot = normaliseSnapshot({ uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, partnerSignOff, recommendations, vatReview });
+    const currentSnapshot = normaliseSnapshot({ uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, collectionCases, partnerSignOff, recommendations, vatReview });
     const nextSnapshot = normaliseSnapshot(companySnapshots[selectedCompany.id]);
     setCompanySnapshots((items) => ({ ...items, [currentCompany.id]: currentSnapshot }));
     setCurrentCompany(selectedCompany);
@@ -2518,16 +2685,17 @@ export function AppShell({ userEmail }: { userEmail: string }) {
     setFindingEvidence(nextSnapshot.findingEvidence ?? []);
     setFindingComments(nextSnapshot.findingComments ?? []);
     setFindingActivities(nextSnapshot.findingActivities ?? []);
+    setCollectionCases(nextSnapshot.collectionCases ?? []);
     setPartnerSignOff(nextSnapshot.partnerSignOff);
     setRecommendations(nextSnapshot.recommendations);
     setVatReview(nextSnapshot.vatReview);
     setUploadMessage(nextSnapshot.uploads.length ? `${selectedCompany.name} review loaded.` : `${selectedCompany.name} has no uploaded pack yet. Upload files to begin the review.`);
-    setActive("Finance Review");
+    setActive("Partner Summary");
   };
 
   const content = useMemo(() => {
     if (active === "Onboarding") return <OnboardingPanel tenant={tenant} company={currentCompany} onboardWorkspace={onboardWorkspace} loadPilotDemo={loadPilotDemo} />;
-    if (active === "Overview" || active === "Dashboard") return <DashboardPanel score={score} risk={risk} assurance={assurance} findings={findings} openFindings={openFindings.length} cashAtRisk={cashAtRisk} financialExposure={financialExposure} timeSaved={timeSaved} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} validationWarnings={validationWarnings} validationBlockers={validationBlockers} validationChecks={validationChecks} recommendations={recommendations} clients={portfolioClients} uploads={uploads} setActive={setActive} />;
+    if (active === "Partner Summary" || active === "Dashboard") return <DashboardPanel score={score} risk={risk} assurance={assurance} findings={findings} partnerSignOff={partnerSignOff} openFindings={openFindings.length} cashAtRisk={cashAtRisk} financialExposure={financialExposure} timeSaved={timeSaved} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} validationWarnings={validationWarnings} validationBlockers={validationBlockers} validationChecks={validationChecks} recommendations={recommendations} clients={portfolioClients} uploads={uploads} setActive={setActive} />;
     if (active === "Finance Review") {
       return (
         <>
@@ -2635,20 +2803,45 @@ export function AppShell({ userEmail }: { userEmail: string }) {
 
     if (active === "Findings") return <FindingsHub findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} pilotWalkthroughStep={isPilotDemo ? pilotWalkthroughStep : undefined} focusedFindingId={focusedFindingId} clearFocusedFinding={() => setFocusedFindingId(null)} validationChecks={validationChecks} uploads={uploads} updateFindingStatus={updateFindingStatus} updateFindingAssignment={updateFindingAssignment} updateManagerReview={updateManagerReview} recordPartnerSignOff={recordPartnerSignOff} addFindingComment={addFindingComment} addFindingEvidence={addFindingEvidence} updateEvidenceStatus={updateEvidenceStatus} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
     if (active === "Assurance Engine") return <AssuranceEngine assurance={assurance} coreQuality={coreQuality} findings={findings} validationChecks={validationChecks} uploads={uploads} ruleAnalytics={ruleAnalytics} setActive={setActive} />;
-    if (active === "Upload Finance Pack") return <UploadAnalyse analyseUploads={analyseUploads} isAnalysing={isAnalysing} uploadMessage={uploadMessage} validationChecks={validationChecks} uploads={uploads} importProfiles={importProfiles} confirmImportProfile={confirmImportProfile} findings={findings} recommendations={recommendations} onDelete={deleteUpload} onClear={clearCurrentReview} />;
+    if (active === "Upload Finance Pack") return <UploadAnalyse analyseUploads={analyseUploads} isAnalysing={isAnalysing} uploadMessage={uploadMessage} uploadJob={uploadJob} validationChecks={validationChecks} uploads={uploads} importProfiles={importProfiles} confirmImportProfile={confirmImportProfile} findings={findings} recommendations={recommendations} onDelete={deleteUpload} onClear={clearCurrentReview} setActive={setActive} />;
+    if (active === "Compatibility") return <CompatibilityPanel setActive={setActive} />;
     if (active === "Close Review") return <MonthEndClose findings={findings} recommendations={recommendations} completeRecommendation={completeRecommendation} updateFindingStatus={updateFindingStatus} />;
-    if (active === "Cash Intelligence") return <CashflowPanel forecast={forecast} findings={findings} uploads={uploads} />;
-    if (active === "Collections Intelligence") return <CollectionsPanel findings={findings} />;
+    if (active === "Cash Intelligence") return <CashflowPanel findings={findings} uploads={uploads} collectionCases={collectionCases} openCollections={() => setActive("Collections Intelligence")} openFindingEvidence={(findingId) => {
+      if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : 1);
+      setFocusedFindingId(findingId);
+      setActive("Findings");
+    }} />;
+    if (active === "Collections Intelligence") return <CollectionsPanel findings={findings} collectionCases={collectionCases} saveCollectionCase={(nextCase) => setCollectionCases((items) => [nextCase, ...items.filter((item) => item.id !== nextCase.id)])} actor={userName || "Collections Team"} openFindingEvidence={(findingId) => {
+      if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
+      setFocusedFindingId(findingId);
+      setActive("Findings");
+    }} />;
     if (active === "VAT Assurance") return <VatAssuranceModule vatReview={vatReview} findings={findings} updateFindingStatus={updateFindingStatus} setActive={setActive} userName={userName} tenantId={tenant.id} companyId={currentCompany.id} onVatReviewChange={setVatReview} />;
-    if (active === "Controls & Fraud") return <RiskModule title="Controls & Fraud" category="controls" findings={findings} updateFindingStatus={updateFindingStatus} />;
-    if (active === "Audit Readiness") return <AuditReadiness findings={findings} validationChecks={validationChecks} uploads={uploads} score={score} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} expectedAuditQueries={expectedAuditQueries} financialExposure={financialExposure} company={currentCompany} tenant={tenant} setActive={setActive} />;
-    if (active === "Review Pack") return <ReviewPack company={currentCompany} tenant={tenant} userName={userName} score={score} risk={risk} findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} recommendations={recommendations} validationChecks={validationChecks} uploads={uploads} financialExposure={financialExposure} cashAtRisk={cashAtRisk} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
-    if (active === "Change Intelligence") return <ChangeIntelligence findings={findings} uploads={uploads} />;
-    if (active === "Ask ClosePilot") return <AICopilot question={question} setQuestion={setQuestion} score={score} findings={findings} findingActivities={findingActivities} validationChecks={validationChecks} uploads={uploads} company={currentCompany} forecast={forecast} assistantResult={assistantResult?.companyId === currentCompany.id ? assistantResult : null} setAssistantResult={setAssistantResult} updateFindingStatus={updateFindingStatus} updateManagerReview={updateManagerReview} openFindingEvidence={(findingId) => { setFocusedFindingId(findingId); setActive("Findings"); }} setActive={setActive} />;
+    if (active === "Controls & Fraud") return <ControlsFraudPanel findings={findings} validationChecks={validationChecks} uploads={uploads} partnerSignOff={partnerSignOff} openFindingEvidence={(findingId) => {
+      if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_close_001" ? 3 : 1);
+      setFocusedFindingId(findingId);
+      setActive("Findings");
+    }} setActive={setActive} />;
+    if (active === "Audit Readiness") return <AuditReadiness findings={findings} findingEvidence={findingEvidence} partnerSignOff={partnerSignOff} validationChecks={validationChecks} uploads={uploads} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} expectedAuditQueries={expectedAuditQueries} financialExposure={financialExposure} company={currentCompany} tenant={tenant} openFindingEvidence={(findingId) => {
+      if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
+      setFocusedFindingId(findingId);
+      setActive("Findings");
+    }} setActive={setActive} />;
+    if (active === "Review Pack") return <ReviewPack company={currentCompany} tenant={tenant} userName={userName} score={score} risk={risk} findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} recommendations={recommendations} validationChecks={validationChecks} uploads={uploads} financialExposure={financialExposure} cashAtRisk={cashAtRisk} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
+    if (active === "Change Intelligence") return <ChangeIntelligence findings={findings} findingActivities={findingActivities} partnerSignOff={partnerSignOff} validationChecks={validationChecks} uploads={uploads} openFindingEvidence={(findingId) => {
+      if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
+      setFocusedFindingId(findingId);
+      setActive("Findings");
+    }} setActive={setActive} />;
+    if (active === "Ask ClosePilot") return <AICopilot question={question} setQuestion={setQuestion} score={score} findings={findings} findingActivities={findingActivities} validationChecks={validationChecks} uploads={uploads} company={currentCompany} forecast={forecast} assistantResult={assistantResult?.companyId === currentCompany.id ? assistantResult : null} setAssistantResult={setAssistantResult} updateFindingStatus={updateFindingStatus} updateManagerReview={updateManagerReview} openFindingEvidence={(findingId) => {
+      if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
+      setFocusedFindingId(findingId);
+      setActive("Findings");
+    }} setActive={setActive} />;
     if (active === "User Guide") return <UserGuide isPilotDemo={isPilotDemo} hasData={hasUploadedData} loadPilotDemo={loadPilotDemo} setActive={setActive} setPilotWalkthroughStep={setPilotWalkthroughStep} />;
     if (active === "Settings") return <SettingsPanel tenant={tenant} company={currentCompany} userEmail={userEmail} userName={userName} onIntegrationAnalysis={applyIntegrationAnalysis} />;
     return <PracticePortal tenant={tenant} clients={portfolioClients} currentCompanyId={currentCompany.id} switchCompany={switchCompany} companySnapshots={companySnapshots} />;
-  }, [active, assurance, assistantResult, cashAtRisk, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, isAnalysing, isPilotDemo, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, risk, score, tenant, timeSaved, uploadMessage, uploads, validationBlockers, validationChecks, validationWarnings, vatReview]);
+  }, [active, assurance, assistantResult, cashAtRisk, collectionCases, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, isAnalysing, isPilotDemo, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, risk, score, tenant, timeSaved, uploadJob, uploadMessage, uploads, userName, validationBlockers, validationChecks, validationWarnings, vatReview]);
 
   return (
     <div className="min-h-screen bg-page text-ink lg:grid lg:grid-cols-[280px_1fr]">
@@ -2671,73 +2864,85 @@ export function AppShell({ userEmail }: { userEmail: string }) {
           onClose={() => setShowExport(false)}
         />
       )}
-      <aside className="no-print border-b border-white/10 bg-[#111827] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0">
+      <aside className="no-print overflow-x-hidden border-b border-white/10 bg-[#111827] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0">
         <div className="flex items-center justify-between gap-4 px-4 py-4 lg:block lg:p-5">
           <div className="flex items-center gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-cyan to-brand font-black shadow-lg shadow-blue-950/30">CP</div>
             <div className="min-w-0">
               <strong className="block truncate">ClosePilot</strong>
-              <span className="block truncate text-xs font-semibold uppercase tracking-wide text-slate-400">Assurance Platform</span>
+              <span className="block truncate text-xs font-semibold uppercase tracking-wide text-slate-400">System of Review</span>
             </div>
           </div>
-          <Pill level={hasUploadedData ? risk : "none"}>{hasUploadedData ? riskCopy(risk) : "Awaiting upload"}</Pill>
+          <Pill level={hasUploadedData ? (openFindings.length ? "medium" : "low") : "none"}>{hasUploadedData ? (openFindings.length ? "Review open" : "Review complete") : "Awaiting upload"}</Pill>
         </div>
-        <nav className="flex gap-1 overflow-x-auto px-4 pb-4 lg:grid lg:overflow-y-auto lg:overflow-x-hidden lg:px-5 lg:pb-5">
-          {nav.map((item, index) =>
-            item === null ? (
-              <hr key={index} className="hidden border-white/10 lg:my-2 lg:block" />
-            ) : (
-              <button
-                key={item}
-                className={`whitespace-nowrap rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors lg:whitespace-normal ${active === item ? "bg-white text-[#111827] shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`}
-                onClick={() => setActive(item)}
-              >
-                {item}
-              </button>
-            )
-          )}
+        <nav className="flex w-full max-w-full gap-1 overflow-x-auto px-4 pb-4 lg:block lg:overflow-y-auto lg:overflow-x-hidden lg:px-5 lg:pb-5">
+          {navGroups.filter((group) => !presentationMode || !("advanced" in group && group.advanced)).map((group) => (
+            <div key={group.label || "summary"} className="contents lg:mb-4 lg:block">
+              {group.label && <p className="hidden px-3 pb-1 pt-2 text-[11px] font-black uppercase tracking-wider text-slate-600 lg:block">{group.label}</p>}
+              <div className="contents lg:grid lg:gap-1">
+                {group.items.map((item) => (
+                  <button
+                    key={item}
+                    className={`whitespace-nowrap rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors lg:whitespace-normal ${active === item ? "bg-white text-[#111827] shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`}
+                    onClick={() => setActive(item)}
+                  >
+                    {pageLabel(item)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </nav>
         <div className="mt-auto hidden border-t border-white/10 p-5 lg:block">
           <div className="mb-4 rounded-lg border border-white/10 bg-white/5 p-3">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Workspace</p>
             <p className="mt-1 truncate text-sm font-bold text-slate-200">{tenant.name}</p>
-            <p className="truncate text-xs text-slate-500">{userEmail || "Local demo mode"}</p>
+            <p className="truncate text-xs text-slate-500">{presentationMode ? "Interactive demo · fictional data" : userEmail || "Local demo mode"}</p>
           </div>
-          <form action="/api/logout" method="POST">
-            <button className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-slate-200 transition-colors">Sign out</button>
-          </form>
+          {!presentationMode && (
+            <form action="/api/logout" method="POST">
+              <button className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-slate-200 transition-colors">Sign out</button>
+            </form>
+          )}
         </div>
       </aside>
       <main className="min-w-0 p-4 lg:p-6">
         <header className="mb-5 rounded-lg border border-line bg-white/95 p-4 shadow-panel">
           <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
             <div className="min-w-0">
-              <p className="text-xs font-bold uppercase text-muted">ClosePilot Assurance</p>
-              <h1 className="mt-1 text-2xl font-black sm:text-3xl">{active}</h1>
-              <p className="mt-1 max-w-4xl text-sm font-semibold text-cyan">{tenant.name} · {currentCompany.name} · {uploads.length} finance exports reviewed, {openFindings.length} items to resolve.{timeSavedMins > 0 ? ` · ${timeSavedHours}h manager review time saved.` : ""}</p>
+              <p className="text-xs font-bold uppercase text-muted">ClosePilot Review</p>
+              <h1 className="mt-1 text-2xl font-black sm:text-3xl">{pageLabel(active)}</h1>
+              <p className="mt-1 max-w-4xl text-sm font-semibold text-cyan">{tenant.name} · {currentCompany.name} · {uploads.length} finance exports reviewed, {openFindings.length} items to resolve.{timeSavedMins > 0 ? ` · Estimated time saved ${timeSavedHours}h (£${timeSavedValue.toLocaleString("en-GB")} manager capacity).` : ""}</p>
             </div>
             <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
-              <select className="h-10 min-w-0 rounded-lg border border-line bg-white px-3 text-sm font-bold shadow-sm" value={currentCompany.id} onChange={(event) => switchCompany(event.target.value)}>
-                {companies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
-              <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("User Guide")}>Guide</button>
-              {isPilotDemo && (
-                <button className="h-10 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-sm font-bold text-emerald-800 shadow-sm transition-colors hover:bg-emerald-100" onClick={() => {
-                  if (confirm("Reload the original Brightlane demo? This replaces any changes made in the synthetic demo workspace.")) loadPilotDemo();
-                }}>Reload Demo</button>
+              {!presentationMode && (
+                <>
+                  <select className="h-10 min-w-0 rounded-lg border border-line bg-white px-3 text-sm font-bold shadow-sm" value={currentCompany.id} onChange={(event) => switchCompany(event.target.value)}>
+                    {companies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                  <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("User Guide")}>Guide</button>
+                  {isPilotDemo && (
+                    <button className="h-10 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-sm font-bold text-emerald-800 shadow-sm transition-colors hover:bg-emerald-100" onClick={() => {
+                      if (confirm("Reload the original Brightlane demo? This replaces any changes made in the synthetic demo workspace.")) loadPilotDemo();
+                    }}>Reload Demo</button>
+                  )}
+                  <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Onboarding")}>Onboard</button>
+                </>
               )}
-              <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Onboarding")}>Onboard</button>
               <button className="h-10 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700" onClick={() => setShowExport(true)}>Export Review</button>
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <HeaderStat label="Health" value={headerHealthValue} level={headerHealthLevel} />
-            <HeaderStat label="Readiness" value={headerReadinessValue} level={headerReadinessLevel} />
-            <HeaderStat label="Exposure" value={`£${headerExposureValue.toLocaleString()}`} level={headerExposureValue ? "critical" : "low"} />
-            <HeaderStat label="Actions" value={String(headerActionsValue)} level={headerActionsValue ? "medium" : "low"} />
-          </div>
         </header>
-        {isPilotDemo && uploads.length > 0 && (
+        {nextAction && (
+          <NextActionBanner
+            title={nextAction.title}
+            detail={nextAction.detail}
+            cta={nextAction.cta}
+            tone={nextAction.tone}
+            onClick={() => nextAction.exportReview ? setShowExport(true) : setActive(nextAction.target)}
+          />
+        )}
+        {isPilotDemo && uploads.length > 0 && pilotWalkthroughSteps.some((step) => step.page === active) && (
           <PilotWalkthroughRail
             step={pilotWalkthroughStep}
             setStep={setPilotWalkthroughStep}
@@ -2782,8 +2987,8 @@ function UserGuide({ isPilotDemo, hasData, loadPilotDemo, setActive, setPilotWal
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
           <div>
             <p className="text-xs font-black uppercase tracking-wide text-brand">Getting started</p>
-            <h2 className="mt-1 text-2xl font-black">Follow one review from evidence to partner sign-off</h2>
-            <p className="mt-2 max-w-3xl text-sm text-muted">For demonstrations, use Brightlane Manufacturing Ltd only. It contains fictional finance data and a completed, read-only decision trail.</p>
+            <h2 className="mt-1 text-2xl font-black">Prepared accounts in. Consistent partner review out.</h2>
+            <p className="mt-2 max-w-3xl text-sm text-muted">Show how an IRIS, CCH, Digita, Xero, Sage or QuickBooks export becomes findings → evidence → resolution → sign-off. Brightlane Manufacturing Ltd contains fictional data and a completed, read-only decision trail.</p>
           </div>
           {!isPilotDemo ? (
             <button className="shrink-0 rounded-lg bg-emerald-600 px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-emerald-700" onClick={loadPilotDemo}>Load Safe Pilot Demo</button>
@@ -2829,7 +3034,7 @@ function UserGuide({ isPilotDemo, hasData, loadPilotDemo, setActive, setPilotWal
             {[
               ["0–5", "Welcome, scope and synthetic-data safety"],
               ["5–10", "Sign in and workspace orientation"],
-              ["10–15", "Load and introduce the pilot demo"],
+              ["10–15", "Import prepared accounts and introduce the review"],
               ["15–25", "Finance Review and validation"],
               ["25–35", "Findings and source evidence"],
               ["35–49", "Review decisions and partner controls"],
@@ -2896,7 +3101,7 @@ function OnboardingPanel({ tenant, company, onboardWorkspace, loadPilotDemo }: {
         <div className="grid gap-3">
           <button className={`rounded-lg border p-4 text-left ${mode === "accounting_practice" ? "border-brand bg-cyan-50" : "border-line bg-white"}`} onClick={() => setMode("accounting_practice")}>
             <strong>Accounting practice</strong>
-            <p className="mt-1 text-sm text-muted">Create one tenant for the firm, then keep every client company scoped by tenant and company.</p>
+            <p className="mt-1 text-sm text-muted">Keep your existing production software and apply one consistent review process across every client.</p>
           </button>
           <button className={`rounded-lg border p-4 text-left ${mode === "company" ? "border-brand bg-cyan-50" : "border-line bg-white"}`} onClick={() => setMode("company")}>
             <strong>Single company</strong>
@@ -2930,9 +3135,9 @@ function OnboardingPanel({ tenant, company, onboardWorkspace, loadPilotDemo }: {
             <input className="h-11 rounded-lg border border-line px-3" value={industry} onChange={(event) => setIndustry(event.target.value)} />
           </label>
           <label className="grid gap-2">
-            <span className="text-sm font-bold text-muted">Accounting system</span>
+            <span className="text-sm font-bold text-muted">Accounts production or bookkeeping source</span>
             <select className="h-11 rounded-lg border border-line px-3" value={accountingSystem} onChange={(event) => setAccountingSystem(event.target.value)}>
-              {["Sage", "Xero", "QuickBooks", "Business Central", "Unit4", "SAP", "Oracle", "Excel"].map((system) => <option key={system}>{system}</option>)}
+              {["IRIS Accounts Production", "CCH Accounts Production", "Digita Accounts Production", "Xero", "Sage", "QuickBooks", "Business Central", "Excel / CSV", "Other"].map((system) => <option key={system}>{system}</option>)}
             </select>
           </label>
           <label className="grid gap-2">
@@ -2956,18 +3161,48 @@ function OnboardingPanel({ tenant, company, onboardWorkspace, loadPilotDemo }: {
   );
 }
 
+function CompatibilityPanel({ setActive }: { setActive: (value: string) => void }) {
+  const systems = [
+    ["IRIS Accounts Production", "Prepared-accounts export", "Regression tested"],
+    ["CCH Accounts Production", "Guided export import", "Supported"],
+    ["Digita Accounts Production", "Guided export import", "Supported"],
+    ["Xero", "Connection or export", "Supported"],
+    ["Sage", "Accounting export", "Regression tested"],
+    ["QuickBooks", "Accounting export", "Regression tested"],
+  ];
+  return (
+    <div className="grid gap-4">
+      <section className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 p-6 shadow-panel">
+        <p className="text-xs font-black uppercase tracking-wide text-brand">Integrations and compatibility</p>
+        <h2 className="mt-2 max-w-4xl text-3xl font-black">Keep your accounts production software. Add a consistent review layer.</h2>
+        <p className="mt-3 max-w-3xl text-muted">Import prepared accounts, turn exceptions into evidence-backed findings, and produce a consistent partner sign-off pack.</p>
+        <div className="mt-5 flex flex-wrap gap-3"><button className="rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white" onClick={() => setActive("Upload Finance Pack")}>Import Prepared Accounts</button><a className="rounded-lg border border-blue-300 bg-white px-4 py-2.5 text-sm font-black text-brand" href="/compatibility" target="_blank" rel="noreferrer">Open Public Compatibility Page</a></div>
+      </section>
+      <Panel title="Compatible Source Systems">
+        <div className="grid gap-3">
+          {systems.map(([name, route, status]) => <article key={name} className="grid gap-2 rounded-lg border border-line p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-center"><strong>{name}</strong><span className="text-sm text-muted">{route}</span><span className="w-fit rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">{status}</span></article>)}
+        </div>
+        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong>Compatibility means import support, not vendor endorsement.</strong> Unless a connection is explicitly shown, ClosePilot reviews files exported from the source system. CCH and Digita use guided import and do not yet have vendor-specific regression suites.</p>
+      </Panel>
+    </div>
+  );
+}
+
 function slug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || crypto.randomUUID();
 }
 
-function HeaderStat({ label, value, level }: { label: string; value: string; level: RiskLevel }) {
-  const dot = level === "low" ? "bg-emerald-500" : level === "medium" ? "bg-amber-500" : "bg-red-500";
+function NextActionBanner({ title, detail, cta, tone, onClick }: { title: string; detail: string; cta: string; tone: "green" | "amber" | "red"; onClick: () => void }) {
+  const sectionClass = tone === "green" ? "border-emerald-200 bg-emerald-50 text-emerald-950" : tone === "red" ? "border-red-200 bg-red-50 text-red-950" : "border-amber-200 bg-amber-50 text-amber-950";
   return (
-    <div className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-line bg-slate-50 px-3 text-sm">
-      <span className={`h-2 w-2 rounded-full ${dot}`} aria-hidden="true" />
-      <span className="text-xs font-bold uppercase text-muted">{label}</span>
-      <strong>{value}</strong>
-    </div>
+    <section className={`mb-5 flex flex-col gap-3 rounded-lg border p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between ${sectionClass}`} aria-label="Next action">
+      <div>
+        <p className="text-xs font-black uppercase tracking-wide">Next Action Required</p>
+        <h2 className="mt-1 text-lg font-black">{title}</h2>
+        <p className="mt-1 text-sm">{detail}</p>
+      </div>
+      <button className="shrink-0 rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white" onClick={onClick}>{cta}</button>
+    </section>
   );
 }
 
@@ -3067,9 +3302,9 @@ function defaultReviewReason(status: FindingStatus) {
 }
 
 function DashboardPanel({
-  score, risk, assurance, findings, openFindings, cashAtRisk, financialExposure, timeSaved, timeSavedHours, timeSavedValue, validationWarnings, validationBlockers, validationChecks, recommendations, clients, uploads, setActive
+  score, risk, assurance, findings, partnerSignOff, openFindings, cashAtRisk, financialExposure, timeSaved, timeSavedHours, timeSavedValue, validationWarnings, validationBlockers, validationChecks, recommendations, clients, uploads, setActive
 }: {
-  score: number; risk: RiskLevel; assurance: AssuranceMetrics; findings: Finding[]; openFindings: number; cashAtRisk: number; financialExposure: number; timeSaved: number; timeSavedHours: string; timeSavedValue: number; validationWarnings: number; validationBlockers: number; validationChecks: ValidationCheck[]; recommendations: Recommendation[]; clients: ClientCompany[]; uploads: Upload[]; setActive: (v: string) => void;
+  score: number; risk: RiskLevel; assurance: AssuranceMetrics; findings: Finding[]; partnerSignOff?: PartnerSignOff; openFindings: number; cashAtRisk: number; financialExposure: number; timeSaved: number; timeSavedHours: string; timeSavedValue: number; validationWarnings: number; validationBlockers: number; validationChecks: ValidationCheck[]; recommendations: Recommendation[]; clients: ClientCompany[]; uploads: Upload[]; setActive: (v: string) => void;
 }) {
   const [showExposure, setShowExposure] = useState(false);
   const highRisk = clients.filter((c) => c.risk === "high" || c.risk === "critical").length;
@@ -3093,8 +3328,11 @@ function DashboardPanel({
       risk={risk}
       assurance={assurance}
       findings={findings}
+      partnerSignOff={partnerSignOff}
       openFindings={openFindings}
       financialExposure={financialExposure}
+      timeSavedHours={timeSavedHours}
+      timeSavedValue={timeSavedValue}
       validationWarnings={validationWarnings}
       validationBlockers={validationBlockers}
       validationChecks={validationChecks}
@@ -3113,7 +3351,7 @@ function DashboardPanel({
               <SummaryItem label="Tests Executed" value={String(assurance.testsExecuted)} detail="across uploaded files" level="low" />
               <SummaryItem label="Findings" value={String(openFindings)} detail={`${assurance.critical} critical, ${assurance.high} high`} level={assurance.critical ? "critical" : assurance.high ? "high" : "medium"} />
               <SummaryItem label="Confidence" value={`${assurance.confidence}%`} detail="evidence quality" level={assurance.confidence >= 85 ? "low" : "medium"} />
-              <SummaryItem label="Health Score" value={`${score}/100`} detail={riskCopy(risk)} level={risk} />
+              <SummaryItem label="Review Quality" value={`${score}/100`} detail="Completeness of the reviewed pack" level={risk} />
             </div>
           </Panel>
           <Panel title="Review Status">
@@ -3166,7 +3404,7 @@ function DashboardPanel({
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Metric title="Finance Health Score" value={uploads.length ? `${score}/100` : "—"} detail={uploads.length ? riskCopy(risk) : "Awaiting upload"} tone={uploads.length ? risk : "medium"} />
+        <Metric title="Review Quality" value={uploads.length ? `${score}/100` : "—"} detail={uploads.length ? "Completeness of the reviewed pack" : "Awaiting upload"} tone={uploads.length ? risk : "medium"} />
         <Metric title="Audit Readiness" value={uploads.length ? `${assurance.closeReadiness}%` : "—"} detail={uploads.length ? "Manager review required" : "Awaiting finance pack"} tone={uploads.length ? (assurance.closeReadiness >= 80 ? "low" : assurance.closeReadiness >= 65 ? "medium" : "high") : "medium"} />
         <Metric title="Review Confidence" value={uploads.length ? `${assurance.confidence}%` : "—"} detail={uploads.length ? "Evidence and validation quality" : "Awaiting evidence"} tone={uploads.length ? (assurance.confidence >= 85 ? "low" : "medium") : "medium"} />
         <Metric title="Month-End Time Saved" value={`${timeSaved}h`} detail="Estimated this close" tone="low" />
@@ -3224,8 +3462,8 @@ function DashboardPanel({
           <div className="grid gap-3 sm:grid-cols-2">
             {[
               { label: "Run Finance Review", sub: "Full month-end review", page: "Finance Review" },
-              { label: "Assurance Engine", sub: "Run all assurance tests", page: "Assurance Engine" },
-              { label: "Upload Finance Pack", sub: "Upload TB, P&L and more", page: "Upload Finance Pack" },
+              { label: "Review Findings", sub: "Work through issues and evidence", page: "Findings" },
+              { label: "Import Prepared Accounts", sub: "Bring in the TB, P&L and supporting schedules", page: "Upload Finance Pack" },
               { label: "Audit Readiness", sub: "Year-end and audit checks", page: "Audit Readiness" },
               { label: "Change Intelligence", sub: "What changed this period?", page: "Change Intelligence" },
               { label: "Ask ClosePilot", sub: "Ask anything about the numbers", page: "Ask ClosePilot" },
@@ -3262,8 +3500,11 @@ function OperationalOverviewDashboard({
   risk,
   assurance,
   findings,
+  partnerSignOff,
   openFindings,
   financialExposure,
+  timeSavedHours,
+  timeSavedValue,
   validationWarnings,
   validationBlockers,
   validationChecks,
@@ -3275,8 +3516,11 @@ function OperationalOverviewDashboard({
   risk: RiskLevel;
   assurance: AssuranceMetrics;
   findings: Finding[];
+  partnerSignOff?: PartnerSignOff;
   openFindings: number;
   financialExposure: number;
+  timeSavedHours: string;
+  timeSavedValue: number;
   validationWarnings: number;
   validationBlockers: number;
   validationChecks: ValidationCheck[];
@@ -3310,15 +3554,16 @@ function OperationalOverviewDashboard({
   const failedReadinessDrivers = assurance.readinessDrivers.filter((driver) => !driver.passed);
   const readinessDrivers = failedReadinessDrivers.length ? failedReadinessDrivers : assurance.readinessDrivers.slice(0, 4);
   const openHighFindings = findings.filter((finding) => isOpenFinding(finding) && (finding.severity === "critical" || finding.severity === "high")).length;
+  const evidenceLinked = findings.filter((finding) => finding.evidence?.sourceFile).length;
+  const resolvedOrAccepted = findings.filter((finding) => !isOpenFinding(finding)).length;
+  const journeySteps = [
+    { label: "Findings", detail: `${findings.length} identified`, complete: findings.length > 0, page: "Findings" },
+    { label: "Evidence", detail: `${evidenceLinked} supported`, complete: findings.length > 0 && evidenceLinked === findings.length, page: "Findings" },
+    { label: "Resolution", detail: `${resolvedOrAccepted} decided`, complete: findings.length > 0 && resolvedOrAccepted === findings.length, page: "Findings" },
+    { label: "Sign-off", detail: partnerSignOff ? `Locked by ${partnerSignOff.signedBy}` : "Partner decision pending", complete: Boolean(partnerSignOff), page: "Review Pack" },
+  ];
   const readinessAction = missingEvidenceItems.length ? "Upload missing evidence" : openHighFindings ? "Resolve high-risk findings" : validationBlockers ? "Clear validation blockers" : "Prepare sign-off";
   const forecastReadiness = readinessForecast(findings, validationChecks, uploads);
-  const trend = ["Dec", "Jan", "Feb", "Mar", "Apr", "May"].map((period, index) => ({
-    period,
-    Critical: Math.max(0, severityCounts.critical + 5 - index),
-    High: Math.max(0, severityCounts.high + 4 - index),
-    Medium: Math.max(0, severityCounts.medium + 3 - index),
-    Low: Math.max(0, severityCounts.low + 1 - Math.floor(index / 2)),
-  }));
   const activity = [
     uploads[0] ? { tone: "low" as RiskLevel, title: "Files uploaded", detail: uploads[0].fileName } : null,
     findings[0] ? { tone: "medium" as RiskLevel, title: "Review completed", detail: `${findings.length} finding(s) generated` } : null,
@@ -3327,14 +3572,14 @@ function OperationalOverviewDashboard({
   ].filter((item): item is { tone: RiskLevel; title: string; detail: string } => Boolean(item));
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[1fr_300px]">
-      <div className="grid gap-4">
+    <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid min-w-0 gap-4">
         <section>
-          <h2 className="mb-3 text-xl font-black">Overview</h2>
+          <div className="mb-3"><p className="text-xs font-bold uppercase text-muted">Partner Summary</p><h2 className="mt-1 text-xl font-black">One consistent review, whoever prepared the accounts</h2><p className="mt-1 text-sm text-muted">Prepared accounts in. Evidence-backed partner decision out.</p></div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <OverviewMetricCard title="Finance Health Score" value={uploads.length ? score : 0} suffix="/100" tone={risk} badge={uploads.length ? riskCopy(risk) : "Awaiting upload"} />
+            <OverviewMetricCard title="Review Quality" value={uploads.length ? score : 0} suffix="/100" tone={risk} badge={uploads.length ? "Review complete" : "Awaiting upload"} />
             <OverviewMetricCard title="Audit Readiness" value={uploads.length ? assurance.closeReadiness : 0} suffix="/100" tone={assurance.closeReadiness >= 80 ? "low" : assurance.closeReadiness >= 65 ? "medium" : "high"} badge={assurance.closeReadiness >= 80 ? "Good" : "Fair"} />
-            <OverviewMetricCard title="Review Confidence" value={uploads.length ? assurance.confidence : 0} suffix="/100" tone={assurance.confidence >= 85 ? "low" : "medium"} badge={assurance.confidence >= 85 ? "High" : "Review"} />
+            <article className="rounded-lg border border-line bg-white p-5 shadow-panel"><p className="text-sm font-bold text-muted">Estimated Time Saved</p><strong className="mt-4 block text-3xl font-black text-emerald-700">{timeSavedHours}h</strong><p className="mt-4 text-sm font-black text-emerald-700">£{timeSavedValue.toLocaleString("en-GB")} manager value</p><p className="mt-4 text-sm text-muted">This review cycle</p></article>
             <article className="rounded-lg border border-line bg-white p-5 shadow-panel">
               <p className="text-sm font-bold text-muted">Est. Exposure</p>
               <strong className="mt-4 block text-3xl font-black text-red-600">£{financialExposure.toLocaleString()}</strong>
@@ -3344,8 +3589,26 @@ function OperationalOverviewDashboard({
           </div>
         </section>
 
+        <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Primary review journey">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div><p className="text-xs font-bold uppercase text-muted">Primary review journey</p><h2 className="mt-1 text-xl font-black">Findings → Evidence → Resolution → Sign-off</h2></div>
+            <p className="text-sm text-muted">One clear path from issue to partner decision.</p>
+          </div>
+          <ol className="mt-4 grid gap-3 md:grid-cols-4">
+            {journeySteps.map((step, index) => (
+              <li key={step.label}>
+                <button className={`w-full rounded-lg border p-4 text-left transition-colors hover:border-brand ${step.complete ? "border-emerald-200 bg-emerald-50" : "border-line bg-slate-50"}`} onClick={() => setActive(step.page)}>
+                  <span className={`inline-grid h-7 w-7 place-items-center rounded-full text-xs font-black ${step.complete ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700"}`}>{step.complete ? "✓" : index + 1}</span>
+                  <strong className="mt-3 block">{step.label}</strong>
+                  <span className="mt-1 block text-sm text-muted">{step.detail}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </section>
+
         <section className="grid gap-4 xl:grid-cols-[0.95fr_1.1fr_0.85fr]">
-          <OverviewCard title="Findings by Severity">
+          <OverviewCard title="Findings Reviewed by Severity">
             <div className="grid items-center gap-4 sm:grid-cols-[140px_1fr]">
               <SeverityDonut counts={severityCounts} total={totalFindings} />
               <div className="grid gap-3 text-sm">
@@ -3389,20 +3652,13 @@ function OperationalOverviewDashboard({
               </button>
             </div>
           </OverviewCard>
-          <OverviewCard title="Findings Trend">
-            <div className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trend} margin={{ left: -20, right: 8, top: 10, bottom: 0 }}>
-                  <CartesianGrid stroke="#e5e7eb" strokeDasharray="4 4" vertical={false} />
-                  <XAxis dataKey="period" tickLine={false} axisLine={false} />
-                  <YAxis tickLine={false} axisLine={false} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="Critical" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="High" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="Medium" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="Low" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-                </LineChart>
-              </ResponsiveContainer>
+          <OverviewCard title="Review Status" action={<button className="text-sm font-bold text-brand" onClick={() => setActive("Review Pack")}>Open pack</button>}>
+            <div className="grid gap-3">
+              <SummaryLine label="Files reviewed" value={uploads.length} />
+              <SummaryLine label="Findings identified" value={findings.length} />
+              <SummaryLine label="Open items" value={openFindings} />
+              <SummaryLine label="Accepted risks" value={findings.filter((finding) => finding.status === "accepted_risk").length} />
+              <SummaryLine label="Sign-off" value={partnerSignOff ? `Locked · ${partnerSignOff.signedBy}` : "Pending"} />
             </div>
           </OverviewCard>
           <OverviewCard title="Missing Evidence">
@@ -3485,7 +3741,7 @@ function OperationalOverviewDashboard({
         </OverviewCard>
       </div>
 
-      <aside className="grid content-start gap-4">
+      <aside className="grid min-w-0 content-start gap-4">
         <OverviewCard title="Recent Activity" action={<button className="text-sm font-bold text-brand" onClick={() => setActive("Findings")}>View all</button>}>
           <div className="grid gap-4">
             {activity.length ? activity.map((item) => (
@@ -3503,7 +3759,7 @@ function OperationalOverviewDashboard({
         <OverviewCard title="Quick Actions">
           <div className="grid grid-cols-2 gap-2">
             {[
-              ["Upload Files", "Upload Finance Pack"],
+              ["Import Accounts", "Upload Finance Pack"],
               ["Run Review", "Finance Review"],
               ["View Findings", "Findings"],
               ["Generate Report", "Review Pack"],
@@ -3532,7 +3788,7 @@ function OperationalOverviewDashboard({
 
 function OverviewCard({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
+    <section className="min-w-0 rounded-lg border border-line bg-white p-5 shadow-panel">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="font-black">{title}</h2>
         {action}
@@ -3636,7 +3892,7 @@ function AssuranceSnapshot({ assurance, findings, validationChecks, uploads, set
           <p className="text-xs font-bold uppercase text-muted">Continuous Finance Assurance</p>
           <h3 className="mt-2 text-2xl font-black">{hasData ? `${assurance.testsExecuted} assurance tests executed` : "Awaiting upload"}</h3>
           <p className="mt-2 text-sm text-muted">{TOTAL_RULES}+ rules across 8 assurance layers. Data Integrity first, then 8 specialist agents review every risk before sign-off.</p>
-          <button className="mt-4 rounded-lg bg-brand px-4 py-3 font-bold text-white" onClick={() => setActive("Assurance Engine")}>Open Assurance Engine</button>
+          <button className="mt-4 rounded-lg bg-brand px-4 py-3 font-bold text-white" onClick={() => setActive("Findings")}>Open Findings</button>
         </div>
         <div className="grid gap-3 md:grid-cols-4">
           <SummaryItem label="Critical" value={hasData ? String(assurance.critical) : "—"} detail="needs review" level={assurance.critical ? "critical" : "low"} />
@@ -3750,23 +4006,23 @@ function ReviewCommandCenter({
               <h2 className="mt-1 text-2xl font-black sm:text-3xl">Every ledger. Every balance. Every risk.</h2>
               <p className="mt-2 max-w-3xl text-sm text-muted">
                 {hasData
-                  ? `${assurance.testsExecuted} assurance tests executed across ${uploads.length} uploaded finance exports.`
-                  : `Upload a finance pack to run ${TOTAL_RULES}+ assurance tests across 8 review layers.`}
+                  ? `${assurance.testsExecuted} assurance tests executed across ${uploads.length} imported finance exports.`
+                  : `Import prepared accounts to run ${TOTAL_RULES}+ assurance tests across 8 review layers.`}
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               <Pill level={statusLevel}>{reviewStatus}</Pill>
-              <button className="rounded-lg border border-line bg-white px-4 py-2.5 text-sm font-black transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Assurance Engine")}>
-                Open Assurance Engine
+              <button className="rounded-lg border border-line bg-white px-4 py-2.5 text-sm font-black transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Findings")}>
+                Open Findings
               </button>
               <button className="rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-blue-700" onClick={() => setActive(hasData ? "Review Pack" : "Upload Finance Pack")}>
-                {hasData ? "Open Review Pack" : "Upload Pack"}
+                {hasData ? "Open Review Pack" : "Import Accounts"}
               </button>
             </div>
           </div>
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <CommandMetric label="Health" value={`${score}/100`} detail={riskCopy(risk)} level={risk} />
+            <CommandMetric label="Review Quality" value={`${score}/100`} detail="Reviewed pack completeness" level={risk} />
             <CommandMetric label="Readiness" value={hasData ? `${assurance.closeReadiness}%` : "—"} detail={`${passedDrivers.length}/${assurance.readinessDrivers.length} controls passed`} level={hasData ? (assurance.closeReadiness >= 80 ? "low" : assurance.closeReadiness >= 65 ? "medium" : "high") : "medium"} />
             <CommandMetric label="Confidence" value={hasData ? `${assurance.confidence}%` : "—"} detail="evidence quality" level={hasData ? (assurance.confidence >= 85 ? "low" : "medium") : "medium"} />
             <CommandMetric label="Exposure" value={`£${financialExposure.toLocaleString()}`} detail={`cash risk £${cashAtRisk.toLocaleString()}`} level={financialExposure ? "critical" : "low"} />
@@ -4125,149 +4381,175 @@ function RuleCoverageReport({ analytics }: { analytics: RuleAnalyticsReport }) {
   );
 }
 
-function AuditReadiness({ findings, validationChecks, uploads, score, timeSavedHours, timeSavedValue, expectedAuditQueries, financialExposure, company, tenant, setActive }: {
-  findings: Finding[]; validationChecks: ValidationCheck[]; uploads: Upload[]; score: number;
-  timeSavedHours: string; timeSavedValue: number; expectedAuditQueries: number; financialExposure: number;
-  company: Company; tenant: Tenant; setActive: (v: string) => void;
+function AuditReadiness({ findings, findingEvidence, partnerSignOff, validationChecks, uploads, timeSavedHours, timeSavedValue, expectedAuditQueries, financialExposure, company, tenant, openFindingEvidence, setActive }: {
+  findings: Finding[];
+  findingEvidence: Evidence[];
+  partnerSignOff?: PartnerSignOff;
+  validationChecks: ValidationCheck[];
+  uploads: Upload[];
+  timeSavedHours: string;
+  timeSavedValue: number;
+  expectedAuditQueries: number;
+  financialExposure: number;
+  company: Company;
+  tenant: Tenant;
+  openFindingEvidence: (findingId: string) => void;
+  setActive: (value: string) => void;
 }) {
-  const hasTB = uploads.some((u) => u.fileType === "trial_balance");
-  const hasBS = uploads.some((u) => u.fileType === "balance_sheet");
-  const hasAR = uploads.some((u) => u.fileType === "aged_debtors");
-  const criticalFindings = findings.filter((f) => f.severity === "critical").length;
-  const openFindings   = findings.filter((f) => f.status === "open" || f.status === "in_review");
-  const criticalOpen   = openFindings.filter((f) => f.severity === "critical").length;
-  const highOpen       = openFindings.filter((f) => f.severity === "high").length;
-  const failedChecks   = validationChecks.filter((v) => v.status === "failed").length;
-  const warningChecks  = validationChecks.filter((v) => v.status === "warning").length;
-  const requiredFiles  = ["trial_balance","profit_loss","balance_sheet","aged_debtors","aged_creditors","vat_report"];
-  const presentFiles   = new Set(uploads.map((u) => u.fileType));
-  const missingFiles   = requiredFiles.filter((r) => !presentFiles.has(r as Upload["fileType"])).map((r) => r.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
-  const auditScore = Math.max(0, Math.min(100, 100 - criticalOpen * 20 - highOpen * 10 - failedChecks * 12 - warningChecks * 3 + Math.min(uploads.length * 5, 20)));
-  const closeScore = Math.max(0, Math.min(98, 96 - criticalOpen * 18 - highOpen * 9 - failedChecks * 12 - warningChecks * 3));
-  const monthEndFindings = findings.filter((f) => f.category === "month_end");
-  const controlFindings = findings.filter((f) => f.category === "controls");
-  const tbPassed = validationChecks.some((v) => v.name.toLowerCase().includes("trial") && v.status === "passed");
-  const bsPassed = validationChecks.some((v) => v.name.toLowerCase().includes("balance") && v.status === "passed");
+  const readiness = calculateAuditReadinessV2(findings, validationChecks, uploads);
+  const confidence = calculateReviewConfidence(findings, validationChecks, uploads);
+  const drivers = calculateReadinessDrivers(findings, validationChecks, uploads);
+  const openFindings = findings.filter(isOpenFinding);
+  const criticalOpen = openFindings.filter((finding) => finding.severity === "critical").length;
+  const highOpen = openFindings.filter((finding) => finding.severity === "high").length;
+  const acceptedRisks = findings.filter((finding) => finding.status === "accepted_risk");
+  const passedWeight = drivers.filter((driver) => driver.passed).reduce((sum, driver) => sum + driver.weight, 0);
+  const targetReadiness = uploads.length ? 98 : 0;
+  const projectedUplift = Math.max(0, targetReadiness - readiness);
   const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
 
-  const checks = [
-    { name: "Missing Accruals", detail: monthEndFindings.length ? `${monthEndFindings.length} month-end finding(s) require accrual review` : hasTB ? "No accrual gaps detected in uploaded data" : "Trial balance not yet uploaded", status: monthEndFindings.some((f) => f.severity === "high" || f.severity === "critical") ? "failed" : monthEndFindings.length ? "warning" : hasTB ? "passed" : "warning" },
-    { name: "Trial Balance", detail: hasTB ? (tbPassed ? "TB balances to zero — no integrity issues" : "TB uploaded but has reconciliation issues") : "Trial balance not yet uploaded", status: hasTB ? (tbPassed ? "passed" : "warning") : "warning" },
-    { name: "Balance Sheet Equation", detail: hasBS ? (bsPassed ? "Assets equal liabilities + equity" : "Balance sheet equation has exceptions") : "Balance sheet not yet uploaded", status: hasBS ? (bsPassed ? "passed" : "failed") : "warning" },
-    { name: "Lead Schedule Completeness", detail: criticalFindings ? `${criticalFindings} critical finding(s) need schedules before sign-off` : uploads.length >= 3 ? "No critical schedule gaps detected" : "Upload finance pack to check lead schedules", status: criticalFindings ? "failed" : uploads.length >= 3 ? "passed" : "warning" },
-    { name: "Supporting Evidence", detail: uploads.length >= 4 ? `${uploads.length} files uploaded — evidence coverage good` : uploads.length ? `${uploads.length} file(s) uploaded — add more for full coverage` : "Upload your finance pack to provide supporting evidence", status: uploads.length >= 4 ? "passed" : "warning" },
-    { name: "Cut-off Testing", detail: monthEndFindings.some((f) => f.description?.toLowerCase().includes("cut-off") || f.description?.toLowerCase().includes("journal")) ? "Post-period journals detected — review for cut-off accuracy" : hasTB ? "No cut-off exceptions flagged in uploaded data" : "Trial balance not yet uploaded", status: monthEndFindings.some((f) => f.description?.toLowerCase().includes("cut-off") || f.description?.toLowerCase().includes("journal")) ? "warning" : hasTB ? "passed" : "warning" },
-    { name: "AR Ageing & Recoverability", detail: hasAR ? (findings.some((f) => f.category === "ar" && f.severity === "critical") ? "Critical AR exposure — review recoverability provisions" : "AR reviewed — no critical recoverability issues") : "Aged debtors not yet uploaded", status: hasAR ? (findings.some((f) => f.category === "ar" && f.severity === "critical") ? "warning" : "passed") : "warning" },
-    { name: "Controls & Fraud Review", detail: controlFindings.length ? `${controlFindings.length} control exception(s) need sign-off before audit` : uploads.length ? "No control breaches flagged" : "Upload finance pack to check controls", status: controlFindings.some((f) => f.severity === "high" || f.severity === "critical") ? "failed" : controlFindings.length ? "warning" : uploads.length ? "passed" : "warning" },
-  ] as const;
+  const driverConfig: Record<string, { patterns: string[]; categories: Finding["category"][]; owner: string; action: string; page: string }> = {
+    "TB balanced": { patterns: ["trial balance"], categories: ["financial_statements", "data_quality"], owner: "Finance Manager", action: "Upload the final trial balance and clear any debit/credit difference.", page: "Upload Finance Pack" },
+    "VAT reconciled": { patterns: ["vat report", "vat control"], categories: ["vat"], owner: "Tax Manager", action: "Agree the VAT return to the VAT control and retain the reconciliation.", page: "VAT Assurance" },
+    "AR reconciled": { patterns: ["ar ledger", "debtors control"], categories: ["ar"], owner: "Credit Controller", action: "Agree aged debtors to the control account and document recoverability.", page: "Collections Intelligence" },
+    "AP reconciled": { patterns: ["ap ledger", "creditors control"], categories: ["ap"], owner: "AP Manager", action: "Agree aged creditors to the control account and investigate differences.", page: "Finance Review" },
+    "Payroll posted": { patterns: ["payroll", "paye", "nic"], categories: ["month_end"], owner: "Payroll Lead", action: "Provide payroll summary and confirm payroll journals are posted.", page: "Close Review" },
+    "Depreciation posted": { patterns: ["depreciation", "fixed asset"], categories: ["month_end"], owner: "Finance Manager", action: "Provide the fixed-asset roll-forward and post depreciation.", page: "Close Review" },
+    "Bank reconciled": { patterns: ["bank reconciliation", "cash accounts"], categories: ["cashflow", "month_end"], owner: "Finance Manager", action: "Clear the outstanding bank timing item and upload the signed reconciliation.", page: "Upload Finance Pack" },
+  };
 
-  const passed = checks.filter((c) => c.status === "passed").length;
-  const warnings = checks.filter((c) => c.status === "warning").length;
-  const failed = checks.filter((c) => c.status === "failed").length;
-  const readiness = Math.round((passed / checks.length) * 100);
+  let forecastCursor = readiness;
+  const controls = drivers.map((driver) => {
+    const config = driverConfig[driver.label];
+    const validation = validationChecks.find((check) => config.patterns.some((pattern) => `${check.name} ${check.detail}`.toLowerCase().includes(pattern)));
+    const relatedFinding = findings.find((finding) => config.categories.includes(finding.category));
+    const sourceFiles = Array.from(new Set([
+      ...uploads.filter((upload) => {
+        if (driver.label === "VAT reconciled") return upload.fileType === "vat_report";
+        if (driver.label === "AR reconciled") return upload.fileType === "aged_debtors";
+        if (driver.label === "AP reconciled") return upload.fileType === "aged_creditors";
+        if (driver.label === "Payroll posted") return upload.fileType === "profit_loss" || upload.fileType === "trial_balance";
+        return upload.fileType === "trial_balance";
+      }).map((upload) => upload.fileName),
+      ...(relatedFinding?.evidence.sourceFile ? [relatedFinding.evidence.sourceFile] : []),
+    ]));
+    const status: ValidationStatus = driver.passed ? "passed" : validation?.status === "failed" ? "failed" : "warning";
+    const nextForecast = driver.passed ? forecastCursor : Math.min(targetReadiness, forecastCursor + driver.weight);
+    const uplift = Math.max(0, nextForecast - forecastCursor);
+    forecastCursor = nextForecast;
+    return {
+      ...driver,
+      status,
+      validation,
+      relatedFinding,
+      owner: relatedFinding?.assignedTo || config.owner,
+      dueDate: relatedFinding?.dueDate ? new Date(relatedFinding.dueDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "Before fieldwork",
+      action: config.action,
+      page: config.page,
+      sourceFiles,
+      uplift,
+    };
+  });
+  const actionControls = controls.filter((control) => !control.passed);
+  const evidenceReady = controls.filter((control) => control.passed && control.sourceFiles.length > 0).length;
+  const acceptedEvidence = findingEvidence.filter((evidence) => evidence.status === "accepted").length;
+  const pbcCsv = [
+    ["Control", "Weight", "Status", "Owner", "Due", "Evidence", "Required action"],
+    ...controls.map((control) => [control.label, `${control.weight}%`, control.status, control.owner, control.dueDate, control.sourceFiles.join("; "), control.action]),
+  ].map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n");
 
   return (
     <div className="grid gap-4">
-
-      {/* Hero outcome section — this is what firms buy */}
-      <section className="rounded-xl border border-line bg-white p-6 shadow-panel">
-        <div className="mb-5 flex items-start justify-between gap-4">
+      <section className="rounded-lg border border-line bg-white p-6 shadow-panel" aria-label="Audit readiness summary">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-muted">Audit Readiness Report™</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-muted">Audit Readiness Report</p>
             <h2 className="mt-1 text-2xl font-black">{company.name}</h2>
-            <p className="text-sm text-muted">{tenant.name} · Prepared {today} · {uploads.length} file{uploads.length !== 1 ? "s" : ""} reviewed</p>
+            <p className="mt-1 text-sm text-muted">{tenant.name} · Prepared {today} · {uploads.length} files reviewed · Based on ClosePilot&apos;s audit readiness framework</p>
           </div>
-          <div className="flex gap-2">
-            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => setActive("Upload Finance Pack")}>Upload More Files</button>
+          <div className="flex flex-wrap gap-2">
+            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => exportFile(`${slug(company.name)}_audit_request_list.csv`, pbcCsv, "text/csv;charset=utf-8")}>Export PBC List</button>
             <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => window.print()}>Export Report</button>
           </div>
         </div>
 
-        {/* 4 outcome metrics — the product promise */}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div className={`rounded-xl p-5 text-center ${auditScore >= 80 ? "bg-emerald-50 border border-emerald-200" : auditScore >= 60 ? "bg-amber-50 border border-amber-200" : "bg-red-50 border border-red-200"}`}>
-            <strong className={`block text-5xl font-black ${auditScore >= 80 ? "text-emerald-700" : auditScore >= 60 ? "text-amber-700" : "text-red-700"}`}>{uploads.length ? `${auditScore}%` : "—"}</strong>
-            <p className="mt-1 font-bold">Audit Readiness</p>
-            <p className="text-xs text-muted">{auditScore >= 80 ? "Ready for partner review" : auditScore >= 60 ? "Needs attention" : "Not ready — critical issues"}</p>
-          </div>
-          <div className="rounded-xl border border-line bg-slate-50 p-5 text-center">
-            <strong className={`block text-5xl font-black ${criticalOpen === 0 ? "text-emerald-700" : "text-red-700"}`}>{criticalOpen}</strong>
-            <p className="mt-1 font-bold">Critical Issues</p>
-            <p className="text-xs text-muted">{highOpen > 0 ? `+${highOpen} high severity` : "No high severity findings"}</p>
-          </div>
-          <div className="rounded-xl border border-line bg-slate-50 p-5 text-center">
-            <strong className={`block text-5xl font-black ${Number(timeSavedHours) >= 2 ? "text-emerald-700" : "text-slate-600"}`}>{uploads.length ? `${timeSavedHours}h` : "—"}</strong>
-            <p className="mt-1 font-bold">Manager Time Saved</p>
-            <p className="text-xs text-muted">{timeSavedValue > 0 ? `≈ £${timeSavedValue.toLocaleString()} at your day rate` : "Upload files to calculate"}</p>
-          </div>
-          <div className="rounded-xl border border-line bg-slate-50 p-5 text-center">
-            <strong className={`block text-5xl font-black ${expectedAuditQueries === 0 ? "text-emerald-700" : "text-amber-700"}`}>{uploads.length ? expectedAuditQueries : "—"}</strong>
-            <p className="mt-1 font-bold">Expected Audit Queries</p>
-            <p className="text-xs text-muted">{expectedAuditQueries === 0 ? "Clean — low audit risk" : "Address before partner sign-off"}</p>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <Metric title="Readiness" value={uploads.length ? `${readiness}%` : "—"} detail={`${passedWeight} of 100 readiness points complete`} tone={readiness >= 85 ? "low" : readiness >= 65 ? "medium" : "high"} />
+          <Metric title="Target" value={uploads.length ? `${targetReadiness}%` : "—"} detail={`+${projectedUplift} available uplift`} tone={projectedUplift ? "medium" : "low"} />
+          <Metric title="Confidence" value={uploads.length ? `${confidence}%` : "—"} detail="Coverage, validation and evidence" tone={confidence >= 85 ? "low" : "medium"} />
+          <Metric title="Open Blockers" value={String(criticalOpen + highOpen)} detail={`${criticalOpen} critical · ${highOpen} high`} tone={criticalOpen ? "critical" : highOpen ? "high" : "low"} />
+          <Metric title="Evidence Ready" value={`${evidenceReady}/${controls.length}`} detail={`${acceptedEvidence} accepted attachments`} tone={evidenceReady === controls.length ? "low" : "medium"} />
+        </div>
+
+        <div className="mt-5 rounded-lg border border-line bg-slate-50 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase text-muted">Readiness Forecast</p>
+              <p className="mt-1 text-xl font-black">Current {readiness}% → {targetReadiness}% audit-ready</p>
+              <p className="mt-1 text-sm text-muted">Complete {actionControls.length} remaining control action{actionControls.length === 1 ? "" : "s"} to unlock +{projectedUplift} points.</p>
+            </div>
+            <div className="min-w-56">
+              <div className="h-3 overflow-hidden rounded-full bg-slate-200"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${readiness}%` }} /></div>
+              <div className="mt-1 flex justify-between text-xs font-bold text-muted"><span>{readiness}% current</span><span>{targetReadiness}% target</span></div>
+            </div>
           </div>
         </div>
 
-        {/* Financial exposure */}
-        {financialExposure > 0 && (
-          <div className="mt-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-4">
-            <div>
-              <p className="text-xs font-bold uppercase text-amber-800">Financial Exposure Identified</p>
-              <p className="mt-0.5 text-sm text-amber-900">ClosePilot identified <strong>£{Math.round(financialExposure / 1000)}k</strong> in potential financial exposure across VAT, AR, AP and close findings.</p>
-            </div>
-            <strong className="text-2xl font-black text-amber-800 shrink-0">£{Math.round(financialExposure / 1000)}k</strong>
-          </div>
-        )}
-
-        {/* Missing evidence warning */}
-        {missingFiles.length > 0 && uploads.length > 0 && (
-          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <p className="text-xs font-semibold text-slate-600">Upload additional files to improve readiness score: <span className="font-bold">{missingFiles.join(", ")}</span></p>
+        {partnerSignOff && (
+          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
+            <strong>Partner sign-off locked:</strong> {partnerSignOff.signedBy} approved the pack at {partnerSignOff.approval?.readinessScore ?? partnerSignOff.gateSnapshot.readiness}% readiness. {acceptedRisks.length} accepted risk{acceptedRisks.length === 1 ? " remains" : "s remain"} visible to audit.
           </div>
         )}
       </section>
 
-      <section className="grid gap-4 md:grid-cols-4">
-        <Metric title="Audit Readiness" value={uploads.length ? `${readiness}%` : "—"} detail="Based on checklist checks" tone={readiness >= 80 ? "low" : readiness >= 60 ? "medium" : "high"} />
-        <Metric title="Checks Passed" value={passed} detail={`of ${checks.length} total`} tone="low" />
-        <Metric title="Warnings" value={warnings} detail="Need attention before audit" tone="medium" />
-        <Metric title="Blockers" value={failed} detail="Must resolve before year-end" tone={failed ? "critical" : "low"} />
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div><p className="text-xs font-bold uppercase text-muted">Audit Readiness Action Plan</p><h2 className="mt-1 text-xl font-black">Evidence, owner and readiness improvement</h2></div>
+          <span className="text-sm font-semibold text-muted">Weights total 100%</span>
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
+            <thead className="text-xs uppercase text-muted"><tr><th className="border-b border-line p-3">Control / Weight</th><th className="border-b border-line p-3">Status</th><th className="border-b border-line p-3">Evidence</th><th className="border-b border-line p-3">Owner / Due</th><th className="border-b border-line p-3">Required Action</th><th className="border-b border-line p-3">Uplift</th><th className="border-b border-line p-3">Open</th></tr></thead>
+            <tbody>
+              {controls.map((control) => (
+                <tr key={control.label} className={!control.passed ? "bg-amber-50/50" : ""}>
+                  <td className="border-b border-line p-3"><strong className="block">{control.label}</strong><span className="text-xs text-muted">{control.weight}% weight</span></td>
+                  <td className="border-b border-line p-3"><ValidationPill status={control.status} /><p className="mt-2 max-w-56 text-xs text-muted">{control.detail}</p></td>
+                  <td className="border-b border-line p-3"><strong className="block">{control.sourceFiles.length ? `${control.sourceFiles.length} source${control.sourceFiles.length === 1 ? "" : "s"}` : "Evidence required"}</strong><span className="mt-1 block max-w-56 text-xs text-muted">{control.sourceFiles.join(" · ") || "No supporting file linked"}</span></td>
+                  <td className="border-b border-line p-3"><strong className="block">{control.owner}</strong><span className="text-xs text-muted">{control.dueDate}</span></td>
+                  <td className="border-b border-line p-3">{control.passed ? "Control complete; retain evidence for fieldwork." : control.action}</td>
+                  <td className="border-b border-line p-3"><span className={`rounded-full px-3 py-1 text-xs font-black ${control.uplift ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"}`}>{control.uplift ? `+${control.uplift}` : "Complete"}</span></td>
+                  <td className="border-b border-line p-3"><button className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold" onClick={() => control.relatedFinding ? openFindingEvidence(control.relatedFinding.id) : setActive(control.page)}>{control.relatedFinding ? "View Evidence" : "Open Area"}</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
-        <Panel title="Audit Readiness Checklist">
+      <section className="grid gap-4 xl:grid-cols-[1fr_0.8fr]">
+        <Panel title="Priority Readiness Actions">
           <div className="grid gap-3">
-            {checks.map((check) => (
-              <div key={check.name} className="flex items-start justify-between gap-4 rounded-lg border border-line p-4">
-                <div>
-                  <strong>{check.name}</strong>
-                  <p className="mt-1 text-sm text-muted">{check.detail}</p>
-                </div>
-                <ValidationPill status={check.status} />
+            {actionControls.length ? actionControls.map((control, index) => (
+              <div key={control.label} className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <div className="flex items-start justify-between gap-3"><div><span className="text-xs font-black uppercase text-amber-800">Action {index + 1}</span><strong className="mt-1 block">{control.label}</strong><p className="mt-1 text-sm text-amber-950">{control.action}</p></div><span className="shrink-0 rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-800">+{control.uplift} points</span></div>
+                <p className="mt-3 text-xs text-amber-900">Owner {control.owner} · Due {control.dueDate}</p>
               </div>
-            ))}
+            )) : <EmptyState title="No readiness actions" detail="All readiness checks are complete." />}
           </div>
         </Panel>
-
-        <div className="grid gap-4 content-start">
-          <Panel title="Audit Readiness Score">
-            <div className="rounded-lg border border-line bg-slate-50 p-5 text-center">
-              <strong className="block text-5xl font-black">{readiness}%</strong>
-              <p className="mt-2 text-muted">Ready for year-end audit</p>
-              <Pill level={readiness >= 80 ? "low" : readiness >= 60 ? "medium" : "high"} >{readiness >= 80 ? "Audit Ready" : readiness >= 60 ? "Needs Attention" : "Not Ready"}</Pill>
+        <div className="grid content-start gap-4">
+          <Panel title="Audit Outcome">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <SummaryItem label="Manager Time Saved" value={`${timeSavedHours}h`} detail={`≈ £${timeSavedValue.toLocaleString("en-GB")}`} level="low" />
+              <SummaryItem label="Expected Audit Queries" value={String(expectedAuditQueries)} detail="from open blockers" level={expectedAuditQueries ? "medium" : "low"} />
+              <SummaryItem label="Financial Exposure" value={`£${Math.round(financialExposure).toLocaleString("en-GB")}`} detail="including accepted risks" level={financialExposure ? "high" : "low"} />
+              <SummaryItem label="Review Pack" value={partnerSignOff ? "Locked" : "Draft"} detail={partnerSignOff ? `Signed by ${partnerSignOff.signedBy}` : "Partner approval pending"} level={partnerSignOff ? "low" : "medium"} />
             </div>
           </Panel>
-          <Panel title="Priority Items">
-            <div className="grid gap-3">
-              {checks.filter((c) => c.status !== "passed").map((check) => (
-                <div key={check.name} className="rounded-lg border border-line bg-slate-50 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <strong className="text-sm">{check.name}</strong>
-                    <ValidationPill status={check.status} />
-                  </div>
-                  <p className="mt-1 text-xs text-muted">{check.detail}</p>
-                </div>
-              ))}
-            </div>
+          <Panel title="Prepared-By-Client List">
+            <p className="text-sm text-muted">Export the control plan with evidence references, owners, due dates and outstanding requests for the audit team.</p>
+            <button className="mt-3 w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white" onClick={() => exportFile(`${slug(company.name)}_audit_request_list.csv`, pbcCsv, "text/csv;charset=utf-8")}>Download PBC CSV</button>
           </Panel>
         </div>
       </section>
@@ -4276,17 +4558,17 @@ function AuditReadiness({ findings, validationChecks, uploads, score, timeSavedH
 }
 
 function ReviewPack({
-  company, tenant, userName, score, risk, findings, findingEvidence, findingComments, findingActivities, partnerSignOff, reviewLocked, recommendations, validationChecks, uploads, financialExposure, cashAtRisk, onCreateNewReviewCycle, setActive
+  company, tenant, userName, score, risk, findings, findingEvidence, findingComments, findingActivities, partnerSignOff, reviewLocked, recommendations, validationChecks, uploads, financialExposure, cashAtRisk, timeSavedHours, timeSavedValue, onCreateNewReviewCycle, setActive
 }: {
-  company: Company; tenant: Tenant; userName: string; score: number; risk: RiskLevel; findings: Finding[]; findingEvidence: Evidence[]; findingComments: FindingComment[]; findingActivities: FindingActivity[]; partnerSignOff?: PartnerSignOff; reviewLocked: boolean; recommendations: Recommendation[]; validationChecks: ValidationCheck[]; uploads: Upload[]; financialExposure: number; cashAtRisk: number; onCreateNewReviewCycle: () => void; setActive: (value: string) => void;
+  company: Company; tenant: Tenant; userName: string; score: number; risk: RiskLevel; findings: Finding[]; findingEvidence: Evidence[]; findingComments: FindingComment[]; findingActivities: FindingActivity[]; partnerSignOff?: PartnerSignOff; reviewLocked: boolean; recommendations: Recommendation[]; validationChecks: ValidationCheck[]; uploads: Upload[]; financialExposure: number; cashAtRisk: number; timeSavedHours: string; timeSavedValue: number; onCreateNewReviewCycle: () => void; setActive: (value: string) => void;
 }) {
   const [preparedBy, setPreparedBy] = useState(userName || "ClosePilot Reviewer");
-  const [reviewedBy, setReviewedBy] = useState("");
+  const [reviewedBy, setReviewedBy] = useState(partnerSignOff?.reviewedBy ?? "");
   const [approvedBy, setApprovedBy] = useState(partnerSignOff?.approvedBy ?? partnerSignOff?.signedBy ?? "");
   const [signOffStatus, setSignOffStatus] = useState<PartnerSignOffStatus>(partnerSignOff?.status ?? "draft");
   const [reviewPackStatus, setReviewPackStatus] = useState<ReviewPackStatus>(partnerSignOff?.reviewPackStatus ?? "DRAFT");
-  const [packType, setPackType] = useState<"audit" | "partner" | "client" | "evidence">("audit");
-  const [conclusion, setConclusion] = useState("Draft: manager review required before final issue.");
+  const [packType, setPackType] = useState<"audit" | "partner" | "client" | "evidence">("partner");
+  const [conclusion, setConclusion] = useState(partnerSignOff ? "Approved and locked following partner sign-off." : "Draft: manager review required before final issue.");
   const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
   const profile = evidenceProfile(findings);
   const failedChecks = validationChecks.filter((v) => v.status === "failed");
@@ -4313,7 +4595,7 @@ function ReviewPack({
   const collection = collectionOpportunities(findings);
   const supplierRisk = supplierRiskOpportunities(findings);
   const ecl = expectedCreditLoss(findings);
-  const reportAudience = packType === "audit" ? "Audit Review Pack" : packType === "partner" ? "Partner Review Pack" : packType === "client" ? "Client Finance Health Report" : "Evidence Appendix";
+  const reportAudience = packType === "audit" ? "Audit Review Pack" : packType === "partner" ? "Partner Review Pack" : packType === "client" ? "Client Review Quality Report" : "Evidence Appendix";
   const visibleFindings = packType === "client"
     ? findings.filter((f) => f.evidenceStrength !== "advisory" && (f.severity === "critical" || f.severity === "high" || ["accepted", "resolved", "accepted_risk"].includes(f.status)))
     : findings;
@@ -4424,6 +4706,13 @@ function ReviewPack({
     validationBlockers: failedChecks.length,
     openHigh: openHigh.length + openCritical.length,
   });
+  const acceptedRiskExposure = acceptedRiskFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
+  const evidenceCompletePct = findings.length ? Math.round(profile.evidenceLinked / findings.length * 100) : uploads.length ? 100 : 0;
+  const signOffBlockers = openCritical.length + openHigh.length + failedChecks.length + evidenceOutstanding + managerReturned;
+  const decisionHeadline = partnerSignOff
+    ? acceptedRiskFindings.length ? "Approved with accepted risk" : "Approved and locked"
+    : reviewReady && !signOffBlockers ? "Ready for partner decision" : "Not ready for sign-off";
+  const decisionTone = partnerSignOff ? acceptedRiskFindings.length ? "border-violet-200 bg-violet-50 text-violet-950" : "border-emerald-200 bg-emerald-50 text-emerald-950" : reviewReady && !signOffBlockers ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-amber-200 bg-amber-50 text-amber-950";
   const pdfFindings = visibleFindings
     .slice()
     .sort((a, b) => findingSeverityRank(b.severity) - findingSeverityRank(a.severity))
@@ -4482,11 +4771,11 @@ function ReviewPack({
             <p className="mt-1 text-sm text-muted">{tenant.name} · Prepared {today} · {uploads.length} file{uploads.length !== 1 ? "s" : ""} reviewed</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:text-muted" disabled={reviewLocked} onClick={() => setActive("Upload Finance Pack")}>Upload More</button>
-            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => exportFile(`${fileSlug}_findings.csv`, findingsCsv(findings), "text/csv;charset=utf-8")}>Findings CSV</button>
-            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={downloadEvidencePack}>Evidence JSON</button>
-            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={downloadWordPack}>Word Pack</button>
-            <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => printWithTitle(`${company.name} Partner Review Report`)}>Export PDF</button>
+            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:text-muted" disabled={reviewLocked} onClick={() => setActive("Upload Finance Pack")}>Import More</button>
+            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => exportFile(`${fileSlug}_findings.csv`, findingsCsv(findings), "text/csv;charset=utf-8")}>Findings Schedule</button>
+            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={downloadEvidencePack}>Evidence Archive</button>
+            <button className="rounded-lg border border-brand px-4 py-2 text-sm font-bold text-brand" onClick={downloadWordPack}>Export Word Report</button>
+            <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => printWithTitle(`${company.name} Partner Review Report`)}>Export Partner PDF</button>
           </div>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-5">
@@ -4522,7 +4811,7 @@ function ReviewPack({
             </select>
           </label>
           <label className="grid gap-1">
-            <span className="text-xs font-bold uppercase text-muted">Legacy Sign-Off</span>
+            <span className="text-xs font-bold uppercase text-muted">Workflow Status</span>
             <select className="h-10 rounded-lg border border-line px-3 text-sm font-bold" value={partnerSignOff?.status ?? signOffStatus} onChange={(e) => setSignOffStatus(e.target.value as PartnerSignOffStatus)} disabled={Boolean(partnerSignOff)}>
               <option value="draft">Draft</option>
               <option value="under_review">Under Review</option>
@@ -4537,6 +4826,7 @@ function ReviewPack({
               <option>Draft: manager review required before final issue.</option>
               <option>Ready for partner review subject to listed actions.</option>
               <option>Ready to issue to client.</option>
+              <option>Approved and locked following partner sign-off.</option>
               <option>Blocked: critical evidence or validation issues remain.</option>
             </select>
           </label>
@@ -4544,30 +4834,55 @@ function ReviewPack({
       </section>
 
       <section id="practice-review-pack" className="rounded-lg border border-line bg-white p-6 shadow-panel print:border-0 print:p-0 print:shadow-none">
-        {packType === "audit" && (
-          <div className="print-page rounded-lg border border-slate-900 bg-white p-6 print-cover print:rounded-none print:border-0">
-            <div className="flex min-h-[520px] flex-col justify-between gap-8">
-              <div>
-                <p className="text-xs font-black uppercase tracking-wide text-muted">ClosePilot Assurance</p>
-                <h1 className="mt-3 text-4xl font-black">Partner Review Report</h1>
-                <p className="mt-2 max-w-2xl text-sm text-muted">Evidence-led finance assurance pack generated from uploaded finance exports, validation checks, findings workflow and sign-off gate status.</p>
+        <section className="print-page rounded-lg border border-slate-900 bg-white p-6 print-cover print:rounded-none print:border-0" aria-label="Partner decision page">
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div><p className="text-xs font-black uppercase tracking-wide text-muted">ClosePilot · Partner Decision Page</p><h1 className="mt-2 text-3xl font-black">{company.name}</h1><p className="mt-1 text-sm text-muted">{tenant.name} · Prepared {today} · {uploads.length} files reviewed</p></div>
+              <div className="text-left sm:text-right"><Pill level={partnerSignOff ? "low" : signOffBlockers ? "medium" : "low"}>{partnerSignOff ? "Locked" : signOffBlockers ? "Action required" : "Ready"}</Pill><p className="mt-2 text-xs font-bold text-muted">{effectiveReviewPackStatus.replaceAll("_", " ")}</p></div>
+            </div>
+
+            <div className={`rounded-lg border p-5 ${decisionTone}`}>
+              <p className="text-xs font-black uppercase">Partner conclusion</p>
+              <h2 className="mt-1 text-2xl font-black">{decisionHeadline}</h2>
+              <p className="mt-2 text-sm">{partnerSignOff?.note || partnerConclusion}</p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <ReportMetric label="Audit Readiness" value={`${generatedPack.executiveSummary.auditReadinessScore}%`} detail={`${signOffBlockers} sign-off blocker${signOffBlockers === 1 ? "" : "s"}`} />
+              <ReportMetric label="Financial Exposure" value={`£${Math.round(financialExposure).toLocaleString("en-GB")}`} detail={`${acceptedRiskExposure ? `£${Math.round(acceptedRiskExposure).toLocaleString("en-GB")} accepted risk` : "No accepted risk exposure"}`} />
+              <ReportMetric label="Evidence Complete" value={`${evidenceCompletePct}%`} detail={`${profile.evidenceLinked}/${findings.length || 0} findings supported`} />
+              <ReportMetric label="Time Saved" value={`${timeSavedHours}h`} detail={`£${timeSavedValue.toLocaleString("en-GB")} manager value`} />
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+              <div className="rounded-lg border border-line bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase text-muted">Review outcome</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <SummaryLine label="Findings identified" value={findings.length} />
+                  <SummaryLine label="Open items" value={openFindings.length} />
+                  <SummaryLine label="Accepted risks" value={acceptedRiskFindings.length} />
+                  <SummaryLine label="Validation blockers" value={failedChecks.length} />
+                  <SummaryLine label="Evidence outstanding" value={evidenceOutstanding} />
+                  <SummaryLine label="Manager decisions" value={`${managerApproved} approved · ${managerEscalated} escalated`} />
+                </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <SummaryLine label="Client" value={company.name} />
-                <SummaryLine label="Period" value="May 2026" />
-                <SummaryLine label="Prepared" value={today} />
-                <SummaryLine label="Prepared By" value={preparedBy || "ClosePilot"} />
-                <SummaryLine label="Status" value={auditTraffic.label} />
-                <SummaryLine label="Files Reviewed" value={uploads.length} />
-              </div>
-              <div className={`rounded-lg border p-4 ${auditTrafficClass.box}`}>
-                <p className={`text-xs font-black uppercase ${auditTrafficClass.text}`}>Partner Conclusion</p>
-                <p className="mt-2 text-lg font-black">{auditTraffic.headline}</p>
-                <p className="mt-2 text-sm text-muted">{partnerConclusion}</p>
+              <div className="rounded-lg border border-line bg-slate-50 p-4">
+                <p className="text-xs font-black uppercase text-muted">Items requiring partner awareness</p>
+                <div className="mt-3 grid gap-2">
+                  {[...openCritical, ...openHigh, ...acceptedRiskFindings].length ? [...openCritical, ...openHigh, ...acceptedRiskFindings].slice(0, 4).map((finding) => (
+                    <div key={finding.id} className="flex items-start justify-between gap-3 rounded-lg border border-line bg-white p-3"><span><strong className="block text-sm">{finding.title}</strong><span className="mt-1 block text-xs text-muted">{finding.status.replaceAll("_", " ")} · {finding.amount ? `£${Math.round(finding.amount).toLocaleString("en-GB")}` : finding.expectedImpact}</span></span><Pill level={finding.severity}>{finding.severity}</Pill></div>
+                  )) : <p className="text-sm text-muted">No open high-risk items or accepted risks require partner awareness.</p>}
+                </div>
               </div>
             </div>
+
+            <div className="grid gap-3 border-t border-line pt-4 sm:grid-cols-3">
+              <SummaryLine label="Prepared By" value={partnerSignOff?.preparedBy || preparedBy || "-"} />
+              <SummaryLine label="Reviewed By" value={partnerSignOff?.reviewedBy || reviewedBy || "-"} />
+              <SummaryLine label="Approved By" value={partnerSignOff?.approvedBy || partnerSignOff?.signedBy || approvedBy || "Pending"} />
+            </div>
           </div>
-        )}
+        </section>
 
         <div className="print-page border-b border-line pb-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -4588,7 +4903,7 @@ function ReviewPack({
           </div>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <ReportMetric label="Finance Health" value={`${score}/100`} detail={riskCopy(risk)} />
+            <ReportMetric label="Review Quality" value={`${score}/100`} detail="Completeness of the reviewed pack" />
             <ReportMetric label="Audit Readiness" value={reviewReady ? "Ready" : "Blocked"} detail={`${failedChecks.length} blockers`} />
             <ReportMetric label="Review Confidence" value={`${reviewedPct}%`} detail="reviewer decision coverage" />
             <ReportMetric label="Open Findings" value={String(openFindings.length)} detail="remaining workflow items" />
@@ -5234,97 +5549,111 @@ function FindingTriageSection({ title, findings, empty, compact = false }: { tit
   );
 }
 
-function ChangeIntelligence({ findings, uploads }: { findings: Finding[]; uploads: Upload[] }) {
-  const hasData = uploads.length > 0;
-  const arFindings = findings.filter((f) => f.category === "ar");
-  const vatFindings = findings.filter((f) => f.category === "vat");
-  const controlFindings = findings.filter((f) => f.category === "controls");
-  const apFindings = findings.filter((f) => f.category === "ap");
+function ChangeIntelligence({ findings, findingActivities, partnerSignOff, validationChecks, uploads, openFindingEvidence, setActive }: {
+  findings: Finding[];
+  findingActivities: FindingActivity[];
+  partnerSignOff?: PartnerSignOff;
+  validationChecks: ValidationCheck[];
+  uploads: Upload[];
+  openFindingEvidence: (findingId: string) => void;
+  setActive: (value: string) => void;
+}) {
+  const periods = Array.from(new Set(findings.map((finding) => finding.evidence.period).filter(Boolean)));
+  const hasComparativePeriod = periods.length > 1;
+  const evidenceFindings = findings.filter((finding) => finding.evidenceStrength !== "advisory");
+  const valueFor = (finding: Finding) => finding.amount ?? parseImpactAmount(finding.expectedImpact);
+  const exposureIdentified = evidenceFindings.reduce((sum, finding) => sum + valueFor(finding), 0);
+  const residualFindings = evidenceFindings.filter((finding) => isOpenFinding(finding) || finding.status === "accepted_risk" || finding.status === "accepted");
+  const residualExposure = residualFindings.reduce((sum, finding) => sum + valueFor(finding), 0);
+  const clearedExposure = Math.max(0, exposureIdentified - residualExposure);
+  const resolvedCount = findings.filter((finding) => !isOpenFinding(finding) && finding.status !== "accepted_risk").length;
+  const acceptedRisk = findings.filter((finding) => finding.status === "accepted_risk");
+  const warningChecks = validationChecks.filter((check) => check.status === "warning").length;
+  const categoryLabels: Record<Finding["category"], string> = { ar: "Receivables", ap: "Payables", cashflow: "Cash flow", controls: "Controls", data_quality: "Data quality", financial_statements: "Financial statements", month_end: "Close", vat: "VAT" };
+  const categories = Array.from(new Set(evidenceFindings.map((finding) => finding.category)));
+  const movementData = categories.map((category) => {
+    const categoryFindings = evidenceFindings.filter((finding) => finding.category === category);
+    return {
+      category: categoryLabels[category],
+      identified: Math.round(categoryFindings.reduce((sum, finding) => sum + valueFor(finding), 0) / 1000),
+      residual: Math.round(categoryFindings.filter((finding) => isOpenFinding(finding) || finding.status === "accepted_risk" || finding.status === "accepted").reduce((sum, finding) => sum + valueFor(finding), 0) / 1000),
+    };
+  });
+  const materialFindings = evidenceFindings.slice().sort((a, b) => valueFor(b) - valueFor(a));
 
-  const changes = [
-    { metric: "Revenue",         value: "—", detail: "Connect prior period data to see comparison", tone: "low" as RiskLevel },
-    { metric: "Gross Margin",    value: "—", detail: "Connect prior period data to see comparison", tone: "low" as RiskLevel },
-    { metric: "Cash Position",   value: "—", detail: "Connect prior period data to see comparison", tone: "low" as RiskLevel },
-    { metric: "Debtor Days",     value: arFindings.length ? "Overdue" : hasData ? "Stable" : "—", detail: arFindings.length ? `${arFindings.length} AR finding(s) detected` : "No AR exceptions found", tone: arFindings.length ? "high" as RiskLevel : "low" as RiskLevel },
-    { metric: "Operating Costs", value: "—", detail: "Connect prior period data to see comparison", tone: "low" as RiskLevel },
-    { metric: "VAT Liability",   value: vatFindings.length ? "Exception" : hasData ? "On track" : "—", detail: vatFindings.length ? `${vatFindings.length} VAT issue(s) flagged` : "No VAT exceptions found", tone: vatFindings.length ? "medium" as RiskLevel : "low" as RiskLevel },
-    { metric: "AP Duplicates",   value: apFindings.length ? "Found" : hasData ? "Clear" : "—", detail: apFindings.length ? `${apFindings.length} potential duplicate(s)` : "No duplicate invoices detected", tone: apFindings.length ? "medium" as RiskLevel : "low" as RiskLevel },
-    { metric: "Controls",        value: controlFindings.length ? "Exception" : hasData ? "Clean" : "—", detail: controlFindings.length ? `${controlFindings.length} control breach(es)` : "No control exceptions", tone: controlFindings.length ? "high" as RiskLevel : "low" as RiskLevel },
-  ];
-
-  const sparkData = [
-    { period: "Oct", revenue: 182, margin: 38, cash: 210 },
-    { period: "Nov", revenue: 191, margin: 36, cash: 198 },
-    { period: "Dec", revenue: 205, margin: 37, cash: 215 },
-    { period: "Jan", revenue: 198, margin: 35, cash: 203 },
-    { period: "Feb", revenue: 212, margin: 34, cash: 219 },
-    { period: "Mar", revenue: 229, margin: 32, cash: 228 },
-  ];
-
-  const materialFindings = findings.filter((f) => f.severity === "critical" || f.severity === "high").slice(0, 4);
+  const outcomeFor = (finding: Finding) => {
+    if (finding.status === "accepted_risk") return "Risk accepted and retained";
+    if (finding.status === "false_positive") return "False positive closed";
+    if (["resolved", "approved", "closed", "accepted"].includes(finding.status)) return "Resolved during review";
+    return "Action remains open";
+  };
 
   return (
     <div className="grid gap-4">
-      <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
-        <p className="text-xs font-bold uppercase text-muted">Change Intelligence</p>
-        <h2 className="mt-1 text-2xl font-black">What changed this period — and why it matters.</h2>
-        <p className="mt-2 text-muted">ClosePilot compares this period against the prior period and surfaces material movements for management review.</p>
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Change intelligence summary">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase text-muted">Change Intelligence</p>
+            <h2 className="mt-1 text-2xl font-black">What changed during review—and what remains.</h2>
+            <p className="mt-2 text-muted">Every movement below is derived from findings, evidence rows and reviewer decisions. No comparative financial trend is shown without a prior-period pack.</p>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-black ${hasComparativePeriod ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{hasComparativePeriod ? `${periods.length} periods compared` : "1 financial period loaded"}</span>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Metric title="Exposure Identified" value={`£${Math.round(exposureIdentified).toLocaleString("en-GB")}`} detail={`${evidenceFindings.length} findings supported by records`} tone={exposureIdentified ? "high" : "low"} />
+          <Metric title="Cleared or Closed" value={`£${Math.round(clearedExposure).toLocaleString("en-GB")}`} detail={`${resolvedCount} review decisions`} tone="low" />
+          <Metric title="Exposure Remaining" value={`£${Math.round(residualExposure).toLocaleString("en-GB")}`} detail={`${acceptedRisk.length} accepted risk${acceptedRisk.length === 1 ? "" : "s"}`} tone={residualExposure ? "high" : "low"} />
+          <Metric title="Validation Warnings" value={String(warningChecks)} detail="Current-period controls" tone={warningChecks ? "medium" : "low"} />
+          <Metric title="Decision Trail" value={String(findingActivities.length)} detail={partnerSignOff ? "Partner pack locked" : "Partner review pending"} tone={partnerSignOff ? "low" : "medium"} />
+        </div>
+        {!hasComparativePeriod && uploads.length > 0 && (
+          <div className="mt-4 flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div><strong>Period movement unavailable.</strong><p className="mt-1 text-sm text-amber-950">Load a prior-period finance pack to calculate revenue, margin, cost and cash movements. The review-movement analysis below remains fully evidenced.</p></div>
+            <button className="shrink-0 rounded-lg bg-amber-700 px-4 py-2 text-sm font-bold text-white" onClick={() => setActive("Upload Finance Pack")}>Import Comparative Accounts</button>
+          </div>
+        )}
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {changes.map(({ metric, value, detail, tone }) => (
-          <article key={metric} className={`min-h-32 rounded-lg border border-l-4 border-line bg-white p-4 shadow-panel ${tone === "low" ? "border-l-green" : tone === "medium" ? "border-l-amber" : "border-l-red"}`}>
-            <p className="text-sm font-bold text-muted">{metric}</p>
-            <strong className="mt-3 block text-3xl font-black">{value}</strong>
-            <span className="mt-1 block text-sm text-muted">{detail}</span>
-          </article>
-        ))}
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <Panel title="Revenue, Margin & Cash — 6 Months">
-          {hasData ? (
-            <>
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={sparkData} margin={{ left: -18, right: 18, top: 12, bottom: 0 }}>
-                    <CartesianGrid stroke="#e5e7eb" strokeDasharray="4 4" vertical={false} />
-                    <XAxis dataKey="period" tickLine={false} axisLine={false} />
-                    <YAxis tickLine={false} axisLine={false} />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="revenue" stroke="#1d4ed8" strokeWidth={2} dot={false} name="Revenue £k" />
-                    <Line type="monotone" dataKey="margin" stroke="#15803d" strokeWidth={2} dot={false} name="Margin %" />
-                    <Line type="monotone" dataKey="cash" stroke="#0e7490" strokeWidth={2} dot={false} name="Cash £k" />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-              <p className="mt-2 text-xs italic text-muted">Upload data from multiple periods to see actual period-over-period trends.</p>
-            </>
-          ) : (
-            <div className="flex h-72 items-center justify-center rounded-lg border-2 border-dashed border-line bg-slate-50">
-              <div className="text-center">
-                <p className="font-bold text-muted">No data uploaded</p>
-                <p className="mt-1 text-sm text-muted">Upload finance exports from multiple periods to see trend analysis.</p>
-              </div>
+      <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <Panel title="Exposure Movement by Area">
+          {movementData.length ? (
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={movementData} margin={{ left: 8, right: 12, top: 12, bottom: 0 }}>
+                  <CartesianGrid stroke="#e5e7eb" strokeDasharray="4 4" vertical={false} />
+                  <XAxis dataKey="category" tickLine={false} axisLine={false} />
+                  <YAxis tickFormatter={(value) => `£${value}k`} tickLine={false} axisLine={false} />
+                  <Tooltip formatter={(value) => `£${Number(value).toLocaleString()}k`} />
+                  <Bar dataKey="identified" name="Identified" fill="#f59e0b" radius={[5, 5, 0, 0]} />
+                  <Bar dataKey="residual" name="Residual" fill="#dc2626" radius={[5, 5, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-          )}
+          ) : <EmptyState title="No review movement" detail="Upload a finance pack to identify movements supported by review evidence." />}
+          <p className="mt-2 text-xs text-muted">Identified exposure is compared with the amount remaining open or accepted as risk after review.</p>
         </Panel>
 
-        <Panel title="Material Changes Driving Findings">
+        <Panel title="Material Review Movements">
           <div className="grid gap-3">
-            {materialFindings.length ? materialFindings.map((f) => (
-              <div key={f.id} className="rounded-lg border border-line bg-slate-50 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <strong className="text-sm">{f.title}</strong>
-                  <Pill level={f.severity}>{f.severity}</Pill>
+            {materialFindings.length ? materialFindings.map((finding) => (
+              <div key={finding.id} className="rounded-lg border border-line bg-slate-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Pill level={finding.severity}>{finding.severity}</Pill><span className="rounded-full bg-white px-2 py-1 text-xs font-black text-slate-600">{outcomeFor(finding)}</span></div><strong className="mt-2 block">{finding.title}</strong><p className="mt-1 text-sm text-muted">{finding.reviewReason || finding.resolutionNote || finding.description}</p><p className="mt-2 text-xs text-muted">{finding.evidence.sourceFile} · {finding.ruleId ?? finding.id}</p></div>
+                  <div className="shrink-0 text-right"><strong className="block text-xl">£{Math.round(valueFor(finding)).toLocaleString("en-GB")}</strong><button className="mt-2 rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold" onClick={() => openFindingEvidence(finding.id)}>View Evidence</button></div>
                 </div>
-                <p className="mt-1 text-xs text-muted">{f.description}</p>
               </div>
-            )) : (
-              <p className="text-sm text-muted">No material findings linked to period changes. Upload a finance pack to generate change analysis.</p>
-            )}
+            )) : <EmptyState title="No material movements" detail="No findings supported by records were generated." />}
           </div>
         </Panel>
+      </section>
+
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-bold uppercase text-muted">Decision Timeline</p><h2 className="mt-1 text-xl font-black">Detected → reviewed → signed off</h2></div>{partnerSignOff && <span className="text-sm font-semibold text-emerald-700">Locked by {partnerSignOff.signedBy}</span>}</div>
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          {materialFindings.map((finding, index) => (
+            <article key={finding.id} className="rounded-lg border border-line p-4"><span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs font-black text-white">{index + 1}</span><p className="mt-3 text-xs font-bold uppercase text-muted">{finding.createdAt ? new Date(finding.createdAt).toLocaleString("en-GB") : finding.evidence.period}</p><strong className="mt-1 block text-sm">{finding.title}</strong><p className="mt-2 text-xs text-muted">{outcomeFor(finding)}{finding.reviewedAt ? ` · reviewed ${new Date(finding.reviewedAt).toLocaleDateString("en-GB")}` : ""}</p></article>
+          ))}
+        </div>
       </section>
     </div>
   );
@@ -5352,11 +5681,11 @@ function ScorePanel({ score, risk, company, uploads, setActive }: { score: numbe
           </div>
         </div>
         <div>
-          <p className="text-xs font-bold uppercase text-muted">Finance Health Score</p>
-          <h2 className="mt-2 text-3xl font-black">{company.name}'s finance pack is {riskCopy(risk).toLowerCase()}.</h2>
+          <p className="text-xs font-bold uppercase text-muted">Review Quality</p>
+          <h2 className="mt-2 text-3xl font-black">{company.name}'s reviewed pack scores {score}/100 for completeness.</h2>
           <p className="mt-3 max-w-xl text-muted">{uploads.length ? "ClosePilot converted uploaded finance exports into a finance review covering anomalies, cash risk, VAT exceptions, commentary and next actions." : "Upload your finance pack to generate an evidence-linked review. Score will update based on your actual findings."}</p>
           <div className="mt-5 flex flex-wrap gap-3">
-            <button className="rounded-lg bg-brand px-4 py-3 font-bold text-white" onClick={() => setActive("Upload Finance Pack")}>Upload New Pack</button>
+            <button className="rounded-lg bg-brand px-4 py-3 font-bold text-white" onClick={() => setActive("Upload Finance Pack")}>Import New Accounts</button>
             <button className="rounded-lg border border-line px-4 py-3 font-bold" onClick={() => setActive("Ask ClosePilot")}>Explain Score</button>
           </div>
         </div>
@@ -5974,7 +6303,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
             <p className="mt-1 text-sm text-muted">{findings.length ? `${findings.length} finding(s) tracked through the review workflow.` : "Upload a finance pack to create the first review queue."}</p>
           </div>
           <button className="rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white" onClick={() => setActive(uploads.length ? "Review Pack" : "Upload Finance Pack")}>
-            {uploads.length ? "Open Review Pack" : "Upload Pack"}
+            {uploads.length ? "Open Review Pack" : "Import Accounts"}
           </button>
         </div>
         <div className="mt-5 overflow-x-auto">
@@ -6000,7 +6329,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
           <SummaryItem label="Resolved" value={`${resolvedPercent}%`} detail="closed or approved" level={resolvedPercent >= 70 ? "low" : "medium"} />
           <SummaryItem label="Evidence Coverage" value={`${evidenceCoveragePercent}%`} detail="support linked" level={evidenceCoveragePercent >= 75 ? "low" : "high"} />
           <SummaryItem label="Manager Approved" value={`${managerApprovedPercent}%`} detail={`${managerApproved} approved`} level={managerApprovedPercent >= 70 ? "low" : "medium"} />
-          <SummaryItem label="Workflow Coverage" value={`${workflowCoverage}%`} detail="pilot quality gate" level={workflowCoverageReady ? "low" : "high"} />
+          <SummaryItem label="Review Completion" value={`${workflowCoverage}%`} detail="findings, evidence and decisions" level={workflowCoverageReady ? "low" : "high"} />
         </div>
       </section>
 
@@ -6050,8 +6379,8 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
             <SignOffCheck label="Manager Review" passed={managerReviewComplete} detail={managerReviewComplete ? "Review complete" : "Manager review open"} />
             <SignOffCheck label="Accepted Risks" passed={acceptedRiskCount === 0} warning={acceptedRiskCount > 0} detail={acceptedRiskCount ? `${acceptedRiskCount} partner-visible risk(s)` : "No accepted risks"} />
             <SignOffCheck label="Readiness" passed={readiness > 70} detail={`${readiness}%`} />
-            <SignOffCheck label="Workflow Coverage" passed={workflowCoverageReady} detail={`${workflowCoverage}%`} />
-            <SignOffCheck label="Import Gates" passed={importGateBlockers === 0} detail={importGateBlockers ? `${importGateBlockers} upload(s) need mapping` : "Imports cleared"} />
+            <SignOffCheck label="Review Completion" passed={workflowCoverageReady} detail={`${workflowCoverage}%`} />
+            <SignOffCheck label="File Checks" passed={importGateBlockers === 0} detail={importGateBlockers ? `${importGateBlockers} upload(s) need mapping` : "Files checked"} />
           </div>
           <div className={`mt-4 rounded-lg border p-4 ${trafficClasses.box}`}>
             <p className="text-xs font-bold uppercase text-muted">Partner Sign-Off</p>
@@ -6202,6 +6531,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
           evidence={findingEvidence.filter((evidence) => evidence.findingId === selectedFinding.id)}
           comments={findingComments.filter((comment) => comment.findingId === selectedFinding.id)}
           activities={findingActivities.filter((activity) => activity.findingId === selectedFinding.id)}
+          partnerSignOff={partnerSignOff}
           updateFindingStatus={updateFindingStatus}
           updateFindingAssignment={updateFindingAssignment}
           updateManagerReview={updateManagerReview}
@@ -6285,6 +6615,7 @@ function FindingDetailDrawer({
   evidence,
   comments,
   activities,
+  partnerSignOff,
   updateFindingStatus,
   updateFindingAssignment,
   updateManagerReview,
@@ -6298,6 +6629,7 @@ function FindingDetailDrawer({
   evidence: Evidence[];
   comments: FindingComment[];
   activities: FindingActivity[];
+  partnerSignOff?: PartnerSignOff;
   updateFindingStatus: (findingId: string, status: FindingStatus, reason?: string) => void;
   updateFindingAssignment: (findingId: string, assignedTo: string, dueDate: string) => void;
   updateManagerReview: (findingId: string, status: ManagerReviewStatus, note?: string) => void;
@@ -6375,6 +6707,7 @@ function FindingDetailDrawer({
         </div>
 
         <div className="grid min-w-0 flex-1 gap-4 overflow-y-auto p-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.82fr)]">
+          <EvidenceDecisionTrace finding={finding} partnerSignOff={partnerSignOff} />
           <div className="grid min-w-0 content-start gap-4">
             <section className="rounded-lg border border-line bg-slate-50 p-4">
               <p className="text-xs font-bold uppercase text-muted">Finding Details</p>
@@ -6382,20 +6715,20 @@ function FindingDetailDrawer({
                 <DrawerField label="Owner" value={findingOwner(finding)} />
                 <DrawerField label="Reviewer" value={finding.reviewer || "-"} />
                 <DrawerField label="Manager" value={finding.manager || finding.managerReviewedBy || "-"} />
-                <DrawerField label="Partner" value={finding.partner || "-"} />
+                <DrawerField label="Partner" value={finding.partner || partnerSignOff?.signedBy || "-"} />
                 <DrawerField label="Due Date" value={findingDueDate(finding)} />
                 <DrawerField label="Status" value={statusCfg.label} />
                 <DrawerField label="Category" value={finding.category.replaceAll("_", " ")} />
-                <DrawerField label="Detection Confidence" value={`${confidencePct}%`} />
-                <DrawerField label="Evidence Strength" value={`${evidenceStrengthPct}% · ${findingEvidenceTier(finding)}`} />
+                <DrawerField label="Confidence In This Check" value={`${confidencePct}%`} />
+                <DrawerField label="Quality Of Supporting Evidence" value={`${evidenceStrengthPct}% · ${findingEvidenceTier(finding)}`} />
                 <DrawerField label="Risk Score" value={String(finding.riskScore ?? findingSeverityRank(finding.severity) * 25)} />
                 <DrawerField label="Amount" value={impactAmount ? `£${Math.round(impactAmount).toLocaleString()}` : finding.expectedImpact || "-"} />
                 <DrawerField label="Evidence Attached" value={evidenceItemCount ? "Yes" : "No"} />
                 <DrawerField label="Reviewed At" value={formatDateTime(finding.reviewedAt)} />
-                <DrawerField label="Resolved By" value={finding.resolvedBy || "-"} />
-                <DrawerField label="Resolved At" value={formatDateTime(finding.resolvedAt)} />
-                <DrawerField label="Approved By" value={finding.approvedBy || "-"} />
-                <DrawerField label="Approved At" value={formatDateTime(finding.approvedAt)} />
+                <DrawerField label="Resolved By" value={finding.resolvedBy || (!isOpenFinding(finding) ? finding.reviewer || "-" : "-")} />
+                <DrawerField label="Resolved At" value={formatDateTime(finding.resolvedAt || (!isOpenFinding(finding) ? finding.reviewedAt : undefined))} />
+                <DrawerField label="Approved By" value={finding.approvedBy || (managerStatus === "approved" ? finding.managerReviewedBy || "-" : "-")} />
+                <DrawerField label="Approved At" value={formatDateTime(finding.approvedAt || (managerStatus === "approved" ? finding.managerReviewedAt : undefined))} />
                 <DrawerField label="Manager Status" value={managerStatus.replaceAll("_", " ")} />
               </div>
               {finding.resolutionNote && (
@@ -6442,7 +6775,7 @@ function FindingDetailDrawer({
               <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="text-xs font-bold uppercase text-muted">Evidence Viewer</p>
-                  <h3 className="mt-1 font-black">Source evidence and rule trigger</h3>
+                  <h3 className="mt-1 font-black">Supporting evidence and why this was flagged</h3>
                 </div>
                 <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-800">{findingEvidenceTier(finding)} evidence</span>
               </div>
@@ -6453,9 +6786,9 @@ function FindingDetailDrawer({
                 <DrawerField label="Source Row Count" value={String(evidenceRef.rowCount)} />
                 <DrawerField label="Account / Party" value={evidenceRef.accountOrParty} />
                 <DrawerField label="Period" value={finding.evidence.period || "-"} />
-                <DrawerField label="Rule Triggered" value={finding.ruleId ?? finding.id} />
-                <DrawerField label="Detection Confidence" value={`${confidencePct}%`} />
-                <DrawerField label="Evidence Strength" value={`${evidenceStrengthPct}%`} />
+                <DrawerField label="Check Reference" value={finding.ruleId ?? finding.id} />
+                <DrawerField label="Confidence In This Check" value={`${confidencePct}%`} />
+                <DrawerField label="Quality Of Supporting Evidence" value={`${evidenceStrengthPct}%`} />
                 <DrawerField label="Evidence Items" value={String(evidenceItemCount)} />
                 <DrawerField label="Balance / Amount" value={typeof primaryRow?.amount === "number" ? `£${Math.round(primaryRow.amount).toLocaleString("en-GB")}` : impactAmount ? `£${Math.round(impactAmount).toLocaleString("en-GB")}` : "-"} />
               </div>
@@ -6602,6 +6935,75 @@ function DrawerField({ label, value }: { label: string; value: string }) {
       <p className="text-xs font-bold uppercase text-muted">{label}</p>
       <p className="mt-1 break-words text-sm font-semibold capitalize">{value}</p>
     </div>
+  );
+}
+
+function EvidenceDecisionTrace({ finding, partnerSignOff }: { finding: Finding; partnerSignOff?: PartnerSignOff }) {
+  const evidenceRef = findingEvidenceReference(finding);
+  const managerStatus = managerReviewStatus(finding);
+  const reviewDecision = finding.reviewAction?.replaceAll("_", " ") || STATUS_CONFIG[finding.status]?.label || finding.status.replaceAll("_", " ");
+  const signOffImpact = partnerSignOff
+    ? finding.status === "accepted_risk"
+      ? "Accepted risk retained in locked pack"
+      : "Included in locked review pack"
+    : isOpenFinding(finding)
+      ? "Blocks or qualifies sign-off"
+      : "Ready for sign-off";
+  const stages = [
+    {
+      label: "Source",
+      value: evidenceRef.sourceFile,
+      detail: evidenceRef.rowIndexes,
+      tone: "border-cyan-500 bg-cyan-50",
+    },
+    {
+      label: "Calculation",
+      value: evidenceRef.calculation,
+      detail: `${evidenceRef.rowCount} source row${evidenceRef.rowCount !== 1 ? "s" : ""}`,
+      tone: "border-blue-500 bg-blue-50",
+    },
+    {
+      label: "Finding",
+      value: finding.title,
+      detail: `${finding.severity} · ${finding.ruleId ?? finding.id}`,
+      tone: finding.severity === "critical" || finding.severity === "high" ? "border-amber-500 bg-amber-50" : "border-slate-400 bg-slate-50",
+    },
+    {
+      label: "Review",
+      value: reviewDecision,
+      detail: `Manager ${managerStatus.replaceAll("_", " ")}`,
+      tone: managerStatus === "approved" ? "border-emerald-500 bg-emerald-50" : "border-violet-500 bg-violet-50",
+    },
+    {
+      label: "Sign-off",
+      value: signOffImpact,
+      detail: partnerSignOff ? `${partnerSignOff.signedBy} · ${partnerSignOff.reviewPackStatus ?? partnerSignOff.status}` : "Partner decision pending",
+      tone: partnerSignOff ? "border-emerald-600 bg-emerald-50" : "border-slate-400 bg-slate-50",
+    },
+  ];
+
+  return (
+    <section className="rounded-lg border border-line bg-white p-4 xl:col-span-2" aria-label="Review trail">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase text-muted">Review trail</p>
+          <h3 className="mt-1 text-lg font-black">From source row to partner sign-off</h3>
+        </div>
+        <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Fully traceable</span>
+      </div>
+      <ol className="mt-4 grid gap-2 md:grid-cols-5">
+        {stages.map((stage, index) => (
+          <li key={stage.label} className={`relative min-w-0 rounded-lg border border-l-4 p-3 ${stage.tone}`}>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-black text-white">{index + 1}</span>
+              <span className="text-xs font-black uppercase text-slate-600">{stage.label}</span>
+            </div>
+            <strong className="mt-3 block break-words text-sm leading-snug">{stage.value}</strong>
+            <span className="mt-2 block break-words text-xs capitalize text-muted">{stage.detail}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 
@@ -7004,26 +7406,109 @@ function ImportMappingProfilesPanel({ profiles, confirmImportProfile }: { profil
   );
 }
 
-function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, validationChecks, uploads, importProfiles, confirmImportProfile, findings, recommendations, onDelete, onClear }: { analyseUploads: (files: FileList | null) => void; isAnalysing: boolean; uploadMessage: string; validationChecks: ValidationCheck[]; uploads: Upload[]; importProfiles: ImportMappingProfile[]; confirmImportProfile: (profileId: string) => void; findings: Finding[]; recommendations: Recommendation[]; onDelete: (id: string) => void; onClear: () => void }) {
+function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uploadJob, validationChecks, uploads, importProfiles, confirmImportProfile, findings, recommendations, onDelete, onClear, setActive }: { analyseUploads: (files: FileList | null) => void; isAnalysing: boolean; uploadMessage: string; uploadJob: UploadJobState | null; validationChecks: ValidationCheck[]; uploads: Upload[]; importProfiles: ImportMappingProfile[]; confirmImportProfile: (profileId: string) => void; findings: Finding[]; recommendations: Recommendation[]; onDelete: (id: string) => void; onClear: () => void; setActive: (value: string) => void }) {
+  const expectedFiles: Array<{ type: Upload["fileType"]; label: string; required: boolean }> = [
+    { type: "trial_balance", label: "Trial Balance", required: true },
+    { type: "profit_loss", label: "Profit & Loss", required: true },
+    { type: "balance_sheet", label: "Balance Sheet", required: true },
+    { type: "aged_debtors", label: "Aged Debtors", required: true },
+    { type: "aged_creditors", label: "Aged Creditors", required: true },
+    { type: "vat_report", label: "VAT Report", required: true },
+    { type: "bank_reconciliation", label: "Bank Reconciliation", required: false },
+  ];
+  const uploadedTypes = new Set(uploads.map((upload) => upload.fileType));
+  const requiredFiles = expectedFiles.filter((file) => file.required);
+  const requiredPresent = requiredFiles.filter((file) => uploadedTypes.has(file.type)).length;
+  const missingRequired = requiredFiles.filter((file) => !uploadedTypes.has(file.type));
+  const coverage = Math.round(requiredPresent / requiredFiles.length * 100);
+  const mappingIssues = uploads.filter((upload) => upload.importGateStatus && upload.importGateStatus !== "ready").length;
+  const failedChecks = validationChecks.filter((check) => check.status === "failed").length;
+  const warningChecks = validationChecks.filter((check) => check.status === "warning").length;
+  const intakeStatus = !uploads.length ? "Awaiting finance pack" : isAnalysing ? "Review running" : mappingIssues ? "File mapping required" : failedChecks ? "Validation review required" : missingRequired.length ? "Review available with missing files" : "Finance pack ready";
+  const canContinue = uploads.length > 0 && !isAnalysing && mappingIssues === 0;
+
   return (
-    <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-      <div className="grid gap-4">
-        <Panel title="Upload Finance Pack">
+    <div className="grid gap-4">
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Finance pack readiness">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div><p className="text-xs font-bold uppercase text-muted">Prepared Accounts Intake</p><h2 className="mt-1 text-2xl font-black">Import prepared accounts, then follow the exceptions</h2><p className="mt-2 max-w-3xl text-sm text-muted">ClosePilot identifies each exported schedule, checks whether the accounts agree, and creates findings linked to the original rows.</p></div>
+          <Pill level={!uploads.length || mappingIssues || failedChecks ? "medium" : "low"}>{intakeStatus}</Pill>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Metric title="Core File Coverage" value={`${coverage}%`} detail={`${requiredPresent}/${requiredFiles.length} required files`} tone={coverage === 100 ? "low" : "medium"} />
+          <Metric title="Files Reviewed" value={String(uploads.length)} detail="Recognised finance exports" tone={uploads.length ? "low" : "medium"} />
+          <Metric title="File Mapping" value={mappingIssues ? String(mappingIssues) : "Ready"} detail={mappingIssues ? "Files need confirmation" : "No mapping hold"} tone={mappingIssues ? "high" : "low"} />
+          <Metric title="Validation" value={failedChecks ? `${failedChecks} blocked` : "Ready"} detail={`${warningChecks} warning${warningChecks === 1 ? "" : "s"}`} tone={failedChecks ? "critical" : warningChecks ? "medium" : "low"} />
+          <Metric title="Review Output" value={String(findings.length)} detail={`${recommendations.length} recommended actions`} tone={findings.length ? "medium" : "low"} />
+        </div>
+        {uploadJob && (
+          <div className={`mt-4 rounded-lg border p-4 ${uploadJob.status === "failed" ? "border-red-200 bg-red-50" : uploadJob.status === "completed" ? "border-emerald-200 bg-emerald-50" : "border-blue-200 bg-blue-50"}`} aria-label="Background upload progress">
+            <div className="flex items-center justify-between gap-3"><span><strong className="block">Background review</strong><span className="mt-1 block text-sm text-muted">{uploadJob.currentStage}</span></span><Pill level={uploadJob.status === "failed" ? "high" : uploadJob.status === "completed" ? "low" : "medium"}>{uploadJob.status.replaceAll("_", " ")}</Pill></div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-brand transition-all" style={{ width: `${Math.max(2, Math.min(100, uploadJob.progressPercent))}%` }} /></div>
+            <div className="mt-2 flex justify-between text-xs font-bold text-muted"><span>{uploadJob.status === "uploading" ? `${formatUploadBytes(uploadJob.bytesProcessed ?? 0)} transferred` : `${uploadJob.rowsProcessed?.toLocaleString("en-GB") ?? 0} rows processed`}</span><span>{uploadJob.progressPercent}%</span></div>
+            {uploadJob.error ? <p className="mt-2 text-sm font-semibold text-red-800">{uploadJob.error}</p> : null}
+          </div>
+        )}
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="grid content-start gap-4">
+        <Panel title="Import Prepared Accounts">
           <div className="rounded-lg border-2 border-dashed border-line bg-slate-50 p-8 text-center">
-            <strong>Drop Trial Balance, P&L, Balance Sheet, AR, AP and VAT files</strong>
-            <p className="mt-2 text-sm text-muted">ClosePilot parses CSV, TSV, TXT, XLSX and XLS finance exports server-side, then generates evidence-linked findings and validation checks.</p>
+            <strong>Choose the prepared-account exports for this review</strong>
+            <p className="mt-2 text-sm text-muted">Import CSV or Excel files together. Trial balance, P&amp;L, balance sheet, debtors, creditors and VAT provide the strongest review coverage.</p>
             <label className="mt-5 inline-flex cursor-pointer rounded-lg bg-brand px-4 py-3 font-bold text-white">
-              {isAnalysing ? "Analysing..." : "Choose Files"}
+              {isAnalysing ? "Reviewing files…" : uploads.length ? "Add More Exports" : "Choose Prepared-Account Exports"}
               <input className="sr-only" type="file" multiple accept=".csv,.tsv,.txt,.xlsx,.xls" onChange={(event) => analyseUploads(event.target.files)} />
             </label>
             <p className="mt-3 text-sm text-muted">{uploadMessage}</p>
           </div>
         </Panel>
-        <Panel title="Uploaded Files">
+        <Panel title="Imported Files">
           <UploadList uploads={uploads} onDelete={onDelete} onClear={uploads.length ? onClear : undefined} />
         </Panel>
-        <UploadIntelligence uploads={uploads} />
-        <ImportMappingProfilesPanel profiles={importProfiles} confirmImportProfile={confirmImportProfile} />
+        </div>
+
+        <div className="grid content-start gap-4">
+          <Panel title="Prepared Accounts Checklist">
+            <div className="grid gap-2 sm:grid-cols-2">
+              {expectedFiles.map((file) => {
+                const present = uploadedTypes.has(file.type);
+                return <div key={file.type} className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${present ? "border-emerald-200 bg-emerald-50" : file.required ? "border-amber-200 bg-amber-50" : "border-line bg-slate-50"}`}><span><strong className="block text-sm">{file.label}</strong><span className="text-xs text-muted">{file.required ? "Core review file" : "Recommended for audit readiness"}</span></span><span className={`grid h-6 w-6 place-items-center rounded-full text-xs font-black ${present ? "bg-emerald-600 text-white" : "bg-white text-muted"}`}>{present ? "✓" : "—"}</span></div>;
+              })}
+            </div>
+            {missingRequired.length ? <p className="mt-3 text-sm text-amber-900"><strong>Missing:</strong> {missingRequired.map((file) => file.label).join(", ")}. You can continue, but these areas will have less review coverage.</p> : <p className="mt-3 text-sm font-semibold text-emerald-800">All core review files are present.</p>}
+          </Panel>
+
+          <Panel title="What To Do Next">
+            <div className={`rounded-lg border p-4 ${canContinue ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+              <p className="text-xs font-black uppercase text-muted">Next action</p>
+              <h3 className="mt-1 text-lg font-black">{!uploads.length ? "Import the prepared accounts" : isAnalysing ? "Wait while the review completes" : mappingIssues ? "Confirm the file mapping" : findings.length ? "Work through the findings" : "Open the finance review"}</h3>
+              <p className="mt-1 text-sm text-muted">{!uploads.length ? "Start with the six core exports shown in the checklist." : mappingIssues ? "Confirm the suggested columns before relying on the results." : failedChecks ? "The review ran, but failed checks require attention before sign-off." : "The files have been reviewed and the next decision is ready."}</p>
+              {canContinue && <button className="mt-4 rounded-lg bg-brand px-4 py-2.5 text-sm font-bold text-white" onClick={() => setActive(findings.length ? "Findings" : "Finance Review")}>{findings.length ? "Open Review Findings" : "Open Finance Review"}</button>}
+            </div>
+          </Panel>
+
+          <Panel title="Review Progress">
+            <div className="grid gap-3">
+              {([
+                ["Files recognised", uploads.length > 0, uploads.length ? `${uploads.length} exports reviewed` : "Awaiting upload"],
+                ["Columns confirmed", uploads.length > 0 && mappingIssues === 0, mappingIssues ? `${mappingIssues} mapping confirmation required` : uploads.length ? "Ready" : "Not started"],
+                ["Balances checked", validationChecks.length > 0, validationChecks.length ? `${validationChecks.length} checks completed` : "Not started"],
+                ["Findings created", findings.length > 0, findings.length ? `${findings.length} findings ready for decision` : "No findings yet"],
+              ] as [string, boolean, string][]).map(([step, done, detail]) => (
+                <div key={step} className="flex items-center justify-between gap-3 rounded-lg border border-line p-4"><span><strong className="block">{step}</strong><span className="mt-1 block text-xs text-muted">{detail}</span></span><Pill level={done ? "low" : "medium"}>{done ? "Complete" : "Pending"}</Pill></div>
+              ))}
+            </div>
+          </Panel>
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <div className="grid content-start gap-4">
+          <UploadIntelligence uploads={uploads} />
+          <ImportMappingProfilesPanel profiles={importProfiles} confirmImportProfile={confirmImportProfile} />
+        </div>
         <Panel title="Validation Checks">
           <div className="grid gap-3">
             {validationChecks.length === 0 && <p className="text-sm text-muted">No validation checks yet. Upload a finance pack to begin.</p>}
@@ -7038,23 +7523,7 @@ function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, validationC
             ))}
           </div>
         </Panel>
-      </div>
-      <Panel title="Finance Review Pipeline">
-        <div className="grid gap-3">
-          {([
-            ["Validate exports", validationChecks.length > 0],
-            ["Map accounts and periods", uploads.length > 0],
-            ["Find anomalies and finance risks", findings.length > 0],
-            ["Generate actions and commentary", recommendations.length > 0],
-            ["Prepare board-ready finance review", findings.length > 0 && recommendations.length > 0],
-          ] as [string, boolean][]).map(([step, done]) => (
-            <div key={step} className="flex items-center justify-between rounded-lg border border-line p-4">
-              <strong>{step}</strong>
-              <Pill level={done ? "low" : "medium"}>{done ? "Complete" : "Queued"}</Pill>
-            </div>
-          ))}
-        </div>
-      </Panel>
+      </section>
     </div>
   );
 }
@@ -7149,91 +7618,459 @@ function MonthEndClose({ findings, recommendations, completeRecommendation, upda
   );
 }
 
-function CashflowPanel({ forecast, findings, uploads }: { forecast: CashForecastPoint[]; findings: Finding[]; uploads: Upload[] }) {
-  const hasUploads = uploads.length > 0;
-  const arFindings = findings.filter((finding) => finding.category === "ar" && finding.status !== "false_positive" && finding.status !== "not_applicable");
-  const expectedCollections = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
-  const f30 = hasUploads ? (forecast[1]?.cash ?? 0) : 0;
-  const f90 = hasUploads ? (forecast[3]?.cash ?? 0) : 0;
-  const risk30: RiskLevel = forecast[1]?.risk ?? "medium";
-  const risk90: RiskLevel = forecast[3]?.risk ?? "high";
+function CashflowPanel({ findings, uploads, collectionCases, openCollections, openFindingEvidence }: {
+  findings: Finding[];
+  uploads: Upload[];
+  collectionCases: CollectionCase[];
+  openCollections: () => void;
+  openFindingEvidence: (findingId: string) => void;
+}) {
+  const [scenario, setScenario] = useState<"conservative" | "base" | "upside">("base");
+  const accounts = collectionAccounts(findings);
+  const arFindings = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
+  const totalExposure = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
+  const sourceLinked = accounts.reduce((sum, account) => sum + account.balance, 0);
+  const residual = Math.max(0, totalExposure - sourceLinked);
+  const coverage = totalExposure ? Math.round(sourceLinked / totalExposure * 100) : 0;
+  const caseFor = (account: CollectionAccount) => collectionCases.find((collectionCase) => collectionCase.findingId === account.findingId && collectionCase.customer === account.customer);
+  const promised = collectionCases.filter((collectionCase) => collectionCase.status === "promised").reduce((sum, collectionCase) => sum + (collectionCase.promiseAmount ?? 0), 0);
+  const disputed = accounts.filter((account) => caseFor(account)?.status === "disputed").reduce((sum, account) => sum + account.balance, 0);
+  const overduePromises = collectionCases.filter(promiseIsOverdue).length;
+  const scenarioRates = {
+    conservative: { disputed: [0, 0.15, 0.3], unallocated: [0, 0, 0.15], uncommitted: [0.25, 0.45, 0.6] },
+    base: { disputed: [0.2, 0.4, 0.6], unallocated: [0, 0.2, 0.4], uncommitted: [0.4, 0.65, 0.8] },
+    upside: { disputed: [0.4, 0.7, 0.9], unallocated: [0.2, 0.5, 0.75], uncommitted: [0.6, 0.85, 0.95] },
+  }[scenario];
+  const horizons = [30, 60, 90];
+  const today = new Date();
+  const forecast = horizons.map((days, index) => {
+    const horizonDate = new Date(today.getTime() + days * 86400000);
+    const accountRecovery = accounts.reduce((sum, account) => {
+      const collectionCase = caseFor(account);
+      if (collectionCase?.status === "paid") return sum;
+      if (collectionCase?.status === "promised") {
+        const promiseDate = collectionCase.promiseDate ? new Date(`${collectionCase.promiseDate}T23:59:59`) : today;
+        return sum + (promiseDate <= horizonDate ? Math.min(account.balance, collectionCase.promiseAmount ?? account.balance) : 0);
+      }
+      if (collectionCase?.status === "disputed") return sum + account.balance * scenarioRates.disputed[index];
+      return sum + account.balance * scenarioRates.uncommitted[index];
+    }, 0);
+    return { period: `${days} days`, recovery: Math.round(accountRecovery + residual * scenarioRates.unallocated[index]) };
+  });
+  const scenarioLabel = scenario.charAt(0).toUpperCase() + scenario.slice(1);
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-      <Panel title="Cash Intelligence">
-        {hasUploads ? (
-          <CashChart forecast={forecast} />
-        ) : (
-          <div className="flex h-72 items-center justify-center rounded-lg border-2 border-dashed border-line bg-slate-50">
-            <div className="text-center">
-              <p className="font-bold text-muted">No finance data uploaded</p>
-              <p className="mt-1 text-sm text-muted">Upload a trial balance or bank export to see your cash forecast.</p>
-            </div>
-          </div>
-        )}
-      </Panel>
-      <Panel title="Working Capital Signals">
-        <div className="grid gap-3">
-          <Metric title="30-Day Forecast" value={f30 ? `£${Math.round(f30 / 1000)}k` : "—"} detail={hasUploads ? riskCopy(risk30) + " risk" : "Upload to calculate"} tone={hasUploads ? risk30 : "low"} />
-          <Metric title="90-Day Forecast" value={f90 ? `£${Math.round(f90 / 1000)}k` : "—"} detail={hasUploads ? `${riskCopy(risk90)} risk` : "Upload to calculate"} tone={hasUploads ? risk90 : "low"} />
-          <Metric title="Expected Collections" value={expectedCollections ? `£${Math.round(expectedCollections / 1000)}k` : "—"} detail={hasUploads ? "Identified from AR review" : "Upload aged debtors"} tone={expectedCollections ? "low" : "medium"} />
+    <div className="grid gap-4">
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Cash intelligence summary">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div><p className="text-xs font-bold uppercase text-muted">Cash Intelligence</p><h2 className="mt-1 text-2xl font-black">Expected cash recovery based on customer evidence.</h2><p className="mt-2 text-muted">The forecast uses customer balances with evidence, payment promises, disputes and any balance not yet matched to a customer.</p></div>
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={openCollections}>Open Collections Workflow</button>
         </div>
-      </Panel>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <Metric title="AR Exposure" value={totalExposure ? `£${Math.round(totalExposure).toLocaleString("en-GB")}` : "—"} detail="Total exposure identified" tone={totalExposure ? "high" : "low"} />
+          <Metric title="Promise-Backed" value={`£${Math.round(promised).toLocaleString("en-GB")}`} detail={`${overduePromises} overdue promise${overduePromises === 1 ? "" : "s"}`} tone={overduePromises ? "medium" : "low"} />
+          <Metric title="30-Day Recovery" value={`£${forecast[0].recovery.toLocaleString("en-GB")}`} detail={`${scenarioLabel} scenario`} tone={forecast[0].recovery ? "low" : "medium"} />
+          <Metric title="90-Day Recovery" value={`£${forecast[2].recovery.toLocaleString("en-GB")}`} detail={`${Math.round(forecast[2].recovery / Math.max(totalExposure, 1) * 100)}% of exposure`} tone={forecast[2].recovery >= totalExposure * 0.7 ? "low" : "medium"} />
+          <Metric title="Disputed" value={`£${Math.round(disputed).toLocaleString("en-GB")}`} detail="Expected recovery after disputes" tone={disputed ? "high" : "low"} />
+          <Metric title="Evidence Coverage" value={`${coverage}%`} detail={`£${Math.round(residual).toLocaleString("en-GB")} awaiting customer evidence`} tone={coverage >= 90 ? "low" : "medium"} />
+        </div>
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong>Liquidity boundary:</strong> no evidenced opening bank balance or payment schedule is loaded, so ClosePilot forecasts recoveries only. Upload bank and cash-planning evidence before treating this as an absolute cash-balance forecast.</div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <Panel title="Cumulative Recovery Forecast">
+          <div className="mb-4 flex flex-wrap gap-2">
+            {(["conservative", "base", "upside"] as const).map((value) => <button key={value} className={`rounded-lg px-3 py-2 text-sm font-bold capitalize ${scenario === value ? "bg-brand text-white" : "border border-line bg-white"}`} onClick={() => setScenario(value)}>{value}</button>)}
+          </div>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={forecast} margin={{ left: 8, right: 12, top: 12, bottom: 0 }}>
+                <CartesianGrid stroke="#e5e7eb" strokeDasharray="4 4" vertical={false} />
+                <XAxis dataKey="period" tickLine={false} axisLine={false} />
+                <YAxis tickFormatter={(value) => `£${Math.round(Number(value) / 1000)}k`} tickLine={false} axisLine={false} />
+                <Tooltip formatter={(value) => `£${Number(value).toLocaleString("en-GB")}`} />
+                <Area type="monotone" dataKey="recovery" name="Cumulative recovery" stroke="#0e7490" fill="#cffafe" strokeWidth={3} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="mt-2 text-xs text-muted">Scenario changes affect disputed, uncommitted and unallocated balances. Dated promises remain commitment-based.</p>
+        </Panel>
+
+        <Panel title="Recovery Bridge">
+          <div className="grid gap-3">
+            <ReportFormulaRow label="Total AR exposure" value={totalExposure} formula="Exposure supported by review findings" />
+            <ReportFormulaRow label="Customer balances with evidence" value={sourceLinked} formula={`${coverage}% matched to customer rows`} />
+            <ReportFormulaRow label="Promise-backed cash" value={promised} formula="Dated customer commitments" />
+            <ReportFormulaRow label="Disputed balance" value={disputed} formula="Recovery varies by selected scenario" />
+            <ReportFormulaRow label="Balance awaiting customer evidence" value={residual} formula="Not yet matched to a customer or promise" />
+          </div>
+        </Panel>
+      </section>
+
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
+        <div><p className="text-xs font-bold uppercase text-muted">Forecast Inputs</p><h2 className="mt-1 text-xl font-black">Customer commitments and evidence basis</h2></div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[920px] border-collapse text-left text-sm">
+            <thead className="text-xs uppercase text-muted"><tr><th className="border-b border-line p-3">Customer</th><th className="border-b border-line p-3">Balance</th><th className="border-b border-line p-3">Case Status</th><th className="border-b border-line p-3">Forecast Basis</th><th className="border-b border-line p-3">Evidence</th></tr></thead>
+            <tbody>{accounts.map((account) => {
+              const collectionCase = caseFor(account);
+              const basis = collectionCase?.status === "promised" ? `Promise £${Math.round(collectionCase.promiseAmount ?? account.balance).toLocaleString("en-GB")} by ${collectionCase.promiseDate ?? "undated"}` : collectionCase?.status === "disputed" ? "Expected recovery after dispute" : "Expected recovery based on age";
+              return <tr key={account.id}><td className="border-b border-line p-3 font-bold">{account.customer}</td><td className="border-b border-line p-3">£{Math.round(account.balance).toLocaleString("en-GB")}</td><td className="border-b border-line p-3"><span className={`rounded-full px-2 py-1 text-xs font-black ${collectionStatusClass(collectionCase?.status ?? "not_contacted")}`}>{collectionStatusLabels[collectionCase?.status ?? "not_contacted"]}</span></td><td className="border-b border-line p-3">{basis}</td><td className="border-b border-line p-3"><button className="rounded-lg border border-line px-3 py-2 text-xs font-bold" onClick={() => openFindingEvidence(account.findingId)}>View Source</button></td></tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }
 
-function CollectionsPanel({ findings }: { findings: Finding[] }) {
-  const arFindings = findings.filter((f) => f.category === "ar");
-  type Debtor = { name: string; amount: number; risk: RiskLevel; action: string };
-  const debtors: Debtor[] = arFindings.flatMap((f) => {
-    const names = f.evidence.accountCode.split("/").map((n) => n.trim()).filter(Boolean);
-    const total = parseImpactAmount(f.expectedImpact);
-    const perDebtor = names.length ? Math.round(total / names.length) : 0;
-    return names.map((name, i) => ({
-      name,
-      amount: perDebtor,
-      risk: (i === 0 ? f.severity : f.severity === "critical" ? "high" : f.severity) as RiskLevel,
-      action: f.severity === "critical" ? "Call CFO today" : f.severity === "high" ? "Send payment plan" : "Escalate to sales owner",
-    }));
+type CollectionAccount = {
+  id: string;
+  findingId: string;
+  customer: string;
+  balance: number;
+  ageDays: number;
+  ageLabel: string;
+  priorityScore: number;
+  risk: RiskLevel;
+  owner: string;
+  dueDate: string;
+  action: string;
+  sourceFile: string;
+  rowIndex?: number;
+  recoveryRate: number;
+  acceptedRisk: boolean;
+};
+
+function sourceRowValue(sourceRow: Record<string, string>, names: string[]) {
+  const entry = Object.entries(sourceRow).find(([key]) => names.some((name) => key.toLowerCase().replace(/[^a-z0-9]/g, "_").includes(name)));
+  return entry?.[1]?.trim() ?? "";
+}
+
+function collectionAge(sourceRow: Record<string, string>, finding: Finding) {
+  const buckets = [
+    { keys: ["over_120", "120_plus"], days: 120, label: "120+ days" },
+    { keys: ["over_90", "91_120"], days: 90, label: "90+ days" },
+    { keys: ["over_60", "61_90"], days: 60, label: "60+ days" },
+    { keys: ["over_30", "31_60"], days: 30, label: "30+ days" },
+  ];
+  for (const bucket of buckets) {
+    const value = sourceRowValue(sourceRow, bucket.keys);
+    if (Number(value.replace(/[,£]/g, "")) > 0) return bucket;
+  }
+  if (/120/.test(finding.title)) return buckets[0];
+  if (/90/.test(finding.title)) return buckets[1];
+  if (/60|overdue/.test(finding.title.toLowerCase())) return buckets[2];
+  return { days: 0, label: "Current / unspecified" };
+}
+
+function collectionAction(finding: Finding, ageDays: number) {
+  if (finding.status === "accepted_risk") return "Confirm post-period receipt and update the weekly collection plan.";
+  if (finding.ruleId === "AR_026" || ageDays >= 120) return "Escalate legal recovery and assess a full bad-debt provision.";
+  if (ageDays >= 90) return "Senior collection call; agree a dated payment plan and provision assessment.";
+  if (finding.ruleId === "AR_006") return "Place the account on credit hold pending approval.";
+  if (["AR_008", "AR_009"].includes(finding.ruleId ?? "")) return "Assign an owner-level collection plan and review credit insurance.";
+  return "Contact the customer and record the promised payment date.";
+}
+
+function collectionAccounts(findings: Finding[]) {
+  const relevant = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
+  const raw = new Map<string, Omit<CollectionAccount, "priorityScore" | "recoveryRate">>();
+
+  relevant.forEach((finding) => {
+    (finding.evidence.rows ?? []).forEach((row, index) => {
+      const customer = sourceRowValue(row.sourceRow, ["customer_name", "customer", "debtor", "account_name", "name"]) || row.accountCode || finding.evidence.accountCode;
+      const parsedBalance = Number(sourceRowValue(row.sourceRow, ["outstanding", "balance", "amount"]).replace(/[,£]/g, ""));
+      const balance = Math.abs(row.amount ?? (Number.isFinite(parsedBalance) ? parsedBalance : 0));
+      if (!customer || !balance) return;
+      const age = collectionAge(row.sourceRow, finding);
+      const id = `${finding.id}:${row.sourceFile}:${row.rowIndex ?? index}:${customer}`;
+      raw.set(id, {
+        id,
+        findingId: finding.id,
+        customer,
+        balance,
+        ageDays: age.days,
+        ageLabel: age.label,
+        risk: finding.severity,
+        owner: findingOwner(finding),
+        dueDate: findingDueDate(finding),
+        action: collectionAction(finding, age.days),
+        sourceFile: row.sourceFile || finding.evidence.sourceFile,
+        rowIndex: row.rowIndex,
+        acceptedRisk: finding.status === "accepted_risk",
+      });
+    });
   });
 
+  const maxBalance = Math.max(...Array.from(raw.values()).map((account) => account.balance), 1);
+  const severityPoints: Record<RiskLevel, number> = { critical: 45, high: 35, medium: 24, low: 12 };
+  return Array.from(raw.values()).map<CollectionAccount>((account) => {
+    const agePoints = account.ageDays >= 120 ? 30 : account.ageDays >= 90 ? 26 : account.ageDays >= 60 ? 20 : account.ageDays >= 30 ? 12 : 5;
+    const amountPoints = Math.round((account.balance / maxBalance) * 25);
+    const recoveryRate = account.ageDays >= 120 ? 0.35 : account.ageDays >= 90 ? 0.5 : account.ageDays >= 60 ? 0.7 : account.ageDays >= 30 ? 0.85 : 0.95;
+    return { ...account, priorityScore: Math.min(100, severityPoints[account.risk] + agePoints + amountPoints), recoveryRate };
+  }).sort((a, b) => b.priorityScore - a.priorityScore || b.balance - a.balance);
+}
+
+const collectionStatusLabels: Record<CollectionStatus, string> = {
+  not_contacted: "Not contacted",
+  contacted: "Contacted",
+  promised: "Promise to pay",
+  disputed: "Disputed",
+  paid: "Paid",
+  escalated: "Escalated",
+};
+
+function collectionStatusClass(status: CollectionStatus) {
+  if (status === "paid") return "bg-emerald-100 text-emerald-800";
+  if (status === "promised") return "bg-blue-100 text-blue-800";
+  if (status === "disputed" || status === "escalated") return "bg-red-100 text-red-800";
+  if (status === "contacted") return "bg-amber-100 text-amber-800";
+  return "bg-slate-100 text-slate-600";
+}
+
+function promiseIsOverdue(collectionCase?: CollectionCase) {
+  if (collectionCase?.status !== "promised" || !collectionCase.promiseDate) return false;
+  return new Date(`${collectionCase.promiseDate}T23:59:59`).getTime() < Date.now();
+}
+
+function CollectionsPanel({ findings, collectionCases, saveCollectionCase, actor, openFindingEvidence }: {
+  findings: Finding[];
+  collectionCases: CollectionCase[];
+  saveCollectionCase: (collectionCase: CollectionCase) => void;
+  actor: string;
+  openFindingEvidence: (findingId: string) => void;
+}) {
+  const [emailAccount, setEmailAccount] = useState<CollectionAccount | null>(null);
+  const [managedAccount, setManagedAccount] = useState<CollectionAccount | null>(null);
+  const arFindings = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
+  const accounts = collectionAccounts(findings);
+  const sourceLinked = accounts.reduce((sum, account) => sum + account.balance, 0);
+  const totalExposure = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
+  const residual = Math.max(0, totalExposure - sourceLinked);
+  const coverage = totalExposure ? Math.min(100, Math.round((sourceLinked / totalExposure) * 100)) : 0;
+  const caseFor = (account: CollectionAccount) => collectionCases.find((collectionCase) => collectionCase.findingId === account.findingId && collectionCase.customer === account.customer);
+  const expectedRecovery = accounts.reduce((sum, account) => {
+    const collectionCase = caseFor(account);
+    if (collectionCase?.status === "paid") return sum;
+    if (collectionCase?.status === "promised") return sum + Math.min(account.balance, collectionCase.promiseAmount ?? account.balance);
+    if (collectionCase?.status === "disputed") return sum + account.balance * 0.2;
+    return sum + account.balance * account.recoveryRate;
+  }, 0);
+  const priorityAccounts = accounts.filter((account) => account.priorityScore >= 70).length;
+  const acceptedRisks = arFindings.filter((finding) => finding.status === "accepted_risk").length;
+  const promisedTotal = collectionCases.filter((collectionCase) => collectionCase.status === "promised").reduce((sum, collectionCase) => sum + (collectionCase.promiseAmount ?? 0), 0);
+  const overduePromises = collectionCases.filter(promiseIsOverdue).length;
+  const disputedTotal = accounts.filter((account) => caseFor(account)?.status === "disputed").reduce((sum, account) => sum + account.balance, 0);
+
+  const emailSubject = emailAccount ? `Payment date confirmation: ${emailAccount.customer}` : "";
+  const emailBody = emailAccount
+    ? `Hello,\n\nWe are reviewing the outstanding balance of £${emailAccount.balance.toLocaleString("en-GB")} for ${emailAccount.customer}. Please confirm the expected payment date and advise if any invoice is disputed.\n\nRegards,\nFinance Team`
+    : "";
+
   return (
-    <Panel title="Collections Intelligence">
-      {debtors.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted">No AR findings found. Upload your aged debtors file to see collection priorities.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse text-left">
-            <thead className="text-xs uppercase text-muted">
-              <tr><th className="border-b border-line p-3">Debtor</th><th className="border-b border-line p-3">Amount</th><th className="border-b border-line p-3">Risk</th><th className="border-b border-line p-3">Recovery Action</th><th className="border-b border-line p-3"></th></tr>
-            </thead>
-            <tbody>
-              {debtors.map((d) => (
-                <tr key={d.name}>
-                  <td className="border-b border-line p-3 font-bold">{d.name}</td>
-                  <td className="border-b border-line p-3">{d.amount ? `£${d.amount.toLocaleString()}` : "—"}</td>
-                  <td className="border-b border-line p-3"><Pill level={d.risk}>{riskCopy(d.risk)}</Pill></td>
-                  <td className="border-b border-line p-3">{d.action}</td>
-                  <td className="border-b border-line p-3">
-                    <button
-                      className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white"
-                      onClick={() => {
-                        const subject = encodeURIComponent(`Payment follow-up: ${d.name}`);
-                        const body = encodeURIComponent(`Hello,\n\nWe are reviewing the outstanding balance for ${d.name}. Please can you confirm the expected payment date for the balance currently showing as ${d.amount ? `£${d.amount.toLocaleString()}` : "outstanding"}?\n\nRegards,\nFinance Team`);
-                        window.location.href = `mailto:?subject=${subject}&body=${body}`;
-                      }}
-                    >
-                      Draft Email
-                    </button>
-                  </td>
+    <div className="grid gap-4">
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Collections summary">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase text-muted">Collections Intelligence</p>
+            <h2 className="mt-1 text-2xl font-black">Turn aged debt into a prioritised cash plan</h2>
+            <p className="mt-1 text-sm text-muted">Customer balances are supported by uploaded records; any balance without a customer row stays clearly separate.</p>
+          </div>
+          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Balances supported by evidence</span>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <Metric title="AR Exposure" value={totalExposure ? `£${Math.round(totalExposure).toLocaleString("en-GB")}` : "—"} detail={`${acceptedRisks} accepted risk${acceptedRisks === 1 ? "" : "s"}`} tone={totalExposure ? "high" : "low"} />
+          <Metric title="Supported Balance" value={sourceLinked ? `£${Math.round(sourceLinked).toLocaleString("en-GB")}` : "—"} detail={`${coverage}% of identified exposure`} tone={coverage >= 90 ? "low" : "medium"} />
+          <Metric title="Recovery Forecast" value={expectedRecovery ? `£${Math.round(expectedRecovery).toLocaleString("en-GB")}` : "—"} detail="Promises and age weighting" tone={expectedRecovery ? "low" : "medium"} />
+          <Metric title="Promised Cash" value={promisedTotal ? `£${Math.round(promisedTotal).toLocaleString("en-GB")}` : "£0"} detail="Active promises to pay" tone={promisedTotal ? "low" : "medium"} />
+          <Metric title="Overdue Promises" value={String(overduePromises)} detail="Past promised date" tone={overduePromises ? "critical" : "low"} />
+          <Metric title="Disputed" value={disputedTotal ? `£${Math.round(disputedTotal).toLocaleString("en-GB")}` : "£0"} detail={`${priorityAccounts} priority account${priorityAccounts === 1 ? "" : "s"}`} tone={disputedTotal ? "high" : "low"} />
+        </div>
+        {residual > 0 && (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+            <strong>Evidence check:</strong> customer rows support £{Math.round(sourceLinked).toLocaleString("en-GB")} of £{Math.round(totalExposure).toLocaleString("en-GB")} exposure. The remaining £{Math.round(residual).toLocaleString("en-GB")} is visible but has not yet been matched to a customer.
+          </div>
+        )}
+      </section>
+
+      <Panel title="Prioritised Collection Queue">
+        {accounts.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted">No customer balances with supporting rows found. Upload an aged debtors file to create the collection queue.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
+              <thead className="text-xs uppercase text-muted">
+                <tr>
+                  <th className="border-b border-line p-3">Customer / Evidence</th>
+                  <th className="border-b border-line p-3">Balance</th>
+                  <th className="border-b border-line p-3">Age</th>
+                  <th className="border-b border-line p-3">Status / Priority</th>
+                  <th className="border-b border-line p-3">Owner / Due</th>
+                  <th className="border-b border-line p-3">Next Action</th>
+                  <th className="border-b border-line p-3">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {accounts.map((account) => (
+                  <tr key={account.id} className={promiseIsOverdue(caseFor(account)) ? "bg-red-50/60" : ""}>
+                    <td className="border-b border-line p-3">
+                      <strong className="block">{account.customer}</strong>
+                      <span className="mt-1 block text-xs text-muted">{account.sourceFile}{account.rowIndex ? ` · row ${account.rowIndex}` : ""}</span>
+                    </td>
+                    <td className="border-b border-line p-3 font-black">£{Math.round(account.balance).toLocaleString("en-GB")}</td>
+                    <td className="border-b border-line p-3">{account.ageLabel}</td>
+                    <td className="border-b border-line p-3">
+                      <span className={`mb-2 inline-flex rounded-full px-2 py-1 text-xs font-black ${collectionStatusClass(caseFor(account)?.status ?? "not_contacted")}`}>{collectionStatusLabels[caseFor(account)?.status ?? "not_contacted"]}</span>
+                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${account.priorityScore >= 80 ? "bg-red-100 text-red-800" : account.priorityScore >= 70 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>{account.priorityScore}/100</span>
+                      {account.acceptedRisk && <span className="mt-1 block text-xs font-semibold text-violet-700">Accepted risk</span>}
+                      {promiseIsOverdue(caseFor(account)) && <span className="mt-1 block text-xs font-black text-red-700">Promise overdue</span>}
+                      {caseFor(account)?.status === "promised" && <span className="mt-1 block text-xs text-muted">£{Math.round(caseFor(account)?.promiseAmount ?? 0).toLocaleString("en-GB")} · {caseFor(account)?.promiseDate}</span>}
+                      {caseFor(account)?.status === "disputed" && <span className="mt-1 block max-w-48 text-xs text-red-700">{caseFor(account)?.disputeReason}</span>}
+                    </td>
+                    <td className="border-b border-line p-3"><strong className="block">{account.owner}</strong><span className="text-xs text-muted">Due {account.dueDate}</span></td>
+                    <td className="border-b border-line p-3">{account.action}</td>
+                    <td className="border-b border-line p-3">
+                      <div className="flex gap-2">
+                        <button aria-label={`View evidence for ${account.customer}`} className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold" onClick={() => openFindingEvidence(account.findingId)}>View Evidence</button>
+                        <button aria-label={`Manage collection case for ${account.customer}`} className="rounded-lg border border-brand bg-white px-3 py-2 text-xs font-bold text-brand" onClick={() => setManagedAccount(account)}>Manage</button>
+                        <button aria-label={`Draft email for ${account.customer}`} className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-white" onClick={() => setEmailAccount(account)}>Draft Email</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+
+      {managedAccount && (
+        <CollectionCaseDialog
+          account={managedAccount}
+          collectionCase={caseFor(managedAccount)}
+          actor={actor}
+          onSave={(collectionCase) => { saveCollectionCase(collectionCase); setManagedAccount(null); }}
+          onClose={() => setManagedAccount(null)}
+        />
+      )}
+
+      {emailAccount && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-label="Collection email preview" onClick={(event) => event.target === event.currentTarget && setEmailAccount(null)}>
+          <section className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div><p className="text-xs font-bold uppercase text-muted">Email Preview</p><h2 className="mt-1 text-xl font-black">{emailAccount.customer}</h2></div>
+              <button className="rounded-lg border border-line px-3 py-2 text-sm font-bold" onClick={() => setEmailAccount(null)}>Close</button>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <div className="rounded-lg border border-line bg-slate-50 p-3"><span className="text-xs font-bold uppercase text-muted">Subject</span><p className="mt-1 font-semibold">{emailSubject}</p></div>
+              <div className="whitespace-pre-line rounded-lg border border-line bg-slate-50 p-3 text-sm">{emailBody}</div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => navigator.clipboard?.writeText(`Subject: ${emailSubject}\n\n${emailBody}`)}>Copy Draft</button>
+                <a className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" href={`mailto:?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`}>Open Email App</a>
+              </div>
+            </div>
+          </section>
         </div>
       )}
-    </Panel>
+    </div>
+  );
+}
+
+function CollectionCaseDialog({ account, collectionCase, actor, onSave, onClose }: {
+  account: CollectionAccount;
+  collectionCase?: CollectionCase;
+  actor: string;
+  onSave: (collectionCase: CollectionCase) => void;
+  onClose: () => void;
+}) {
+  const [status, setStatus] = useState<CollectionStatus>(collectionCase?.status ?? "not_contacted");
+  const [promiseAmount, setPromiseAmount] = useState(collectionCase?.promiseAmount ? String(collectionCase.promiseAmount) : "");
+  const [promiseDate, setPromiseDate] = useState(collectionCase?.promiseDate ?? "");
+  const [disputeReason, setDisputeReason] = useState(collectionCase?.disputeReason ?? "");
+  const [channel, setChannel] = useState<"email" | "phone" | "meeting" | "note">("phone");
+  const [contactNote, setContactNote] = useState("");
+  const contacts = (collectionCase?.contacts ?? []).slice().sort((a, b) => b.contactedAt.localeCompare(a.contactedAt));
+
+  const save = () => {
+    const now = new Date().toISOString();
+    const nextContacts = contactNote.trim()
+      ? [{ id: crypto.randomUUID(), channel, note: contactNote.trim(), contactedBy: actor, contactedAt: now }, ...(collectionCase?.contacts ?? [])]
+      : collectionCase?.contacts ?? [];
+    onSave({
+      id: collectionCase?.id ?? crypto.randomUUID(),
+      findingId: account.findingId,
+      customer: account.customer,
+      status,
+      owner: collectionCase?.owner ?? account.owner,
+      promiseAmount: status === "promised" && promiseAmount ? Number(promiseAmount) : undefined,
+      promiseDate: status === "promised" ? promiseDate || undefined : undefined,
+      disputeReason: status === "disputed" ? disputeReason.trim() || undefined : undefined,
+      contacts: nextContacts,
+      updatedAt: now,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-label="Collection case" onClick={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase text-muted">Collection Case</p>
+            <h2 className="mt-1 text-xl font-black">{account.customer}</h2>
+            <p className="mt-1 text-sm text-muted">£{Math.round(account.balance).toLocaleString("en-GB")} · {account.ageLabel} · owner {collectionCase?.owner ?? account.owner}</p>
+          </div>
+          <button className="rounded-lg border border-line px-3 py-2 text-sm font-bold" onClick={onClose}>Close</button>
+        </div>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <label className="grid gap-1">
+            <span className="text-xs font-bold uppercase text-muted">Status</span>
+            <select className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold" value={status} onChange={(event) => setStatus(event.target.value as CollectionStatus)}>
+              {(Object.keys(collectionStatusLabels) as CollectionStatus[]).map((value) => <option key={value} value={value}>{collectionStatusLabels[value]}</option>)}
+            </select>
+          </label>
+          <div className="rounded-lg border border-line bg-slate-50 p-3 text-sm">
+            <span className="text-xs font-bold uppercase text-muted">Current Priority</span>
+            <strong className="mt-1 block">{account.priorityScore}/100 · {account.action}</strong>
+          </div>
+          {status === "promised" && (
+            <>
+              <label className="grid gap-1"><span className="text-xs font-bold uppercase text-muted">Promise Amount</span><input aria-label="Promise amount" className="h-10 rounded-lg border border-line px-3" type="number" min="0" max={account.balance} value={promiseAmount} onChange={(event) => setPromiseAmount(event.target.value)} /></label>
+              <label className="grid gap-1"><span className="text-xs font-bold uppercase text-muted">Promise Date</span><input aria-label="Promise date" className="h-10 rounded-lg border border-line px-3" type="date" value={promiseDate} onChange={(event) => setPromiseDate(event.target.value)} /></label>
+            </>
+          )}
+          {status === "disputed" && (
+            <label className="grid gap-1 sm:col-span-2"><span className="text-xs font-bold uppercase text-muted">Dispute Reason</span><textarea aria-label="Dispute reason" className="min-h-24 rounded-lg border border-line p-3 text-sm" value={disputeReason} onChange={(event) => setDisputeReason(event.target.value)} /></label>
+          )}
+        </div>
+
+        <section className="mt-5 rounded-lg border border-line bg-slate-50 p-4">
+          <p className="text-xs font-bold uppercase text-muted">Log Contact</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-[160px_1fr]">
+            <select aria-label="Contact channel" className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold" value={channel} onChange={(event) => setChannel(event.target.value as typeof channel)}>
+              <option value="phone">Phone</option><option value="email">Email</option><option value="meeting">Meeting</option><option value="note">Internal note</option>
+            </select>
+            <textarea aria-label="Contact note" className="min-h-20 rounded-lg border border-line bg-white p-3 text-sm" value={contactNote} onChange={(event) => setContactNote(event.target.value)} placeholder="Outcome, commitment, dispute detail, or next action." />
+          </div>
+        </section>
+
+        <section className="mt-5">
+          <p className="text-xs font-bold uppercase text-muted">Contact History</p>
+          <div className="mt-3 grid gap-2">
+            {contacts.length ? contacts.map((contact) => (
+              <div key={contact.id} className="rounded-lg border border-line p-3 text-sm"><strong className="capitalize">{contact.channel}</strong><p className="mt-1">{contact.note}</p><span className="mt-1 block text-xs text-muted">{contact.contactedBy} · {new Date(contact.contactedAt).toLocaleString("en-GB")}</span></div>
+            )) : <p className="text-sm text-muted">No contact history yet.</p>}
+          </div>
+        </section>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={onClose}>Cancel</button>
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={save}>Save Collection Case</button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -8136,6 +8973,102 @@ function RiskModule({ title, category, findings, updateFindingStatus }: { title:
   );
 }
 
+function ControlsFraudPanel({ findings, validationChecks, uploads, partnerSignOff, openFindingEvidence, setActive }: { findings: Finding[]; validationChecks: ValidationCheck[]; uploads: Upload[]; partnerSignOff?: PartnerSignOff; openFindingEvidence: (findingId: string) => void; setActive: (value: string) => void }) {
+  const controlPattern = /control|fraud|journal|suspense|duplicate|override|authori[sz]|weekend|round number|unusual transaction|supplier payment/i;
+  const relevantFindings = findings.filter((finding) => finding.category === "controls" || finding.category === "data_quality" || (["ap", "month_end"] as Finding["category"][]).includes(finding.category) && controlPattern.test(`${finding.title} ${finding.description} ${finding.recommendation ?? ""}`));
+  const openExceptions = relevantFindings.filter(isOpenFinding);
+  const reviewedExceptions = relevantFindings.filter((finding) => !isOpenFinding(finding));
+  const exposure = relevantFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
+  const evidenceCount = relevantFindings.filter((finding) => finding.evidence?.sourceFile).length;
+  const evidenceCoverage = relevantFindings.length ? Math.round(evidenceCount / relevantFindings.length * 100) : uploads.length ? 100 : 0;
+  const escalated = relevantFindings.filter((finding) => finding.managerReviewStatus === "escalated" || finding.status === "accepted_risk").length;
+  const controlChecks = validationChecks.filter((check) => /journal|suspense|duplicate|approval|control|fraud|unusual|payment/i.test(`${check.name} ${check.detail}`));
+  const failedChecks = controlChecks.filter((check) => check.status === "failed").length;
+  const topAction = openExceptions[0];
+  const scopeAreas = [
+    { label: "Journals & suspense", pattern: /journal|suspense|late posting|round number/i },
+    { label: "Supplier payments", pattern: /duplicate|supplier|payment|creditor/i },
+    { label: "Approvals & overrides", pattern: /approval|override|authori[sz]|access/i },
+    { label: "Unusual transactions", pattern: /weekend|unusual|statistical|fraud|round number/i },
+  ].map((area) => {
+    const linked = relevantFindings.filter((finding) => area.pattern.test(`${finding.title} ${finding.description} ${finding.recommendation ?? ""}`));
+    const open = linked.filter(isOpenFinding).length;
+    return { ...area, linked: linked.length, open, status: !uploads.length ? "Awaiting data" : open ? `${open} action${open === 1 ? "" : "s"} open` : linked.length ? "Reviewed" : "No related finding" };
+  });
+
+  const signalLabel = (finding: Finding) => {
+    const text = `${finding.title} ${finding.description}`;
+    if (/duplicate/i.test(text)) return "Possible duplicate payment";
+    if (/suspense|journal/i.test(text)) return "Journal or suspense review";
+    if (/override|approval|authori[sz]/i.test(text)) return "Approval exception";
+    if (/weekend|round number|unusual/i.test(text)) return "Unusual transaction";
+    return "Control exception";
+  };
+
+  return (
+    <div className="grid gap-4">
+      <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Controls and fraud summary">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase text-muted">Controls & Fraud</p>
+            <h2 className="mt-1 text-2xl font-black">Control exceptions requiring professional judgement</h2>
+            <p className="mt-2 max-w-3xl text-sm text-muted">Review unusual postings, payment risks and approval exceptions. Each signal remains linked to its source and reviewer decision.</p>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-black ${openExceptions.length || failedChecks ? "bg-red-100 text-red-800" : "bg-emerald-100 text-emerald-800"}`}>{openExceptions.length || failedChecks ? "Action required" : "No open control blocker"}</span>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Metric title="Exceptions Reviewed" value={String(relevantFindings.length)} detail={`${reviewedExceptions.length} decisions recorded`} tone={relevantFindings.length ? "medium" : "low"} />
+          <Metric title="Open Actions" value={String(openExceptions.length + failedChecks)} detail={`${failedChecks} failed control checks`} tone={openExceptions.length + failedChecks ? "critical" : "low"} />
+          <Metric title="Exposure Reviewed" value={`£${Math.round(exposure).toLocaleString("en-GB")}`} detail="Linked to control-related items" tone={exposure ? "high" : "low"} />
+          <Metric title="Evidence Coverage" value={`${evidenceCoverage}%`} detail={relevantFindings.length ? `${evidenceCount}/${relevantFindings.length} items supported` : "No exceptions require evidence"} tone={evidenceCoverage >= 90 ? "low" : "medium"} />
+          <Metric title="Partner Awareness" value={String(escalated)} detail={partnerSignOff ? "Included in locked pack" : "Partner sign-off pending"} tone={escalated ? "medium" : "low"} />
+        </div>
+
+        <div className={`mt-4 rounded-lg border p-4 ${topAction ? "border-amber-200 bg-amber-50 text-amber-950" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}>
+          <p className="text-xs font-black uppercase">Next control action</p>
+          <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div><strong className="block text-lg">{topAction ? topAction.title : "Retain the reviewed evidence for sign-off"}</strong><p className="mt-1 text-sm">{topAction ? topAction.recommendation || "Assign an owner and document the reviewer conclusion." : "No open control exception remains. Keep the supporting records and decisions available for audit."}</p></div>
+            <button className="shrink-0 rounded-lg bg-brand px-4 py-2.5 text-sm font-bold text-white" onClick={() => topAction ? openFindingEvidence(topAction.id) : setActive("Review Pack")}>{topAction ? "Review Exception" : "Open Review Pack"}</button>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
+        <Panel title="Control Areas Reviewed">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            {scopeAreas.map((area) => (
+              <div key={area.label} className="flex items-center justify-between gap-3 rounded-lg border border-line bg-slate-50 p-4">
+                <div><strong className="block">{area.label}</strong><span className="mt-1 block text-xs text-muted">{area.linked} related review item{area.linked === 1 ? "" : "s"}</span></div>
+                <Pill level={area.open ? "high" : uploads.length ? "low" : "medium"}>{area.status}</Pill>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-xs text-muted">“No related finding” means the uploaded review produced no exception in that area; it is not a guarantee that fraud is absent.</p>
+        </Panel>
+
+        <Panel title="Control Exception Register">
+          {relevantFindings.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] border-collapse text-left text-sm">
+                <thead className="text-xs uppercase text-muted"><tr><th className="border-b border-line p-3">Risk signal</th><th className="border-b border-line p-3">Finding</th><th className="border-b border-line p-3">Amount</th><th className="border-b border-line p-3">Evidence</th><th className="border-b border-line p-3">Decision</th><th className="border-b border-line p-3">Open</th></tr></thead>
+                <tbody>{relevantFindings.map((finding) => {
+                  const amount = finding.amount ?? parseImpactAmount(finding.expectedImpact);
+                  return <tr key={finding.id} className={isOpenFinding(finding) ? "bg-amber-50/50" : ""}><td className="border-b border-line p-3"><Pill level={finding.severity}>{signalLabel(finding)}</Pill></td><td className="border-b border-line p-3"><strong className="block">{finding.title}</strong><span className="mt-1 block max-w-72 text-xs text-muted">{finding.description}</span></td><td className="border-b border-line p-3 font-black">{amount ? `£${Math.round(amount).toLocaleString("en-GB")}` : "Not quantified"}</td><td className="border-b border-line p-3"><strong className="block">{finding.evidence?.sourceFile || "Evidence required"}</strong><span className="mt-1 block text-xs text-muted">{finding.evidence?.calculation || "No supporting calculation linked"}</span></td><td className="border-b border-line p-3"><Pill level={isOpenFinding(finding) ? "medium" : "low"}>{finding.status.replaceAll("_", " ")}</Pill><span className="mt-2 block max-w-60 text-xs text-muted">{finding.resolutionNote || finding.reviewReason || "Reviewer decision pending"}</span></td><td className="border-b border-line p-3"><button className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold" onClick={() => openFindingEvidence(finding.id)}>View Review Trail</button></td></tr>;
+                })}</tbody>
+              </table>
+            </div>
+          ) : <EmptyState title="No control exceptions identified" detail="Upload the finance pack to review unusual postings, duplicate payments and approval exceptions." />}
+        </Panel>
+      </section>
+
+      <section className="rounded-lg border border-cyan-100 bg-cyan-50 p-4 text-sm text-cyan-950">
+        <strong>Professional judgement note:</strong> these are accounting control risk signals, not allegations or proof of fraud. Reviewer investigation and corroborating evidence are required before any conclusion.
+      </section>
+    </div>
+  );
+}
+
 function vatBoxLabel(box: keyof VatReviewResult["vatReturn"]) {
   const labels: Record<keyof VatReviewResult["vatReturn"], string> = {
     box1: "VAT due on sales and other outputs",
@@ -8821,7 +9754,7 @@ function ExportModal({
           )}
           <section className="mb-6 grid gap-4 sm:grid-cols-4">
             <div className="rounded-lg border border-line bg-slate-50 p-4 text-center">
-              <p className="text-xs font-bold uppercase text-muted">Finance Health Score</p>
+              <p className="text-xs font-bold uppercase text-muted">Review Quality</p>
               <strong className="mt-1 block text-4xl font-black">{score}</strong>
               <span className="text-muted">/100 · {riskCopy(risk)}</span>
             </div>
@@ -9378,7 +10311,7 @@ function PracticePortal({ tenant, clients, currentCompanyId, switchCompany, comp
         <div className="grid gap-4 sm:grid-cols-4">
           <div className="rounded-lg border border-line bg-slate-50 p-4 text-center">
             <strong className={`block text-3xl font-black ${average >= 80 ? "text-emerald-700" : average >= 65 ? "text-amber-700" : "text-red-700"}`}>{average || "—"}</strong>
-            <p className="mt-1 text-sm font-bold text-muted">Avg Health Score</p>
+            <p className="mt-1 text-sm font-bold text-muted">Avg Review Quality</p>
           </div>
           <div className="rounded-lg border border-line bg-slate-50 p-4 text-center">
             <strong className={`block text-3xl font-black ${clients.length > 0 ? "text-brand" : "text-slate-400"}`}>{clients.length}</strong>

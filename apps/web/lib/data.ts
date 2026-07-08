@@ -304,6 +304,33 @@ export const pilotAnalysisResult: AnalysisResult = {
     { id: "act_pilot_004", findingId: "find_pilot_ar_001", action: "accepted_risk", userId: "Aisha Morgan", timestamp: reviewedAt, details: "Accepted risk supported by post-period receipts." },
     { id: "act_pilot_005", findingId: "find_pilot_close_001", action: "manager_escalated", userId: "Sarah Patel", timestamp: reviewedAt, details: "Escalated for partner awareness." }
   ],
+  collectionCases: [
+    {
+      id: "collection_pilot_harbour",
+      findingId: "find_pilot_ar_001",
+      customer: "Harbour Components",
+      status: "promised",
+      owner: "Michael Grant",
+      promiseAmount: 18800,
+      promiseDate: "2026-06-22",
+      contacts: [
+        { id: "contact_pilot_harbour_001", channel: "phone", note: "Customer confirmed full settlement after the next production payment run.", contactedBy: "Michael Grant", contactedAt: "2026-06-19T10:15:00.000Z" }
+      ],
+      updatedAt: "2026-06-19T10:15:00.000Z"
+    },
+    {
+      id: "collection_pilot_cobalt",
+      findingId: "find_pilot_ar_001",
+      customer: "Cobalt Retail Group",
+      status: "disputed",
+      owner: "Michael Grant",
+      disputeReason: "Customer requested proof of delivery for two invoices before releasing payment.",
+      contacts: [
+        { id: "contact_pilot_cobalt_001", channel: "email", note: "Proof-of-delivery pack requested from the sales operations team.", contactedBy: "Michael Grant", contactedAt: "2026-06-20T14:30:00.000Z" }
+      ],
+      updatedAt: "2026-06-20T14:30:00.000Z"
+    }
+  ],
   partnerSignOff: {
     id: "signoff_pilot_001",
     tenantId: pilotTenant.id,
@@ -324,14 +351,14 @@ export const pilotAnalysisResult: AnalysisResult = {
       evidenceOutstanding: 0,
       validationBlockers: 0,
       managerReviewComplete: true,
-      readiness: 89,
+      readiness: 85,
       findingCount: 4,
       uploadCount: 6
     },
     approval: {
       approvedBy: "Priya Desai",
       approvedAt: signedAt,
-      readinessScore: 89,
+      readinessScore: 85,
       confidenceScore: 92,
       openFindings: 0,
       acceptedRisks: 1,

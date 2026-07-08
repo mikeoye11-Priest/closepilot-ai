@@ -34,6 +34,18 @@ insert into storage.buckets (id, name, public)
 values ('finance-uploads', 'finance-uploads', false)
 on conflict (id) do nothing;
 
+update storage.buckets
+set file_size_limit = 104857600,
+    allowed_mime_types = array[
+      'text/csv',
+      'text/tab-separated-values',
+      'text/plain',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/octet-stream'
+    ]
+where id = 'finance-uploads';
+
 drop policy if exists "Users can upload scoped finance files" on storage.objects;
 create policy "Users can upload scoped finance files"
   on storage.objects for insert
@@ -50,6 +62,19 @@ create policy "Users can upload scoped finance files"
 drop policy if exists "Users can read scoped finance files" on storage.objects;
 create policy "Users can read scoped finance files"
   on storage.objects for select
+  using (
+    bucket_id = 'finance-uploads'
+    and (storage.foldername(name))[1] = 'tenants'
+    and (storage.foldername(name))[3] = 'companies'
+    and public.has_company_access(
+      ((storage.foldername(name))[2])::uuid,
+      ((storage.foldername(name))[4])::uuid
+    )
+  );
+
+drop policy if exists "Users can delete scoped finance files" on storage.objects;
+create policy "Users can delete scoped finance files"
+  on storage.objects for delete
   using (
     bucket_id = 'finance-uploads'
     and (storage.foldername(name))[1] = 'tenants'

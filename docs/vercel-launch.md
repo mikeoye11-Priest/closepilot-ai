@@ -23,8 +23,9 @@ Create a dedicated staging Supabase project. Run, in order:
 1. `infra/schema.sql`
 2. `infra/workspace_migration.sql`
 3. `infra/storage_migration.sql`
-4. `infra/report_metadata_migration.sql`
-5. `infra/accounting_integrations_migration.sql` only if integrations are enabled
+4. `infra/scalable_ingestion_migration.sql`
+5. `infra/report_metadata_migration.sql`
+6. `infra/accounting_integrations_migration.sql` only if integrations are enabled
 
 Confirm Row Level Security policies exist and create named pilot users. Do not use a production client database for the first deployment rehearsal.
 
@@ -37,6 +38,8 @@ Required:
 - `NEXT_PUBLIC_SITE_URL`
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` — server-only key used by the ingestion worker; never expose it through a `NEXT_PUBLIC_` variable
+- `CRON_SECRET` or `INGESTION_WORKER_SECRET` — authenticates the scheduled worker endpoint
 
 Optional for Pilot 1:
 
@@ -44,6 +47,8 @@ Optional for Pilot 1:
 - Xero variables — configure all four together or leave all disabled
 
 After changing an environment variable, redeploy; Vercel changes do not affect an existing deployment.
+
+The scheduled worker calls `/api/internal/process-upload-jobs` once per minute, claims one queued job atomically, and retries stale or transient jobs up to three times. Large Excel workbooks remain outside the background path in this phase; export large workbook sheets as CSV.
 
 ## 4. Preview deployment
 
@@ -84,7 +89,7 @@ CLOSEPILOT_QA_URL=https://closepilot-ai-nvlz.vercel.app npm run test:upload
 CLOSEPILOT_QA_URL=https://closepilot-ai-nvlz.vercel.app npm run test:ui
 ```
 
-Vercel Functions accept request bodies up to 4.5 MB. ClosePilot therefore limits each pilot upload request to 12 supported files and 4 MB combined. Larger packs need direct-to-storage upload work before they are supported.
+Vercel Functions accept request bodies up to 4.5 MB. ClosePilot therefore keeps immediate review requests to 12 supported files and 4 MB combined. Larger packs use resumable direct-to-storage transfer and durable background jobs; the background worker must be deployed before large-pack processing is enabled for pilot users.
 
 ## 6. Manual security and data checks
 
