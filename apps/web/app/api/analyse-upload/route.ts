@@ -4,6 +4,7 @@ import * as XLSX from "@e965/xlsx";
 import { requireApiSession } from "@/lib/api-auth";
 import { canonicalImportHeader, recogniseFinanceDocument } from "@/lib/import-engine";
 import { createClient } from "@/lib/supabase-server";
+import { reportError } from "@/lib/logger";
 import { analyseParsedFiles, createUpload, normaliseHeader, scopeAnalysisResult, type ParsedFile } from "@/lib/upload-analysis";
 import type { Company, ImportMappingProfile, Tenant, Upload } from "@/lib/types";
 import { INTERACTIVE_UPLOAD_MAX_BYTES, INTERACTIVE_UPLOAD_MAX_FILES, SUPPORTED_FINANCE_FILE } from "@/lib/upload-capacity";
@@ -99,7 +100,7 @@ async function parseServerFileSafely(file: File): Promise<ParsedFile[]> {
       upload: { ...item.upload, originalFileName: file.name }
     }));
   } catch (error) {
-    console.error(`Failed to parse uploaded file "${file.name}"`, error);
+    reportError(error, { route: "analyse-upload", step: "parse", fileName: file.name });
     const unparsed = createUnparsedFile(file.name);
     return [{ ...unparsed, upload: { ...unparsed.upload, originalFileName: file.name } }];
   }

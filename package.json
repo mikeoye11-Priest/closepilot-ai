@@ -32,6 +32,7 @@
     "@anthropic-ai/sdk": "^0.107.0",
     "@e965/xlsx": "^0.20.3",
     "@google/generative-ai": "^0.24.1",
+    "@sentry/nextjs": "^10.64.0",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.2",
     "@tanstack/react-query": "^5.101.2",
