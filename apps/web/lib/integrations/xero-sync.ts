@@ -76,28 +76,36 @@ function flattenTrialBalance(sections: Array<{ rows?: Array<{ cells?: Array<{ va
   return sections.flatMap((section) => section.rows ?? []).map((row) => {
     rowNumber += 1;
     const cells = row.cells ?? [];
-    const accountName = cells[0]?.value?.trim() ?? "";
-    const accountCode = cells[0]?.attributes?.find((attribute) => /account|code/i.test(attribute.id ?? ""))?.value ?? `XERO-${rowNumber}`;
+    const accountName = String(cells[0]?.value ?? "").trim();
+    const accountCode = String(cells[0]?.attributes?.find((attribute) => /account|code/i.test(attribute.id ?? ""))?.value ?? `XERO-${rowNumber}`);
     const debit = amount(cells[1]?.value);
     const credit = amount(cells[2]?.value);
     return { account_code: accountCode, account_name: accountName, debit: String(debit), credit: String(credit), balance: String(debit - credit) };
   }).filter((row) => row.account_name && !/^total/i.test(row.account_name));
 }
 
-function vatRow(input: { date?: string; type: string; party?: string; description: string; net?: number; vat?: number; gross?: number; taxType?: string; accountCode?: string; reference: string }) {
+function vatRow(input: { date?: unknown; type: string; party?: string; description: string; net?: number; vat?: number; gross?: number; taxType?: string; accountCode?: string; reference: string }) {
   return {
-    date: input.date ?? "",
+    date: xeroDateString(input.date),
     type: input.type,
-    party: input.party ?? "",
-    description: input.description,
+    party: String(input.party ?? ""),
+    description: String(input.description ?? ""),
     net_amount: String(number(input.net)),
     vat_amount: String(number(input.vat)),
     gross_amount: String(number(input.gross)),
     vat_code: canonicalVatCode(input.taxType, input.type),
-    nominal_code: input.accountCode ?? "",
-    reference: input.reference,
+    nominal_code: String(input.accountCode ?? ""),
+    reference: String(input.reference ?? ""),
     source_system: "Xero",
   };
+}
+
+// Xero (xero-node) returns date fields as Date objects even though typed as
+// string; downstream analysis assumes every row value is a string, so coerce.
+function xeroDateString(value: unknown): string {
+  if (!value) return "";
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value);
 }
 
 export function canonicalVatCode(taxType: string | undefined, transactionType: string) {
