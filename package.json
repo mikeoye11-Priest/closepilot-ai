@@ -27,7 +27,8 @@
     "test:ui": "CLOSEPILOT_QA_URL=${CLOSEPILOT_QA_URL:-http://localhost:3010} playwright test qa/button-smoke.spec.ts qa/pilot-walkthrough.spec.ts qa/visual-regression.spec.ts --browser=chromium --reporter=line",
     "verify": "npm run test && npm run test:rules && npm run test:finance-regression && npm run test:ai-explanations && npm run test:upload-capacity && npm run test:worker && npm run test:upload && npm run test:ui",
     "test:ui:install": "playwright install chromium",
-    "check:launch": "node scripts/check-launch-readiness.mjs"
+    "check:launch": "node scripts/check-launch-readiness.mjs",
+    "db:migrate": "node scripts/migrate.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.107.0",
