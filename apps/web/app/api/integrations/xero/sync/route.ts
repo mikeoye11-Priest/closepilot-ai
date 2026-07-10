@@ -4,6 +4,7 @@ import { authenticatedXeroClient, selectedXeroConnection } from "@/lib/integrati
 import { fetchXeroSyncData } from "@/lib/integrations/xero-sync";
 import { analyseParsedFiles, createUpload, scopeAnalysisResult, type ParsedFile } from "@/lib/upload-analysis";
 import type { Company, Tenant } from "@/lib/types";
+import { reportError } from "@/lib/logger";
 import { after, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -80,9 +81,25 @@ async function runXeroSync({ supabase, connection, syncId, sessionUserId, body, 
     await supabase.from("accounting_integrations").update({ last_synced_at: completedAt, updated_at: completedAt }).eq("id", connection.id);
     await supabase.from("audit_logs").insert({ id: crypto.randomUUID(), tenant_id: tenantId, user_id: sessionUserId, action: "xero_sync_completed", entity_type: "accounting_sync_run", entity_id: syncId });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Xero sync failed.";
+    const message = extractXeroError(error);
+    reportError(error, { route: "xero/sync", syncId, tenantId, companyId });
     await supabase.from("accounting_sync_runs").update({ status: "failed", error_message: message, completed_at: new Date().toISOString() }).eq("id", syncId);
   }
+}
+
+// Xero (xero-node) throws error objects, not plain Errors — pull the real API
+// detail so failures are diagnosable instead of a generic "Xero sync failed".
+function extractXeroError(error: unknown): string {
+  if (error && typeof error === "object") {
+    const e = error as { message?: string; body?: unknown; response?: { statusCode?: number; body?: unknown } };
+    const body = e.response?.body ?? e.body;
+    if (body) {
+      const detail = typeof body === "string" ? body : JSON.stringify(body);
+      return e.response?.statusCode ? `Xero API ${e.response.statusCode}: ${detail}` : detail;
+    }
+    if (typeof e.message === "string" && e.message) return e.message;
+  }
+  return error instanceof Error ? error.message : "Xero sync failed.";
 }
 
 function xeroParsedFiles(sync: Awaited<ReturnType<typeof fetchXeroSyncData>>, organisation: string, asOfDate: string): ParsedFile[] {
