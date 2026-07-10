@@ -4,9 +4,5 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build:web",
   "outputDirectory": "apps/web/.next",
-  "regions": ["lhr1"],
-  "crons": [{
-    "path": "/api/internal/process-upload-jobs",
-    "schedule": "0 3 * * *"
-  }]
+  "regions": ["lhr1"]
 }

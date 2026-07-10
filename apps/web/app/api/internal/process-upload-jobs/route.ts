@@ -2,6 +2,7 @@ import { createClient as createSupabaseClient, type SupabaseClient } from "@supa
 import { NextResponse } from "next/server";
 import { recogniseFinanceDocument } from "@/lib/import-engine";
 import { analyseParsedFiles, parseFinanceFile, scopeAnalysisResult, type ParsedFile } from "@/lib/upload-analysis";
+import { authoriseWorkerRequest } from "@/lib/worker-auth";
 import type { Company, Tenant } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -106,8 +107,10 @@ function adminClient() {
 }
 
 function authoriseWorker(request: Request): { ok: true } | { ok: false; response: NextResponse } {
-  const secret = process.env.INGESTION_WORKER_SECRET || process.env.CRON_SECRET;
-  if (!secret) return { ok: false, response: NextResponse.json({ error: "Worker authentication is not configured." }, { status: 503 }) };
-  if (request.headers.get("authorization") !== `Bearer ${secret}`) return { ok: false, response: NextResponse.json({ error: "Unauthorised worker request." }, { status: 401 }) };
-  return { ok: true };
+  const result = authoriseWorkerRequest(
+    request.headers.get("authorization"),
+    process.env.INGESTION_WORKER_SECRET || process.env.CRON_SECRET,
+  );
+  if (result.ok) return { ok: true };
+  return { ok: false, response: NextResponse.json({ error: result.error }, { status: result.status }) };
 }
