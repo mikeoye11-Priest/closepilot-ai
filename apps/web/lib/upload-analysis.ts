@@ -1313,7 +1313,7 @@ function buildControlsFindings(files: ParsedFile[]): Finding[] {
     }
 
     // DQ-02: Exact duplicate rows
-    const rowKeys = rows.map((r) => JSON.stringify(Object.values(r).map((v) => v.trim()).sort()));
+    const rowKeys = rows.map((r) => JSON.stringify(Object.values(r).map((v) => String(v).trim()).sort()));
     const dupRows = rowKeys.filter((k, i) => rowKeys.indexOf(k) !== i);
     if (dupRows.length > 0) {
       findings.push(makeFinding(`dq_dup_rows_${file.upload.id}`, "data_quality", "medium", "high",
