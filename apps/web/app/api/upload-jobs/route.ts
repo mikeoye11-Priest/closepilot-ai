@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-auth";
 import { enforceRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase-server";
+import { reportError } from "@/lib/logger";
 import { decideUploadMode, formatUploadBytes, type UploadCapacityFile } from "@/lib/upload-capacity";
 
 export const runtime = "nodejs";
@@ -59,7 +60,10 @@ export async function POST(request: Request) {
   const supabase = await createClient();
 
   const { error: uploadError } = await supabase.from("uploads").insert(uploadRows.map(({ manifest: _manifest, ...row }) => row));
-  if (uploadError) return NextResponse.json({ error: uploadError.message }, { status: 500 });
+  if (uploadError) {
+    reportError(uploadError, { route: "upload-jobs", step: "insert-uploads", tenantId, companyId });
+    return NextResponse.json({ error: uploadError.message }, { status: 500 });
+  }
 
   const { error: jobError } = await supabase.from("analysis_jobs").insert({
     id: jobId,
@@ -80,6 +84,7 @@ export async function POST(request: Request) {
     retention_until: retentionDate(),
   });
   if (jobError) {
+    reportError(jobError, { route: "upload-jobs", step: "insert-analysis-job", tenantId, companyId });
     await supabase.from("uploads").delete().in("id", uploadRows.map((row) => row.id));
     return NextResponse.json({ error: jobError.message }, { status: 500 });
   }

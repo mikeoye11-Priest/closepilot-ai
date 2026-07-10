@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase-server";
 import { requireApiSession } from "@/lib/api-auth";
+import { reportError } from "@/lib/logger";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -54,29 +55,34 @@ async function bootstrapWorkspaceScope(supabase: Awaited<ReturnType<typeof creat
   };
 
   const tenantId = stringValue(workspace.tenant?.id);
-  const currentCompanyId = stringValue(workspace.currentCompanyId);
   if (!UUID_RE.test(tenantId)) return;
 
   const companies = Array.isArray(workspace.companies) ? workspace.companies : [];
-  const currentCompany = companies.find((company) => stringValue(company.id) === currentCompanyId) ?? companies[0];
-  const companyId = stringValue(currentCompany?.id);
-  if (!currentCompany || !UUID_RE.test(companyId)) return;
+  // Persist every real company so background uploads (which write tenant/company
+  // rows and depend on the FKs) work for any of them. Skip non-UUID placeholders
+  // such as the "company_pilot_brightlane" pilot-demo remnant left by loadPilotDemo.
+  const realCompanies = companies.filter((company) => UUID_RE.test(stringValue(company?.id)));
+  if (!realCompanies.length) return;
 
-  const { error } = await supabase.rpc("bootstrap_workspace", {
-    p_tenant_id: tenantId,
-    p_tenant_name: stringValue(workspace.tenant?.name) || "ClosePilot Workspace",
-    p_tenant_type: stringValue(workspace.tenant?.type) || "accounting_practice",
-    p_plan: stringValue(workspace.tenant?.plan) || "practice",
-    p_company_id: companyId,
-    p_company_name: stringValue(currentCompany.name) || "Company",
-    p_industry: stringValue(currentCompany.industry),
-    p_accounting_system: stringValue(currentCompany.accountingSystem) || "Unknown",
-    p_currency: stringValue(currentCompany.currency) || "GBP",
-    p_country: stringValue(currentCompany.country) || "United Kingdom",
-  });
+  for (const company of realCompanies) {
+    const { error } = await supabase.rpc("bootstrap_workspace", {
+      p_tenant_id: tenantId,
+      p_tenant_name: stringValue(workspace.tenant?.name) || "ClosePilot Workspace",
+      p_tenant_type: stringValue(workspace.tenant?.type) || "accounting_practice",
+      p_plan: stringValue(workspace.tenant?.plan) || "practice",
+      p_company_id: stringValue(company.id),
+      p_company_name: stringValue(company.name) || "Company",
+      p_industry: stringValue(company.industry),
+      p_accounting_system: stringValue(company.accountingSystem) || "Unknown",
+      p_currency: stringValue(company.currency) || "GBP",
+      p_country: stringValue(company.country) || "United Kingdom",
+    });
 
-  if (error) {
-    console.warn("Workspace scope bootstrap failed", error.message);
+    // Surface instead of swallowing: a silent failure here leaves tenant/company
+    // rows uncreated, which then breaks background uploads with an opaque 500.
+    if (error) {
+      reportError(error, { step: "bootstrap_workspace", route: "workspace", tenantId, companyId: stringValue(company.id) });
+    }
   }
 }
 
