@@ -5,6 +5,7 @@ import { requireApiSession } from "@/lib/api-auth";
 import { canonicalImportHeader, recogniseFinanceDocument } from "@/lib/import-engine";
 import { createClient } from "@/lib/supabase-server";
 import { reportError } from "@/lib/logger";
+import { enforceRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { analyseParsedFiles, createUpload, normaliseHeader, scopeAnalysisResult, type ParsedFile } from "@/lib/upload-analysis";
 import type { Company, ImportMappingProfile, Tenant, Upload } from "@/lib/types";
 import { INTERACTIVE_UPLOAD_MAX_BYTES, INTERACTIVE_UPLOAD_MAX_FILES, SUPPORTED_FINANCE_FILE } from "@/lib/upload-capacity";
@@ -17,6 +18,9 @@ const UPLOAD_BUCKET = process.env.CLOSEPILOT_UPLOAD_BUCKET || "finance-uploads";
 export async function POST(request: Request) {
   const session = await requireApiSession();
   if (!session.ok) return session.response;
+
+  const limited = await enforceRateLimit("upload", rateLimitKey(session.userId, request));
+  if (limited) return limited;
 
   const form = await request.formData();
   const files = form.getAll("files").filter((item): item is File => item instanceof File);

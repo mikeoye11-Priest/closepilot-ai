@@ -1,12 +1,16 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-auth";
+import { enforceRateLimit, rateLimitKey } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const session = await requireApiSession();
   if (!session.ok) return session.response;
+
+  const limited = await enforceRateLimit("ai", rateLimitKey(session.userId, request));
+  if (limited) return limited;
 
   const { companyName, score, risk, findings, recommendations, cashAtRisk, financialExposure, period } = await request.json();
 

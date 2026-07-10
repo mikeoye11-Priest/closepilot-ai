@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-auth";
+import { enforceRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase-server";
 import { decideUploadMode, formatUploadBytes, type UploadCapacityFile } from "@/lib/upload-capacity";
 
@@ -13,6 +14,9 @@ type UploadManifestItem = UploadCapacityFile & { contentType?: string };
 export async function POST(request: Request) {
   const session = await requireApiSession();
   if (!session.ok) return session.response;
+
+  const limited = await enforceRateLimit("upload", rateLimitKey(session.userId, request));
+  if (limited) return limited;
 
   const body = await request.json().catch(() => null) as { tenantId?: unknown; companyId?: unknown; files?: unknown } | null;
   const tenantId = stringValue(body?.tenantId);
