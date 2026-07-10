@@ -1,14 +1,18 @@
 import { XeroClient, type TokenSet, type TokenSetParameters } from "xero-node";
 
+// Granular scopes (required for apps created on/after 2 March 2026, when Xero
+// deprecated the broad accounting.transactions and accounting.reports.read
+// scopes — requesting those now returns invalid_scope).
 export const XERO_SCOPES = [
   "openid",
   "profile",
   "email",
   "offline_access",
-  "accounting.transactions.read",
   "accounting.settings.read",
-  "accounting.reports.read",
   "accounting.contacts.read",
+  "accounting.invoices.read",
+  "accounting.reports.profitandloss.read",
+  "accounting.reports.balancesheet.read",
 ];
 
 export function xeroConfigured() {
