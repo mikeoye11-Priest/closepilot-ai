@@ -18,6 +18,8 @@ export async function GET() {
   const capabilities = {
     backgroundWorker: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY && (process.env.INGESTION_WORKER_SECRET || process.env.CRON_SECRET)),
     aiCommentary: Boolean(process.env.GEMINI_API_KEY),
+    errorTracking: Boolean(process.env.SENTRY_DSN),
+    rateLimiting: Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN),
     xero: Boolean(process.env.XERO_CLIENT_ID && process.env.XERO_CLIENT_SECRET && process.env.XERO_REDIRECT_URI && process.env.INTEGRATION_ENCRYPTION_KEY),
   };
 

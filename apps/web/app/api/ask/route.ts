@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-auth";
+import { enforceRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { evidenceGroundedResponse } from "@/lib/ask-closepilot";
 import { explainFinding, explanationToPlainText, validateAnswerAgainstFindings } from "@/lib/explainability";
 
@@ -9,6 +10,9 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   const session = await requireApiSession();
   if (!session.ok) return session.response;
+
+  const limited = await enforceRateLimit("ai", rateLimitKey(session.userId, request));
+  if (limited) return limited;
 
   const { question, score, companyName, accountingSystem, findings, mode } = await request.json();
   const fallback = evidenceGroundedResponse(question, score, Array.isArray(findings) ? findings : []);
