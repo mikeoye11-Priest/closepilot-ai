@@ -70,3 +70,19 @@ function required(name: string) {
   if (!value) throw new Error(`${name} is required.`);
   return value;
 }
+
+// xero-node throws error objects (not plain Errors) carrying the real API detail
+// on .response.body / .body — pull it out so failures are diagnosable instead of
+// a generic message. Falls back to .message, then the stringified error.
+export function describeXeroError(error: unknown): string {
+  if (error && typeof error === "object") {
+    const e = error as { message?: string; body?: unknown; response?: { statusCode?: number; body?: unknown } };
+    const body = e.response?.body ?? e.body;
+    if (body && (typeof body !== "object" || Object.keys(body).length > 0)) {
+      const detail = typeof body === "string" ? body : JSON.stringify(body);
+      return e.response?.statusCode ? `HTTP ${e.response.statusCode}: ${detail}` : detail;
+    }
+    if (typeof e.message === "string" && e.message) return e.message;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
