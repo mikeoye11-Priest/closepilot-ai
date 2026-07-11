@@ -1,4 +1,5 @@
-import type { XeroClient } from "xero-node";
+import type { XeroClient, Invoice, BankTransaction, ManualJournal } from "xero-node";
+import { describeXeroError } from "./xero";
 
 export type XeroSyncData = {
   trialBalanceRows: Record<string, string>[];
@@ -6,17 +7,37 @@ export type XeroSyncData = {
   balanceSheetRows: Record<string, string>[];
   vatRows: Record<string, string>[];
   counts: { trialBalance: number; profitLoss: number; balanceSheet: number; invoices: number; bankTransactions: number; manualJournals: number; vatRows: number };
+  // Per-source failures. Populated when one report/endpoint fails but others
+  // succeed, so a single broken source degrades gracefully instead of failing
+  // the whole sync (each source below is fetched independently).
+  warnings: string[];
 };
 
 export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, asOfDate: string, modifiedSince?: Date): Promise<XeroSyncData> {
   const plFromDate = `${asOfDate.slice(0, 4)}-01-01`;
-  const [trialBalance, profitAndLoss, balanceSheet, invoices, bankTransactions, manualJournals] = await Promise.all([
-    xero.accountingApi.getReportTrialBalance(xeroTenantId, asOfDate, false),
-    xero.accountingApi.getReportProfitAndLoss(xeroTenantId, plFromDate, asOfDate),
-    xero.accountingApi.getReportBalanceSheet(xeroTenantId, asOfDate),
-    fetchAllPages(100, (page) => xero.accountingApi.getInvoices(xeroTenantId, modifiedSince, undefined, "Date ASC", undefined, undefined, undefined, ["AUTHORISED", "PAID"], page, false, false, 4, false, 100), (body) => body.invoices ?? []),
-    fetchAllPages(100, (page) => xero.accountingApi.getBankTransactions(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 4, 100), (body) => body.bankTransactions ?? []),
-    fetchAllPages(100, (page) => xero.accountingApi.getManualJournals(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 100), (body) => body.manualJournals ?? []),
+  const warnings: string[] = [];
+  // Each source is fetched (and parsed) independently: one failing report or
+  // endpoint records a warning and yields an empty result instead of rejecting
+  // the whole Promise.all and losing every other source.
+  const safe = async <T>(label: string, fallback: T, run: () => Promise<T>): Promise<T> => {
+    try {
+      return await run();
+    } catch (error) {
+      warnings.push(`${label}: ${describeXeroError(error)}`);
+      return fallback;
+    }
+  };
+
+  const [trialBalanceRows, profitLossRows, balanceSheetRows, invoices, bankTransactions, manualJournals] = await Promise.all([
+    safe("trial balance", [] as Record<string, string>[], async () =>
+      flattenTrialBalance((await xero.accountingApi.getReportTrialBalance(xeroTenantId, asOfDate, false)).body.reports?.[0]?.rows ?? [])),
+    safe("profit & loss", [] as Record<string, string>[], async () =>
+      flattenProfitAndLoss((await xero.accountingApi.getReportProfitAndLoss(xeroTenantId, plFromDate, asOfDate)).body.reports?.[0]?.rows ?? [])),
+    safe("balance sheet", [] as Record<string, string>[], async () =>
+      flattenBalanceSheet((await xero.accountingApi.getReportBalanceSheet(xeroTenantId, asOfDate)).body.reports?.[0]?.rows ?? [])),
+    safe("invoices", [] as Invoice[], () => fetchAllPages(100, (page) => xero.accountingApi.getInvoices(xeroTenantId, modifiedSince, undefined, "Date ASC", undefined, undefined, undefined, ["AUTHORISED", "PAID"], page, false, false, 4, false, 100), (body) => body.invoices ?? [])),
+    safe("bank transactions", [] as BankTransaction[], () => fetchAllPages(100, (page) => xero.accountingApi.getBankTransactions(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 4, 100), (body) => body.bankTransactions ?? [])),
+    safe("manual journals", [] as ManualJournal[], () => fetchAllPages(100, (page) => xero.accountingApi.getManualJournals(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 100), (body) => body.manualJournals ?? [])),
   ]);
 
   const invoiceRows = invoices.flatMap((invoice) => (invoice.lineItems ?? []).map((line, index) => vatRow({
@@ -56,9 +77,6 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     reference: journal.manualJournalID || `journal-${index + 1}`,
   })));
 
-  const trialBalanceRows = flattenTrialBalance(trialBalance.body.reports?.[0]?.rows ?? []);
-  const profitLossRows = flattenProfitAndLoss(profitAndLoss.body.reports?.[0]?.rows ?? []);
-  const balanceSheetRows = flattenBalanceSheet(balanceSheet.body.reports?.[0]?.rows ?? []);
   const vatRows = [...invoiceRows, ...bankRows, ...journalRows];
   return {
     trialBalanceRows,
@@ -66,6 +84,7 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     balanceSheetRows,
     vatRows,
     counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, balanceSheet: balanceSheetRows.length, invoices: invoices.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, vatRows: vatRows.length },
+    warnings,
   };
 }
 

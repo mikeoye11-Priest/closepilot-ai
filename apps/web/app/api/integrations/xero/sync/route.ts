@@ -2,6 +2,7 @@ import { requireApiSession } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase-server";
 import { authenticatedXeroClient, selectedXeroConnection } from "@/lib/integrations/xero-repository";
 import { fetchXeroSyncData } from "@/lib/integrations/xero-sync";
+import { describeXeroError } from "@/lib/integrations/xero";
 import { analyseParsedFiles, createUpload, scopeAnalysisResult, type ParsedFile } from "@/lib/upload-analysis";
 import type { Company, Tenant } from "@/lib/types";
 import { reportError } from "@/lib/logger";
@@ -72,34 +73,24 @@ async function runXeroSync({ supabase, connection, syncId, sessionUserId, body, 
     await supabase.from("accounting_sync_runs").update({ status: "running", started_at: new Date().toISOString() }).eq("id", syncId);
     const xero = await authenticatedXeroClient(supabase, connection);
     const sync = await fetchXeroSyncData(xero, connection.external_tenant_id, asOfDate);
+    const imported = sync.counts.trialBalance + sync.counts.profitLoss + sync.counts.balanceSheet + sync.counts.vatRows;
+    // Only a total shutout is a failure; a partial sync completes with whatever
+    // came through and surfaces which source(s) failed via warnings.
+    if (imported === 0 && sync.warnings.length) throw new Error(`Xero returned no data — ${sync.warnings.join("; ")}`);
+    if (sync.warnings.length) reportError(new Error(`Xero sync partial: ${sync.warnings.join("; ")}`), { route: "xero/sync", syncId, tenantId, companyId });
     const parsedFiles = xeroParsedFiles(sync, connection.external_tenant_name ?? "Xero", asOfDate);
     const tenant: Tenant = { id: tenantId, name: stringValue(body.tenantName) || "ClosePilot Workspace", type: body.tenantType === "company" ? "company" : "accounting_practice", plan: stringValue(body.tenantPlan) || "practice" };
     const company: Company = { id: companyId, tenantId, name: stringValue(body.companyName) || connection.external_tenant_name || "Xero Company", industry: stringValue(body.companyIndustry), accountingSystem: "Xero", currency: stringValue(body.currency) || "GBP", country: stringValue(body.country) || "United Kingdom" };
     const analysis = scopeAnalysisResult(analyseParsedFiles(parsedFiles), tenant, company);
     const completedAt = new Date().toISOString();
-    await supabase.from("accounting_sync_runs").update({ status: "completed", records_imported: sync.counts.trialBalance + sync.counts.profitLoss + sync.counts.balanceSheet + sync.counts.vatRows, result_summary: { counts: sync.counts, analysis }, completed_at: completedAt }).eq("id", syncId);
+    await supabase.from("accounting_sync_runs").update({ status: "completed", records_imported: imported, result_summary: { counts: sync.counts, warnings: sync.warnings, analysis }, completed_at: completedAt }).eq("id", syncId);
     await supabase.from("accounting_integrations").update({ last_synced_at: completedAt, updated_at: completedAt }).eq("id", connection.id);
     await supabase.from("audit_logs").insert({ id: crypto.randomUUID(), tenant_id: tenantId, user_id: sessionUserId, action: "xero_sync_completed", entity_type: "accounting_sync_run", entity_id: syncId });
   } catch (error) {
-    const message = extractXeroError(error);
+    const message = describeXeroError(error);
     reportError(error, { route: "xero/sync", syncId, tenantId, companyId });
     await supabase.from("accounting_sync_runs").update({ status: "failed", error_message: message, completed_at: new Date().toISOString() }).eq("id", syncId);
   }
-}
-
-// Xero (xero-node) throws error objects, not plain Errors — pull the real API
-// detail so failures are diagnosable instead of a generic "Xero sync failed".
-function extractXeroError(error: unknown): string {
-  if (error && typeof error === "object") {
-    const e = error as { message?: string; body?: unknown; response?: { statusCode?: number; body?: unknown } };
-    const body = e.response?.body ?? e.body;
-    if (body) {
-      const detail = typeof body === "string" ? body : JSON.stringify(body);
-      return e.response?.statusCode ? `Xero API ${e.response.statusCode}: ${detail}` : detail;
-    }
-    if (typeof e.message === "string" && e.message) return e.message;
-  }
-  return error instanceof Error ? error.message : "Xero sync failed.";
 }
 
 function xeroParsedFiles(sync: Awaited<ReturnType<typeof fetchXeroSyncData>>, organisation: string, asOfDate: string): ParsedFile[] {
