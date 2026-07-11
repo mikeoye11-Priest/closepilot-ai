@@ -49,8 +49,17 @@ export async function authenticatedXeroClient(supabase: SupabaseClient, connecti
 
   const expiresSoon = !tokenSet.expires_at || tokenSet.expires_at * 1000 <= Date.now() + 60_000;
   if (expiresSoon) {
-    const refreshed = await xero.refreshToken();
+    // refreshToken() needs the OpenID client set up via initialize() and fails
+    // with "reading 'refresh'" otherwise; refreshWithRefreshToken uses explicit
+    // credentials + the stored refresh token, which is the correct server flow.
+    await xero.initialize();
+    const refreshed = await xero.refreshWithRefreshToken(
+      process.env.XERO_CLIENT_ID as string,
+      process.env.XERO_CLIENT_SECRET as string,
+      tokenSet.refresh_token as string,
+    );
     if (!refreshed.access_token || !refreshed.refresh_token) throw new Error("Xero returned an incomplete refreshed token set.");
+    xero.setTokenSet(refreshed);
     const { error } = await supabase.from("accounting_integrations").update({
       access_token_encrypted: encryptIntegrationSecret(refreshed.access_token),
       refresh_token_encrypted: encryptIntegrationSecret(refreshed.refresh_token),

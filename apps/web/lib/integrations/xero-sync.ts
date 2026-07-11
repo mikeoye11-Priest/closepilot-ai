@@ -3,15 +3,17 @@ import type { XeroClient } from "xero-node";
 export type XeroSyncData = {
   trialBalanceRows: Record<string, string>[];
   profitLossRows: Record<string, string>[];
+  balanceSheetRows: Record<string, string>[];
   vatRows: Record<string, string>[];
-  counts: { trialBalance: number; profitLoss: number; invoices: number; bankTransactions: number; manualJournals: number; vatRows: number };
+  counts: { trialBalance: number; profitLoss: number; balanceSheet: number; invoices: number; bankTransactions: number; manualJournals: number; vatRows: number };
 };
 
 export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, asOfDate: string, modifiedSince?: Date): Promise<XeroSyncData> {
   const plFromDate = `${asOfDate.slice(0, 4)}-01-01`;
-  const [trialBalance, profitAndLoss, invoices, bankTransactions, manualJournals] = await Promise.all([
+  const [trialBalance, profitAndLoss, balanceSheet, invoices, bankTransactions, manualJournals] = await Promise.all([
     xero.accountingApi.getReportTrialBalance(xeroTenantId, asOfDate, false),
     xero.accountingApi.getReportProfitAndLoss(xeroTenantId, plFromDate, asOfDate),
+    xero.accountingApi.getReportBalanceSheet(xeroTenantId, asOfDate),
     fetchAllPages(100, (page) => xero.accountingApi.getInvoices(xeroTenantId, modifiedSince, undefined, "Date ASC", undefined, undefined, undefined, ["AUTHORISED", "PAID"], page, false, false, 4, false, 100), (body) => body.invoices ?? []),
     fetchAllPages(100, (page) => xero.accountingApi.getBankTransactions(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 4, 100), (body) => body.bankTransactions ?? []),
     fetchAllPages(100, (page) => xero.accountingApi.getManualJournals(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 100), (body) => body.manualJournals ?? []),
@@ -56,12 +58,14 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
 
   const trialBalanceRows = flattenTrialBalance(trialBalance.body.reports?.[0]?.rows ?? []);
   const profitLossRows = flattenProfitAndLoss(profitAndLoss.body.reports?.[0]?.rows ?? []);
+  const balanceSheetRows = flattenBalanceSheet(balanceSheet.body.reports?.[0]?.rows ?? []);
   const vatRows = [...invoiceRows, ...bankRows, ...journalRows];
   return {
     trialBalanceRows,
     profitLossRows,
+    balanceSheetRows,
     vatRows,
-    counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, invoices: invoices.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, vatRows: vatRows.length },
+    counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, balanceSheet: balanceSheetRows.length, invoices: invoices.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, vatRows: vatRows.length },
   };
 }
 
@@ -103,6 +107,21 @@ function flattenProfitAndLoss(sections: Array<{ title?: string; rows?: Array<{ c
       if (!description || /^total/i.test(description)) continue;
       const raw = amount(cells[cells.length - 1]?.value);
       out.push({ category, description, amount: String(isExpense ? -Math.abs(raw) : raw) });
+    }
+  }
+  return out;
+}
+
+function flattenBalanceSheet(sections: Array<{ title?: string; rows?: Array<{ cells?: Array<{ value?: string }> }> }>) {
+  const out: Record<string, string>[] = [];
+  for (const section of sections) {
+    const category = String(section.title ?? "").trim() || "Balance Sheet";
+    for (const row of section.rows ?? []) {
+      const cells = row.cells ?? [];
+      const item = String(cells[0]?.value ?? "").trim();
+      // Skip subtotal/total rows so the analysis isn't double-counted.
+      if (!item || /^total/i.test(item)) continue;
+      out.push({ category, item, amount: String(amount(cells[cells.length - 1]?.value)) });
     }
   }
   return out;
