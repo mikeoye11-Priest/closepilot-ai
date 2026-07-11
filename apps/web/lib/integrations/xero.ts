@@ -10,6 +10,7 @@ export const XERO_SCOPES = [
   "email",
   "offline_access",
   "accounting.reports.trialbalance.read",
+  "accounting.reports.profitandloss.read",
   "accounting.invoices.read",
   "accounting.banktransactions.read",
   "accounting.manualjournals.read",

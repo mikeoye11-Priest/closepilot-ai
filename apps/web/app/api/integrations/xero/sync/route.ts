@@ -77,7 +77,7 @@ async function runXeroSync({ supabase, connection, syncId, sessionUserId, body, 
     const company: Company = { id: companyId, tenantId, name: stringValue(body.companyName) || connection.external_tenant_name || "Xero Company", industry: stringValue(body.companyIndustry), accountingSystem: "Xero", currency: stringValue(body.currency) || "GBP", country: stringValue(body.country) || "United Kingdom" };
     const analysis = scopeAnalysisResult(analyseParsedFiles(parsedFiles), tenant, company);
     const completedAt = new Date().toISOString();
-    await supabase.from("accounting_sync_runs").update({ status: "completed", records_imported: sync.counts.trialBalance + sync.counts.vatRows, result_summary: { counts: sync.counts, analysis }, completed_at: completedAt }).eq("id", syncId);
+    await supabase.from("accounting_sync_runs").update({ status: "completed", records_imported: sync.counts.trialBalance + sync.counts.profitLoss + sync.counts.vatRows, result_summary: { counts: sync.counts, analysis }, completed_at: completedAt }).eq("id", syncId);
     await supabase.from("accounting_integrations").update({ last_synced_at: completedAt, updated_at: completedAt }).eq("id", connection.id);
     await supabase.from("audit_logs").insert({ id: crypto.randomUUID(), tenant_id: tenantId, user_id: sessionUserId, action: "xero_sync_completed", entity_type: "accounting_sync_run", entity_id: syncId });
   } catch (error) {
@@ -105,9 +105,11 @@ function extractXeroError(error: unknown): string {
 function xeroParsedFiles(sync: Awaited<ReturnType<typeof fetchXeroSyncData>>, organisation: string, asOfDate: string): ParsedFile[] {
   const prefix = organisation.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "xero";
   const tbHeaders = ["account_code", "account_name", "debit", "credit", "balance"];
+  const plHeaders = ["category", "description", "amount"];
   const vatHeaders = ["date", "type", "party", "description", "net_amount", "vat_amount", "gross_amount", "vat_code", "nominal_code", "reference", "source_system"];
   return [
     { upload: { ...createUpload(`${prefix}-xero-trial-balance-${asOfDate}.csv`, sync.trialBalanceRows.length), fileType: "trial_balance", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: tbHeaders, rows: sync.trialBalanceRows, isParsed: true },
+    { upload: { ...createUpload(`${prefix}-xero-profit-loss-${asOfDate}.csv`, sync.profitLossRows.length), fileType: "profit_loss", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: plHeaders, rows: sync.profitLossRows, isParsed: true },
     { upload: { ...createUpload(`${prefix}-xero-vat-transactions-${asOfDate}.csv`, sync.vatRows.length), fileType: "vat_report", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: vatHeaders, rows: sync.vatRows, isParsed: true },
   ];
 }

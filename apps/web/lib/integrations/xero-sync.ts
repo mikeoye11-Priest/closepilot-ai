@@ -2,13 +2,16 @@ import type { XeroClient } from "xero-node";
 
 export type XeroSyncData = {
   trialBalanceRows: Record<string, string>[];
+  profitLossRows: Record<string, string>[];
   vatRows: Record<string, string>[];
-  counts: { trialBalance: number; invoices: number; bankTransactions: number; manualJournals: number; vatRows: number };
+  counts: { trialBalance: number; profitLoss: number; invoices: number; bankTransactions: number; manualJournals: number; vatRows: number };
 };
 
 export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, asOfDate: string, modifiedSince?: Date): Promise<XeroSyncData> {
-  const [trialBalance, invoices, bankTransactions, manualJournals] = await Promise.all([
+  const plFromDate = `${asOfDate.slice(0, 4)}-01-01`;
+  const [trialBalance, profitAndLoss, invoices, bankTransactions, manualJournals] = await Promise.all([
     xero.accountingApi.getReportTrialBalance(xeroTenantId, asOfDate, false),
+    xero.accountingApi.getReportProfitAndLoss(xeroTenantId, plFromDate, asOfDate),
     fetchAllPages(100, (page) => xero.accountingApi.getInvoices(xeroTenantId, modifiedSince, undefined, "Date ASC", undefined, undefined, undefined, ["AUTHORISED", "PAID"], page, false, false, 4, false, 100), (body) => body.invoices ?? []),
     fetchAllPages(100, (page) => xero.accountingApi.getBankTransactions(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 4, 100), (body) => body.bankTransactions ?? []),
     fetchAllPages(100, (page) => xero.accountingApi.getManualJournals(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 100), (body) => body.manualJournals ?? []),
@@ -52,11 +55,13 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
   })));
 
   const trialBalanceRows = flattenTrialBalance(trialBalance.body.reports?.[0]?.rows ?? []);
+  const profitLossRows = flattenProfitAndLoss(profitAndLoss.body.reports?.[0]?.rows ?? []);
   const vatRows = [...invoiceRows, ...bankRows, ...journalRows];
   return {
     trialBalanceRows,
+    profitLossRows,
     vatRows,
-    counts: { trialBalance: trialBalanceRows.length, invoices: invoices.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, vatRows: vatRows.length },
+    counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, invoices: invoices.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, vatRows: vatRows.length },
   };
 }
 
@@ -82,6 +87,25 @@ function flattenTrialBalance(sections: Array<{ rows?: Array<{ cells?: Array<{ va
     const credit = amount(cells[2]?.value);
     return { account_code: accountCode, account_name: accountName, debit: String(debit), credit: String(credit), balance: String(debit - credit) };
   }).filter((row) => row.account_name && !/^total/i.test(row.account_name));
+}
+
+function flattenProfitAndLoss(sections: Array<{ title?: string; rows?: Array<{ cells?: Array<{ value?: string }> }> }>) {
+  const out: Record<string, string>[] = [];
+  for (const section of sections) {
+    const category = String(section.title ?? "").trim() || "Profit & Loss";
+    // Xero reports expense sections as positive values; ClosePilot's P&L format
+    // expects income positive and costs/expenses negative.
+    const isExpense = /cost|expense|overhead|operating|purchase|payroll|depreciation|admin/i.test(category)
+      && !/income|revenue|turnover|sales|other income/i.test(category);
+    for (const row of section.rows ?? []) {
+      const cells = row.cells ?? [];
+      const description = String(cells[0]?.value ?? "").trim();
+      if (!description || /^total/i.test(description)) continue;
+      const raw = amount(cells[cells.length - 1]?.value);
+      out.push({ category, description, amount: String(isExpense ? -Math.abs(raw) : raw) });
+    }
+  }
+  return out;
 }
 
 function vatRow(input: { date?: unknown; type: string; party?: string; description: string; net?: number; vat?: number; gross?: number; taxType?: string; accountCode?: string; reference: string }) {
