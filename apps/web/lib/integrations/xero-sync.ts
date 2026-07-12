@@ -1,4 +1,4 @@
-import type { XeroClient, Invoice, BankTransaction, ManualJournal } from "xero-node";
+import type { XeroClient, Invoice, BankTransaction, ManualJournal, CreditNote } from "xero-node";
 import { describeXeroError } from "./xero";
 
 export type XeroSyncData = {
@@ -8,7 +8,7 @@ export type XeroSyncData = {
   agedDebtorRows: Record<string, string>[];
   agedCreditorRows: Record<string, string>[];
   vatRows: Record<string, string>[];
-  counts: { trialBalance: number; profitLoss: number; balanceSheet: number; agedDebtors: number; agedCreditors: number; invoices: number; bankTransactions: number; manualJournals: number; vatRows: number };
+  counts: { trialBalance: number; profitLoss: number; balanceSheet: number; agedDebtors: number; agedCreditors: number; invoices: number; creditNotes: number; bankTransactions: number; manualJournals: number; vatRows: number };
   // Per-source failures. Populated when one report/endpoint fails but others
   // succeed, so a single broken source degrades gracefully instead of failing
   // the whole sync (each source below is fetched independently).
@@ -34,7 +34,7 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
   // x-rate-limit-problem: concurrent beyond that). Fetch the six sources through
   // a small pool so we never exceed the limit — firing all six at once was
   // getting invoices rejected while the rest slipped through.
-  const [trialBalanceRows, profitLossRows, balanceSheetRows, invoices, bankTransactions, manualJournals] = await runWithConcurrency<Record<string, string>[] | Invoice[] | BankTransaction[] | ManualJournal[]>(4, [
+  const [trialBalanceRows, profitLossRows, balanceSheetRows, invoices, creditNotes, bankTransactions, manualJournals] = await runWithConcurrency<Record<string, string>[] | Invoice[] | CreditNote[] | BankTransaction[] | ManualJournal[]>(4, [
     () => safe("trial balance", [] as Record<string, string>[], async () =>
       flattenTrialBalance((await xero.accountingApi.getReportTrialBalance(xeroTenantId, asOfDate, false)).body.reports?.[0]?.rows ?? [])),
     () => safe("profit & loss", [] as Record<string, string>[], async () =>
@@ -42,9 +42,15 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     () => safe("balance sheet", [] as Record<string, string>[], async () =>
       flattenBalanceSheet((await xero.accountingApi.getReportBalanceSheet(xeroTenantId, asOfDate)).body.reports?.[0]?.rows ?? [])),
     () => safe("invoices", [] as Invoice[], () => fetchAllPages(100, (page) => xero.accountingApi.getInvoices(xeroTenantId, modifiedSince, undefined, "Date ASC", undefined, undefined, undefined, ["AUTHORISED", "PAID"], page, false, false, 4, false, 100), (body) => body.invoices ?? [])),
+    // Credit notes are read under accounting.invoices.read (already granted) — no
+    // extra scope. Fetched unfiltered and narrowed to AUTHORISED/PAID in code.
+    () => safe("credit notes", [] as CreditNote[], () => fetchAllPages(100, (page) => xero.accountingApi.getCreditNotes(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 4, 100), (body) => body.creditNotes ?? [])),
     () => safe("bank transactions", [] as BankTransaction[], () => fetchAllPages(100, (page) => xero.accountingApi.getBankTransactions(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 4, 100), (body) => body.bankTransactions ?? [])),
     () => safe("manual journals", [] as ManualJournal[], () => fetchAllPages(100, (page) => xero.accountingApi.getManualJournals(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 100), (body) => body.manualJournals ?? [])),
-  ]) as [Record<string, string>[], Record<string, string>[], Record<string, string>[], Invoice[], BankTransaction[], ManualJournal[]];
+  ]) as [Record<string, string>[], Record<string, string>[], Record<string, string>[], Invoice[], CreditNote[], BankTransaction[], ManualJournal[]];
+
+  const paidOrAuthorised = (status: unknown) => { const s = String(status).toUpperCase(); return s === "AUTHORISED" || s === "PAID"; };
+  const authorisedCreditNotes = creditNotes.filter((note) => paidOrAuthorised(note.status));
 
   const invoiceRows = invoices.flatMap((invoice) => (invoice.lineItems ?? []).map((line, index) => vatRow({
     date: invoice.date,
@@ -83,12 +89,36 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     reference: journal.manualJournalID || `journal-${index + 1}`,
   })));
 
-  // Aged debtors/creditors are the outstanding (amountDue > 0) sales/purchase
-  // invoices we already fetched — no extra API call or scope needed.
-  const agedDebtorRows = invoices.filter((invoice) => String(invoice.type).startsWith("ACCREC") && number(invoice.amountDue) > 0).map((invoice) => agedRow(invoice, "customer_name", asOfDate));
-  const agedCreditorRows = invoices.filter((invoice) => String(invoice.type).startsWith("ACCPAY") && number(invoice.amountDue) > 0).map((invoice) => agedRow(invoice, "supplier_name", asOfDate));
+  // Credit notes reverse the supply they relate to: a sales credit note reduces
+  // output VAT, a purchase credit note reduces input VAT. Emit each line negated
+  // (Xero returns credit-note amounts positive) with the same tax code, so the
+  // VAT rows sum to the net position that reconciles to the VAT control account.
+  const creditNoteRows = authorisedCreditNotes.flatMap((note) => (note.lineItems ?? []).map((line, index) => vatRow({
+    date: note.date,
+    type: String(note.type).startsWith("ACCREC") ? "Sale" : "Purchase",
+    party: note.contact?.name,
+    description: `Credit note: ${line.description || note.creditNoteNumber || "Xero credit note"}`,
+    net: -number(line.lineAmount),
+    vat: -number(line.taxAmount),
+    gross: -(number(line.lineAmount) + number(line.taxAmount)),
+    taxType: line.taxType,
+    accountCode: line.accountCode,
+    reference: note.creditNoteNumber || note.creditNoteID || `credit-${index + 1}`,
+  })));
 
-  const vatRows = [...invoiceRows, ...bankRows, ...journalRows];
+  // Aged debtors/creditors are the outstanding (amountDue > 0) sales/purchase
+  // invoices, netted down by any unallocated credit (remainingCredit) — exactly
+  // as the debtors/creditors control accounts are — so the aging ties to the TB.
+  const agedDebtorRows = [
+    ...invoices.filter((invoice) => String(invoice.type).startsWith("ACCREC") && number(invoice.amountDue) > 0).map((invoice) => agedRow(invoice, "customer_name", asOfDate)),
+    ...authorisedCreditNotes.filter((note) => String(note.type).startsWith("ACCREC") && number(note.remainingCredit) > 0).map((note) => agedCreditNoteRow(note, "customer_name", asOfDate)),
+  ];
+  const agedCreditorRows = [
+    ...invoices.filter((invoice) => String(invoice.type).startsWith("ACCPAY") && number(invoice.amountDue) > 0).map((invoice) => agedRow(invoice, "supplier_name", asOfDate)),
+    ...authorisedCreditNotes.filter((note) => String(note.type).startsWith("ACCPAY") && number(note.remainingCredit) > 0).map((note) => agedCreditNoteRow(note, "supplier_name", asOfDate)),
+  ];
+
+  const vatRows = [...invoiceRows, ...bankRows, ...journalRows, ...creditNoteRows];
   return {
     trialBalanceRows,
     profitLossRows,
@@ -96,7 +126,7 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     agedDebtorRows,
     agedCreditorRows,
     vatRows,
-    counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, balanceSheet: balanceSheetRows.length, agedDebtors: agedDebtorRows.length, agedCreditors: agedCreditorRows.length, invoices: invoices.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, vatRows: vatRows.length },
+    counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, balanceSheet: balanceSheetRows.length, agedDebtors: agedDebtorRows.length, agedCreditors: agedCreditorRows.length, invoices: invoices.length, creditNotes: authorisedCreditNotes.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, vatRows: vatRows.length },
     warnings,
   };
 }
@@ -114,6 +144,22 @@ function agedRow(invoice: Invoice, nameKey: "customer_name" | "supplier_name", a
     days_overdue: String(daysOverdue),
     amount: String(number(invoice.amountDue)),
     status: String(invoice.status ?? ""),
+  };
+}
+
+// An unallocated credit note → a negative aged line (it reduces the customer's/
+// supplier's balance). Aged by its own date; amount is negated remainingCredit.
+function agedCreditNoteRow(note: CreditNote, nameKey: "customer_name" | "supplier_name", asOfDate: string) {
+  const noteDate = xeroDateString(note.date);
+  const daysOverdue = noteDate ? Math.max(0, Math.floor((Date.parse(asOfDate) - Date.parse(noteDate)) / 86_400_000)) : 0;
+  return {
+    [nameKey]: String(note.contact?.name ?? ""),
+    invoice_number: String(note.creditNoteNumber ?? note.creditNoteID ?? ""),
+    invoice_date: noteDate,
+    due_date: noteDate,
+    days_overdue: String(daysOverdue),
+    amount: String(-number(note.remainingCredit)),
+    status: String(note.status ?? ""),
   };
 }
 
