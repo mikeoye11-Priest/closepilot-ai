@@ -5,8 +5,10 @@ export type XeroSyncData = {
   trialBalanceRows: Record<string, string>[];
   profitLossRows: Record<string, string>[];
   balanceSheetRows: Record<string, string>[];
+  agedDebtorRows: Record<string, string>[];
+  agedCreditorRows: Record<string, string>[];
   vatRows: Record<string, string>[];
-  counts: { trialBalance: number; profitLoss: number; balanceSheet: number; invoices: number; bankTransactions: number; manualJournals: number; vatRows: number };
+  counts: { trialBalance: number; profitLoss: number; balanceSheet: number; agedDebtors: number; agedCreditors: number; invoices: number; bankTransactions: number; manualJournals: number; vatRows: number };
   // Per-source failures. Populated when one report/endpoint fails but others
   // succeed, so a single broken source degrades gracefully instead of failing
   // the whole sync (each source below is fetched independently).
@@ -81,14 +83,37 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     reference: journal.manualJournalID || `journal-${index + 1}`,
   })));
 
+  // Aged debtors/creditors are the outstanding (amountDue > 0) sales/purchase
+  // invoices we already fetched — no extra API call or scope needed.
+  const agedDebtorRows = invoices.filter((invoice) => String(invoice.type).startsWith("ACCREC") && number(invoice.amountDue) > 0).map((invoice) => agedRow(invoice, "customer_name", asOfDate));
+  const agedCreditorRows = invoices.filter((invoice) => String(invoice.type).startsWith("ACCPAY") && number(invoice.amountDue) > 0).map((invoice) => agedRow(invoice, "supplier_name", asOfDate));
+
   const vatRows = [...invoiceRows, ...bankRows, ...journalRows];
   return {
     trialBalanceRows,
     profitLossRows,
     balanceSheetRows,
+    agedDebtorRows,
+    agedCreditorRows,
     vatRows,
-    counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, balanceSheet: balanceSheetRows.length, invoices: invoices.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, vatRows: vatRows.length },
+    counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, balanceSheet: balanceSheetRows.length, agedDebtors: agedDebtorRows.length, agedCreditors: agedCreditorRows.length, invoices: invoices.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, vatRows: vatRows.length },
     warnings,
+  };
+}
+
+// One outstanding invoice → an aged debtor/creditor line. Headers match the
+// analyzer's column-detection keys so it maps them without a manual mapping.
+function agedRow(invoice: Invoice, nameKey: "customer_name" | "supplier_name", asOfDate: string) {
+  const dueDate = xeroDateString(invoice.dueDate);
+  const daysOverdue = dueDate ? Math.max(0, Math.floor((Date.parse(asOfDate) - Date.parse(dueDate)) / 86_400_000)) : 0;
+  return {
+    [nameKey]: String(invoice.contact?.name ?? ""),
+    invoice_number: String(invoice.invoiceNumber ?? invoice.invoiceID ?? ""),
+    invoice_date: xeroDateString(invoice.date),
+    due_date: dueDate,
+    days_overdue: String(daysOverdue),
+    amount: String(number(invoice.amountDue)),
+    status: String(invoice.status ?? ""),
   };
 }
 

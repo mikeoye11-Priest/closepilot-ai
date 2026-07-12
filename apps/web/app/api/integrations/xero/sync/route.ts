@@ -73,7 +73,7 @@ async function runXeroSync({ supabase, connection, syncId, sessionUserId, body, 
     await supabase.from("accounting_sync_runs").update({ status: "running", started_at: new Date().toISOString() }).eq("id", syncId);
     const xero = await authenticatedXeroClient(supabase, connection);
     const sync = await fetchXeroSyncData(xero, connection.external_tenant_id, asOfDate);
-    const imported = sync.counts.trialBalance + sync.counts.profitLoss + sync.counts.balanceSheet + sync.counts.vatRows;
+    const imported = sync.counts.trialBalance + sync.counts.profitLoss + sync.counts.balanceSheet + sync.counts.agedDebtors + sync.counts.agedCreditors + sync.counts.vatRows;
     // Only a total shutout is a failure; a partial sync completes with whatever
     // came through and surfaces which source(s) failed via warnings.
     if (imported === 0 && sync.warnings.length) throw new Error(`Xero returned no data — ${sync.warnings.join("; ")}`);
@@ -98,11 +98,15 @@ function xeroParsedFiles(sync: Awaited<ReturnType<typeof fetchXeroSyncData>>, or
   const tbHeaders = ["account_code", "account_name", "debit", "credit", "balance"];
   const plHeaders = ["category", "description", "amount"];
   const bsHeaders = ["category", "item", "amount"];
+  const arHeaders = ["customer_name", "invoice_number", "invoice_date", "due_date", "days_overdue", "amount", "status"];
+  const apHeaders = ["supplier_name", "invoice_number", "invoice_date", "due_date", "days_overdue", "amount", "status"];
   const vatHeaders = ["date", "type", "party", "description", "net_amount", "vat_amount", "gross_amount", "vat_code", "nominal_code", "reference", "source_system"];
   return [
     { upload: { ...createUpload(`${prefix}-xero-trial-balance-${asOfDate}.csv`, sync.trialBalanceRows.length), fileType: "trial_balance", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: tbHeaders, rows: sync.trialBalanceRows, isParsed: true },
     { upload: { ...createUpload(`${prefix}-xero-profit-loss-${asOfDate}.csv`, sync.profitLossRows.length), fileType: "profit_loss", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: plHeaders, rows: sync.profitLossRows, isParsed: true },
     { upload: { ...createUpload(`${prefix}-xero-balance-sheet-${asOfDate}.csv`, sync.balanceSheetRows.length), fileType: "balance_sheet", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: bsHeaders, rows: sync.balanceSheetRows, isParsed: true },
+    { upload: { ...createUpload(`${prefix}-xero-aged-debtors-${asOfDate}.csv`, sync.agedDebtorRows.length), fileType: "aged_debtors", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: arHeaders, rows: sync.agedDebtorRows, isParsed: true },
+    { upload: { ...createUpload(`${prefix}-xero-aged-creditors-${asOfDate}.csv`, sync.agedCreditorRows.length), fileType: "aged_creditors", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: apHeaders, rows: sync.agedCreditorRows, isParsed: true },
     { upload: { ...createUpload(`${prefix}-xero-vat-transactions-${asOfDate}.csv`, sync.vatRows.length), fileType: "vat_report", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: vatHeaders, rows: sync.vatRows, isParsed: true },
   ];
 }
