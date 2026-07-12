@@ -19,6 +19,7 @@ const CREDIT_KEYS = ["credit","credits","cr","credit_amount"];
 const AR_AMOUNT_KEYS = ["over_60","60_days","60_plus","90_days","120_days","over_90","over_120","days_31_60","days_61_90","days_91_plus","overdue","due","due_local","overdue_balance","amount","balance","outstanding","total","total_outstanding","net_balance"];
 const AP_AMOUNT_KEYS = ["amount","balance","outstanding","invoice_amount","net_amount","total","total_due","due","due_local","days_31_60","days_61_90","days_91_plus","value","gross","net"];
 const VAT_AMOUNT_KEYS = ["vat_amount","tax_amount","vat","tax","gst_amount","vat_value","tax_value"];
+const VAT_TYPE_KEYS = ["type","transaction_type","vat_direction","direction","supply_type"];
 
 export function runReconciliationEngine(files: ReconciliationFile[]): ReconciliationResult {
   const parsed = files.filter((file) => file.isParsed);
@@ -116,8 +117,8 @@ export function runReconciliationEngine(files: ReconciliationFile[]): Reconcilia
   }
 
   if (tbFile && vatFile) {
-    const vatTotal = vatReturnNetAmount(vatFile.rows) ?? Math.abs(sumRows(vatFile.rows, VAT_AMOUNT_KEYS));
-    const tbVatRows = matchingRows(tbFile.rows, [/vat\s*control|vat\s*liabilit|vat\s*output|vat\s*input|tax\s*control|tax payable/i]);
+    const vatTotal = vatReturnNetAmount(vatFile.rows) ?? vatNetByType(vatFile.rows) ?? Math.abs(sumRows(vatFile.rows, VAT_AMOUNT_KEYS));
+    const tbVatRows = matchingRows(tbFile.rows, [/\bvat\b|\bgst\b|sales\s*tax|vat\s*control|vat\s*liabilit|tax\s*control|tax payable/i]);
     const tbVat = Math.abs(sumRows(tbVatRows, BALANCE_KEYS));
     const diff = Math.abs(vatTotal - tbVat);
     const passed = tbVat > 0 && diff <= tolerance(tbVat);
@@ -217,6 +218,21 @@ function vatReturnNetAmount(rows: Record<string, string>[]): number | null {
   const boxFive = rows.find((row) => /box\s*5|net vat/i.test(rowText(row)));
   if (!boxFive) return null;
   return Math.abs(firstNumeric(boxFive));
+}
+
+// Net VAT position (output minus input) using each row's transaction type, so a
+// transaction-level VAT report is compared to the VAT control account on a net
+// basis rather than a gross sum of both sides. Credit notes already carry negated
+// amounts, so they net down the correct side. Null when rows carry no direction.
+function vatNetByType(rows: Record<string, string>[]): number | null {
+  if (!rows.some((row) => val(row, VAT_TYPE_KEYS))) return null;
+  let net = 0;
+  for (const row of rows) {
+    const vat = numeric(val(row, VAT_AMOUNT_KEYS));
+    const isInput = /purchase|input|payable|accpay|bill|expense/i.test(val(row, VAT_TYPE_KEYS));
+    net += isInput ? -vat : vat;
+  }
+  return Math.abs(net);
 }
 
 function bankStatementBalance(rows: Record<string, string>[]): number | null {
