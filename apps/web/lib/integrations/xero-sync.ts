@@ -28,17 +28,21 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     }
   };
 
-  const [trialBalanceRows, profitLossRows, balanceSheetRows, invoices, bankTransactions, manualJournals] = await Promise.all([
-    safe("trial balance", [] as Record<string, string>[], async () =>
+  // Xero caps a tenant at 5 concurrent requests (429 with
+  // x-rate-limit-problem: concurrent beyond that). Fetch the six sources through
+  // a small pool so we never exceed the limit — firing all six at once was
+  // getting invoices rejected while the rest slipped through.
+  const [trialBalanceRows, profitLossRows, balanceSheetRows, invoices, bankTransactions, manualJournals] = await runWithConcurrency<Record<string, string>[] | Invoice[] | BankTransaction[] | ManualJournal[]>(4, [
+    () => safe("trial balance", [] as Record<string, string>[], async () =>
       flattenTrialBalance((await xero.accountingApi.getReportTrialBalance(xeroTenantId, asOfDate, false)).body.reports?.[0]?.rows ?? [])),
-    safe("profit & loss", [] as Record<string, string>[], async () =>
+    () => safe("profit & loss", [] as Record<string, string>[], async () =>
       flattenProfitAndLoss((await xero.accountingApi.getReportProfitAndLoss(xeroTenantId, plFromDate, asOfDate)).body.reports?.[0]?.rows ?? [])),
-    safe("balance sheet", [] as Record<string, string>[], async () =>
+    () => safe("balance sheet", [] as Record<string, string>[], async () =>
       flattenBalanceSheet((await xero.accountingApi.getReportBalanceSheet(xeroTenantId, asOfDate)).body.reports?.[0]?.rows ?? [])),
-    safe("invoices", [] as Invoice[], () => fetchAllPages(100, (page) => xero.accountingApi.getInvoices(xeroTenantId, modifiedSince, undefined, "Date ASC", undefined, undefined, undefined, ["AUTHORISED", "PAID"], page, false, false, 4, false, 100), (body) => body.invoices ?? [])),
-    safe("bank transactions", [] as BankTransaction[], () => fetchAllPages(100, (page) => xero.accountingApi.getBankTransactions(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 4, 100), (body) => body.bankTransactions ?? [])),
-    safe("manual journals", [] as ManualJournal[], () => fetchAllPages(100, (page) => xero.accountingApi.getManualJournals(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 100), (body) => body.manualJournals ?? [])),
-  ]);
+    () => safe("invoices", [] as Invoice[], () => fetchAllPages(100, (page) => xero.accountingApi.getInvoices(xeroTenantId, modifiedSince, undefined, "Date ASC", undefined, undefined, undefined, ["AUTHORISED", "PAID"], page, false, false, 4, false, 100), (body) => body.invoices ?? [])),
+    () => safe("bank transactions", [] as BankTransaction[], () => fetchAllPages(100, (page) => xero.accountingApi.getBankTransactions(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 4, 100), (body) => body.bankTransactions ?? [])),
+    () => safe("manual journals", [] as ManualJournal[], () => fetchAllPages(100, (page) => xero.accountingApi.getManualJournals(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 100), (body) => body.manualJournals ?? [])),
+  ]) as [Record<string, string>[], Record<string, string>[], Record<string, string>[], Invoice[], BankTransaction[], ManualJournal[]];
 
   const invoiceRows = invoices.flatMap((invoice) => (invoice.lineItems ?? []).map((line, index) => vatRow({
     date: invoice.date,
@@ -86,6 +90,22 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, balanceSheet: balanceSheetRows.length, invoices: invoices.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, vatRows: vatRows.length },
     warnings,
   };
+}
+
+// Run tasks with at most `limit` in flight, preserving input order in the
+// result. Keeps concurrent Xero calls under the tenant's 5-request ceiling.
+async function runWithConcurrency<T>(limit: number, tasks: Array<() => Promise<T>>): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < tasks.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await tasks[index]();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+  return results;
 }
 
 async function fetchAllPages<TBody, TItem>(pageSize: number, request: (page: number) => Promise<{ body: TBody }>, items: (body: TBody) => TItem[]) {
