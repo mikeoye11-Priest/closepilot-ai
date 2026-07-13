@@ -62,7 +62,9 @@ const rawVatAssuranceRules: AssuranceRule[] = [
 
   // ── Missing VAT rules identified in review ──────────────────────────────────
 
-  { id: "VAT_051", layer: 4, name: "VAT_CONTROL_RECONCILIATION", fileType: "vat_report", category: "vat", severity: "high", confidence: "high", type: "threshold", field: ["vat_amount","tax_amount","vat","tax"], comparator: "gt", threshold: 0, message: "VAT report contains {{count}} transactions totalling {{total}} — reconcile to TB VAT control account", description: "The sum of VAT amounts in the VAT report must agree to the VAT control account in the trial balance. A discrepancy indicates a posting error or timing difference requiring investigation before return submission.", detail: "{{count}} VAT transactions with total VAT of {{total}} detected. Cross-reference this total to the TB VAT control account balance.", impact: "VAT return error if control account and report disagree", recommendation: "Reconcile total VAT from the VAT report to the TB VAT control account — investigate any difference before submitting the return.", evidenceStrength: "deterministic" },
+  // VAT-vs-control is reconciled by REC_003 (reconciliation-engine) on a NET
+  // basis. This threshold rule summed VAT gross (both output and input) and fired
+  // on any VAT at all, contradicting REC_003's net result — so it was retired.
 
   { id: "VAT_052", layer: 4, name: "VAT_BOX_1_OUTPUT_COMPLETENESS", fileType: "vat_report", category: "vat", severity: "high", confidence: "high", type: "existence", field: ["vat_code"], keywords: ["S","T1","SR","STD","20%","standard"], mustExist: true, nameField: ["description"], message: "Standard-rated output VAT present — confirm Box 1 amount is complete", description: "Box 1 of the VAT return must include all standard-rated output tax for the period. Verify the VAT report total agrees to Box 1.", detail: "Standard-rated output VAT transactions detected — confirm Box 1 completeness.", impact: "Under-declaration in Box 1 creates HMRC assessment risk", recommendation: "Reconcile all output VAT to Box 1 of the VAT return — ensure no standard-rated sales are omitted.", evidenceStrength: "deterministic" },
 
