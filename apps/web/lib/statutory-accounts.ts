@@ -63,8 +63,11 @@ export function buildStatutoryAccounts(statements: SyncStatements, opts: { full?
     profitForYear: pl.netProfit, priorProfitForYear: prior.netProfit,
   };
 
+  const basisOfPreparation = opts.full
+    ? "in accordance with FRS 102 and the Companies Act 2006"
+    : "in accordance with FRS 102 Section 1A 'Small Entities' and the Companies Act 2006";
   const notes: StatNote[] = [
-    { title: "Accounting policies", body: "Basis of preparation — These financial statements have been prepared in accordance with FRS 102 Section 1A 'Small Entities' and the Companies Act 2006, under the historical cost convention. They have been drafted by ClosePilot from the accounting records maintained in Xero and are subject to the accountant's review and the directors' approval. Turnover represents amounts receivable for goods and services, net of VAT. Tangible fixed assets are stated at cost less accumulated depreciation. Debtors and creditors are recognised at amortised cost." },
+    { title: "Accounting policies", body: `Basis of preparation — These financial statements have been prepared ${basisOfPreparation}, under the historical cost convention. They have been drafted by ClosePilot from the accounting records maintained in Xero and are subject to the accountant's review and the directors' approval. Turnover represents amounts receivable for goods and services, net of VAT. Tangible fixed assets are stated at cost less accumulated depreciation. Debtors and creditors are recognised at amortised cost.` },
     { title: "Turnover", body: "Turnover recognised in the period, analysed by class.", rows: flat(pl.income).map((l) => ({ label: l.name, value: l.amount, prior: l.prior })) },
     ...(bs.fixedAssets.length ? [{ title: "Tangible fixed assets", body: "Net book value by class of asset.", rows: [...flat(bs.fixedAssets).map((l) => ({ label: l.name, value: l.amount, prior: l.prior })), { label: "Net book value", value: bs.totalFixed, prior: bs.priorFixed, strong: true }] }] : []),
     { title: "Debtors: amounts falling due within one year", rows: [{ label: "Trade and other debtors", value: sofp.debtors, prior: sofp.priorDebtors, strong: true }] },
@@ -213,7 +216,8 @@ export function renderStatutoryAccountsHtml(pack: ReturnType<typeof buildStatuto
     ${row("Operating profit", is.operatingProfit, is.priorOperatingProfit, "sub strong")}
     ${row("Profit for the financial period", is.profitForYear, is.priorProfitForYear, "total")}
   </table>
-  ${full ? `
+  ${full && !hasComparatives ? `<p class="sub" style="color:#b45309;font-size:12px">The Statement of Cash Flows and Statement of Changes in Equity require prior-period comparatives, which are not available for this period. They have been omitted to avoid misleading figures — run a sync covering a prior period to include them.</p>` : ""}
+  ${full && hasComparatives ? `
   <h2>Statement of Changes in Equity</h2>
   <p class="sub">For the period ended ${asOf}</p>
   <table>

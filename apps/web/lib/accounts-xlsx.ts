@@ -171,5 +171,33 @@ export function buildStatutoryWorkbook(pack: ReturnType<typeof buildStatutoryAcc
   tax.addRow([]);
   tax.addRow([`${tc.band}. Estimated over a ${tc.periodDays}-day period. Excludes capital allowances, other disallowables and associated companies — review before finalising. Ref: taxable profits × effective rate (row ${ttpRow}).`]).getCell(1).font = { color: { argb: MUTED }, size: 9 };
 
+  // Full FRS 102 extras (comparatives required for meaningful movements)
+  if (pack.full && hasComparatives) {
+    const ce = pack.changesInEquity;
+    const eqs = wb.addWorksheet("Changes in Equity");
+    heading(eqs, `${pack.meta.companyName} — Statement of Changes in Equity`, `For the period ended ${pack.meta.asOfDate}`, 2);
+    const oRow = line(eqs, "Equity at start of period", [ce.openingEquity]);
+    line(eqs, "Profit for the financial period", [ce.profit]);
+    const othRow = line(eqs, "Dividends and other movements", [ce.other]);
+    line(eqs, "Equity at end of period", [{ formula: `SUM(B${oRow}:B${othRow})`, result: ce.closingEquity }], { bold: true, double: true });
+
+    const cf = pack.cashFlow;
+    const cfs = wb.addWorksheet("Cash Flow");
+    heading(cfs, `${pack.meta.companyName} — Statement of Cash Flows`, `For the period ended ${pack.meta.asOfDate} · indirect method`, 2);
+    section(cfs, "Operating activities");
+    const opRow = line(cfs, "Operating profit", [cf.operatingProfit]);
+    line(cfs, "Depreciation", [cf.depreciation]);
+    line(cfs, "(Increase)/decrease in debtors", [-cf.dDebtors]);
+    const crRow = line(cfs, "Increase/(decrease) in creditors", [cf.dCreditors]);
+    const opsRow = line(cfs, "Net cash from operating activities", [{ formula: `SUM(B${opRow}:B${crRow})`, result: cf.netCashOps }], { bold: true, top: true });
+    section(cfs, "Investing activities");
+    const capRow = line(cfs, "Purchase of tangible fixed assets", [cf.capex]);
+    section(cfs, "Financing activities");
+    const finRow = line(cfs, "Financing and other movements", [cf.financingOther]);
+    const chgRow = line(cfs, "Net increase/(decrease) in cash", [{ formula: `B${opsRow}+B${capRow}+B${finRow}`, result: cf.cashChange }], { bold: true, top: true });
+    const startRow = line(cfs, "Cash at start of period", [cf.openingCash]);
+    line(cfs, "Cash at end of period", [{ formula: `B${chgRow}+B${startRow}`, result: cf.closingCash }], { bold: true, double: true });
+  }
+
   return wb;
 }
