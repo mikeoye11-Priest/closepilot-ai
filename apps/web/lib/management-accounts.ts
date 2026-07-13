@@ -10,6 +10,7 @@ type Row = Record<string, string>;
 
 export type SyncStatements = {
   asOfDate: string;
+  periodStart?: string;
   currency?: string;
   companyName?: string;
   companyIndustry?: string;
@@ -185,7 +186,7 @@ export function buildManagementAccounts(statements: SyncStatements, findings: Ma
   };
 
   return {
-    meta: { companyName: statements.companyName ?? "Company", asOfDate: statements.asOfDate, currency: statements.currency ?? "GBP" },
+    meta: { companyName: statements.companyName ?? "Company", asOfDate: statements.asOfDate, periodStart: statements.periodStart ?? `${statements.asOfDate.slice(0, 4)}-01-01`, currency: statements.currency ?? "GBP" },
     pl, bs, debtors, creditors, cashBalance, unreconciled, kpis, prior,
     observations: buildObservations(pl, bs, debtors, creditors, cashBalance, kpis, findings, prior),
     notes: buildNotes(pl, bs, debtors, creditors, cashBalance),
@@ -289,7 +290,7 @@ export function renderManagementAccountsHtml(pack: ReturnType<typeof buildManage
   <header>
     <div class="eyebrow">Management Accounts</div>
     <h1>${esc(meta.companyName)}</h1>
-    <div class="sub">Period to ${asOf} · Prepared by ClosePilot · ${esc(meta.currency)}</div>
+    <div class="sub">Period ${new Date(meta.periodStart).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} to ${asOf} · Prepared by ClosePilot · ${esc(meta.currency)}</div>
   </header>
 
   <h2>Key performance indicators</h2>

@@ -17,15 +17,28 @@ export type XeroSyncData = {
   // succeed, so a single broken source degrades gracefully instead of failing
   // the whole sync (each source below is fetched independently).
   warnings: string[];
+  // The accounting-period start used (from the org's financial-year settings).
+  periodStart: string;
 };
 
 export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, asOfDate: string, modifiedSince?: Date): Promise<XeroSyncData> {
-  const plFromDate = `${asOfDate.slice(0, 4)}-01-01`;
-  // Prior-period comparatives: same year-to-date window, one year earlier.
-  const priorYear = Number(asOfDate.slice(0, 4)) - 1;
-  const priorFromDate = `${priorYear}-01-01`;
-  const priorToDate = `${priorYear}${asOfDate.slice(4)}`;
   const warnings: string[] = [];
+  // Use the company's real accounting-period start from Xero's financial-year
+  // settings (not an assumed 1 January), so P&L and tax cover the correct period
+  // for any year-end. Falls back to 1 January if the settings are unavailable.
+  let periodStart = `${asOfDate.slice(0, 4)}-01-01`;
+  try {
+    const org = (await xero.accountingApi.getOrganisations(xeroTenantId)).body.organisations?.[0];
+    if (org?.financialYearEndMonth && org?.financialYearEndDay) {
+      periodStart = financialYearStart(asOfDate, Number(org.financialYearEndMonth), Number(org.financialYearEndDay));
+    }
+  } catch (error) {
+    warnings.push(`financial year: ${describeXeroError(error)}`);
+  }
+  const plFromDate = periodStart;
+  // Prior-period comparatives: the same window one year earlier.
+  const priorFromDate = shiftYear(periodStart, -1);
+  const priorToDate = shiftYear(asOfDate, -1);
   // Each source is fetched (and parsed) independently: one failing report or
   // endpoint records a warning and yields an empty result instead of rejecting
   // the whole Promise.all and losing every other source.
@@ -170,7 +183,25 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     vatRows,
     counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, balanceSheet: balanceSheetRows.length, agedDebtors: agedDebtorRows.length, agedCreditors: agedCreditorRows.length, invoices: invoices.length, creditNotes: authorisedCreditNotes.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, bankAccounts: bankReconRows.length, vatRows: vatRows.length },
     warnings,
+    periodStart,
   };
+}
+
+// The financial-year start containing asOfDate, from the org's FY-end day/month:
+// the day after the FY end that precedes asOfDate.
+function financialYearStart(asOfDate: string, endMonth: number, endDay: number): string {
+  const asOf = Date.parse(asOfDate);
+  const year = Number(asOfDate.slice(0, 4));
+  const endThisYear = Date.UTC(year, endMonth - 1, endDay);
+  const precedingEnd = endThisYear < asOf ? endThisYear : Date.UTC(year - 1, endMonth - 1, endDay);
+  const start = new Date(precedingEnd);
+  start.setUTCDate(start.getUTCDate() + 1);
+  return start.toISOString().slice(0, 10);
+}
+
+// Shift an ISO date by whole years, preserving month/day.
+function shiftYear(date: string, delta: number): string {
+  return `${Number(date.slice(0, 4)) + delta}${date.slice(4)}`;
 }
 
 // One outstanding invoice → an aged debtor/creditor line. Headers match the
