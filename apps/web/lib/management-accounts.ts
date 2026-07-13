@@ -10,6 +10,7 @@ export type SyncStatements = {
   asOfDate: string;
   currency?: string;
   companyName?: string;
+  companyIndustry?: string;
   profitLoss: Row[];
   priorProfitLoss?: Row[];
   balanceSheet: Row[];
