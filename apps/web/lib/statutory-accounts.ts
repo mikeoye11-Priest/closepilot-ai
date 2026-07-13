@@ -1,4 +1,4 @@
-// Statutory financial accounts (FRS 102 Section 1A, small company format)
+// Statutory financial accounts (FRS 102 Section 1A or full FRS 102 draft)
 // generated from the synced Xero ledger, with prior-period comparatives.
 // Reuses the management-accounts data engine and re-presents it in statutory
 // statement layouts with notes and an approval block. Deterministic — no AI.
@@ -171,8 +171,11 @@ export function renderStatutoryAccountsHtml(pack: ReturnType<typeof buildStatuto
     <p>${dr.principalActivity ? `The principal activity of the company during the period was that of ${esc(dr.principalActivity)}.` : "The principal activity of the company during the period is to be confirmed by the directors."}</p>
     <h3>Directors</h3>
     <p>The directors who served during the period are set out in the company's statutory records — insert director names before issue.</p>
+    ${full ? `
+    <h3>Directors' responsibilities</h3>
+    <p>The directors are responsible for preparing the strategic report, directors' report and financial statements in accordance with applicable law and accounting standards.</p>` : `
     <h3>Small companies exemption</h3>
-    <p>This report has been prepared in accordance with the provisions applicable to companies subject to the small companies regime under Part 15 of the Companies Act 2006.</p>
+    <p>This report has been prepared in accordance with the provisions applicable to companies subject to the small companies regime under Part 15 of the Companies Act 2006.</p>`}
     <div class="sig"><div class="line"></div>Director &nbsp;·&nbsp; Date: ______________</div>
   </div>
   ${full ? `
@@ -266,7 +269,7 @@ export function renderStatutoryAccountsHtml(pack: ReturnType<typeof buildStatuto
   <div class="approval">
     <strong>Approval</strong>
     <p>${full
-      ? `These financial statements have been prepared in accordance with FRS 102 and the Companies Act 2006. The financial statements are subject to audit; the independent auditor's report is to be attached.`
+      ? `These financial statements have been prepared in accordance with FRS 102 and the Companies Act 2006. Audit status and any auditor's report must be confirmed by the preparer before issue.`
       : `These financial statements have been prepared in accordance with the provisions applicable to companies subject to the small companies regime and in accordance with FRS 102 Section 1A. For the period ended ${asOf} the company was entitled to exemption from audit under section 477 of the Companies Act 2006. The members have not required the company to obtain an audit of its financial statements.`}</p>
     <p>The financial statements were approved by the board of directors and authorised for issue.</p>
     <div class="sig"><div class="line"></div>Director &nbsp;·&nbsp; Date: ______________</div>

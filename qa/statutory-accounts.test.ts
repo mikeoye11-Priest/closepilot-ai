@@ -58,8 +58,11 @@ test("small and full basis wording do not conflict", () => {
   assert.match(small, /Section 1A/);
   assert.match(small, /section 477/);
 
-  // Full FRS 102: subject to audit, and NO small-company exemption / Section 1A wording anywhere
-  assert.match(full, /subject to audit/);
+  // Full FRS 102: audit status is a review item, with no small-company exemption / Section 1A wording anywhere.
+  assert.match(full, /Audit status and any auditor's report must be confirmed/);
+  assert.doesNotMatch(full, /subject to audit/);
+  assert.doesNotMatch(full, /Small companies exemption/);
+  assert.doesNotMatch(full, /small companies regime/);
   assert.doesNotMatch(full, /section 477/);
   assert.doesNotMatch(full, /Section 1A/);
 });
