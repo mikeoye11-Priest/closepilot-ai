@@ -402,11 +402,10 @@ function buildValidationChecks(files: ParsedFile[]): ValidationCheck[] {
     });
   });
 
-  // BS integrity
-  files.filter((f) => f.upload.fileType === "balance_sheet" && f.isParsed).forEach((f) => {
-    const equation = balanceSheetEquation(f.rows);
-    checks.push({ id: `val_bs_${f.upload.id}`, tenantId: f.upload.tenantId, companyId: f.upload.companyId, name: "Balance sheet equation", status: equation.diff <= 1 ? "passed" : "failed", detail: equation.diff <= 1 ? `Assets ${fc(equation.assets)} equal liabilities ${fc(equation.liabilities)} + equity ${fc(equation.equity)}.` : `Assets ${fc(equation.assets)} vs liabilities ${fc(equation.liabilities)} + equity ${fc(equation.equity)} — difference ${fc(equation.diff)}.` });
-  });
+  // BS integrity is validated by REC_004 (reconciliation-engine), which is signed
+  // and reads the section structure. The name-based totalLine fallback here set
+  // liabilities/equity to 0 for section-grouped exports (e.g. Xero), producing a
+  // false "does not balance" blocker — so this duplicate check was removed.
 
   // VAT coding completeness
   files.filter((f) => f.upload.fileType === "vat_report" && f.isParsed).forEach((f) => {
