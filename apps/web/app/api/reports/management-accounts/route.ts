@@ -72,9 +72,10 @@ export async function GET(request: Request) {
   const findings = run.result_summary?.analysis?.findings ?? [];
   const pack = buildManagementAccounts(statements, findings);
   const aiCommentary = aiEnabled ? await aiNarrative(managementAccountsFactSheet(pack, findings), pack.meta.companyName, statements.asOfDate) : undefined;
-  const html = renderManagementAccountsHtml(pack, { autoPrint, aiCommentary });
+  const isWord = format === "doc" || format === "word";
+  const html = renderManagementAccountsHtml(pack, { autoPrint, aiCommentary, word: isWord });
 
-  if (format === "doc" || format === "word") {
+  if (isWord) {
     const filename = `${slug(pack.meta.companyName)}-management-accounts-${statements.asOfDate}.doc`;
     return new NextResponse(html, { headers: { "Content-Type": "application/msword", "Content-Disposition": `attachment; filename="${filename}"` } });
   }
