@@ -11,6 +11,7 @@ export type SyncStatements = {
   currency?: string;
   companyName?: string;
   profitLoss: Row[];
+  priorProfitLoss?: Row[];
   balanceSheet: Row[];
   agedDebtors: Row[];
   agedCreditors: Row[];
@@ -20,14 +21,15 @@ export type SyncStatements = {
 
 export type ManagementAccountsFinding = { severity?: string; title?: string; category?: string; description?: string; expectedImpact?: string };
 type Note = { title: string; body?: string; rows?: { label: string; value: number }[] };
-type Line = { name: string; amount: number };
-type Section = { title: string; lines: Line[]; total: number };
+type Line = { name: string; amount: number; prior: number };
+type Section = { title: string; lines: Line[]; total: number; priorTotal: number };
 
 const num = (value: unknown): number => {
   const parsed = Number(String(value ?? "").replace(/[£$,\s]/g, "").replace(/^\((.*)\)$/, "-$1"));
   return Number.isFinite(parsed) ? parsed : 0;
 };
 const sumSections = (sections: Section[]) => sections.reduce((total, section) => total + section.total, 0);
+const sumPrior = (sections: Section[]) => sections.reduce((total, section) => total + section.priorTotal, 0);
 
 const esc = (value: string) => value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
 const money = (value: number) => {
@@ -46,10 +48,10 @@ function groupSections(rows: Row[], categoryKey: string, nameKey: string): Secti
     const name = String(row[nameKey] ?? "").trim();
     if (!name) continue;
     const lines = map.get(title) ?? [];
-    lines.push({ name, amount: num(row.amount) });
+    lines.push({ name, amount: num(row.amount), prior: num(row.prior_amount) });
     map.set(title, lines);
   }
-  return [...map.entries()].map(([title, lines]) => ({ title, lines, total: lines.reduce((sum, line) => sum + line.amount, 0) }));
+  return [...map.entries()].map(([title, lines]) => ({ title, lines, total: lines.reduce((sum, line) => sum + line.amount, 0), priorTotal: lines.reduce((sum, line) => sum + line.prior, 0) }));
 }
 
 function buildProfitAndLoss(rows: Row[]) {
@@ -88,7 +90,12 @@ function buildBalanceSheet(rows: Row[]) {
   const netCurrentAssets = totalCurrentAssets - totalLiabilities;
   const netAssets = totalAssets - totalLiabilities;
   const totalEquity = sumSections(equity);
-  return { fixedAssets, currentAssets, liabilities, equity, totalFixed, totalCurrentAssets, totalAssets, totalLiabilities, netCurrentAssets, netAssets, totalEquity };
+  const priorFixed = sumPrior(fixedAssets);
+  const priorCurrentAssets = sumPrior(currentAssets);
+  const priorLiabilities = sumPrior(liabilities);
+  const priorNetAssets = priorFixed + priorCurrentAssets - priorLiabilities;
+  const priorEquity = sumPrior(equity);
+  return { fixedAssets, currentAssets, liabilities, equity, totalFixed, totalCurrentAssets, totalAssets, totalLiabilities, netCurrentAssets, netAssets, totalEquity, priorFixed, priorCurrentAssets, priorLiabilities, priorNetAssets, priorEquity };
 }
 
 function aging(rows: Row[]) {
@@ -112,9 +119,13 @@ type BS = ReturnType<typeof buildBalanceSheet>;
 type Aged = ReturnType<typeof aging>;
 type Kpis = { grossMargin: number | null; netMargin: number | null; currentRatio: number | null; debtorDays: number | null; creditorDays: number | null };
 
-function buildObservations(pl: PL, bs: BS, debtors: Aged, creditors: Aged, cashBalance: number, kpis: Kpis, findings: ManagementAccountsFinding[]): string[] {
+function buildObservations(pl: PL, bs: BS, debtors: Aged, creditors: Aged, cashBalance: number, kpis: Kpis, findings: ManagementAccountsFinding[], prior: { hasComparatives: boolean; revenue: number; netProfit: number }): string[] {
   const obs: string[] = [];
   obs.push(`Revenue for the period was ${money(pl.revenue)}, producing a gross profit of ${money(pl.grossProfit)} (${pct(kpis.grossMargin)} margin) and a net ${pl.netProfit >= 0 ? "profit" : "loss"} of ${money(pl.netProfit)} (${pct(kpis.netMargin)}).`);
+  if (prior.hasComparatives && prior.revenue) {
+    const growth = ((pl.revenue - prior.revenue) / Math.abs(prior.revenue)) * 100;
+    obs.push(`Against the prior period, revenue ${growth >= 0 ? "grew" : "fell"} ${Math.abs(growth).toFixed(0)}% from ${money(prior.revenue)} to ${money(pl.revenue)}, with net profit moving from ${money(prior.netProfit)} to ${money(pl.netProfit)}.`);
+  }
   obs.push(`The balance sheet shows net assets of ${money(bs.netAssets)}, a current ratio of ${ratio(kpis.currentRatio)} and a cash position of ${money(cashBalance)}.`);
   obs.push(`Trade debtors are ${money(debtors.total)} (${days(kpis.debtorDays)}) against trade creditors of ${money(creditors.total)} (${days(kpis.creditorDays)}).`);
   const overdue = debtors.buckets.d61_90 + debtors.buckets.d90plus;
@@ -148,6 +159,7 @@ function buildNotes(pl: PL, bs: BS, debtors: Aged, creditors: Aged, cashBalance:
 
 export function buildManagementAccounts(statements: SyncStatements, findings: ManagementAccountsFinding[] = []) {
   const pl = buildProfitAndLoss(statements.profitLoss ?? []);
+  const priorPl = buildProfitAndLoss(statements.priorProfitLoss ?? []);
   const bs = buildBalanceSheet(statements.balanceSheet ?? []);
   const debtors = aging(statements.agedDebtors ?? []);
   const creditors = aging(statements.agedCreditors ?? []);
@@ -163,10 +175,16 @@ export function buildManagementAccounts(statements: SyncStatements, findings: Ma
     creditorDays: costBase ? (creditors.total / costBase) * 365 : null,
   };
 
+  const prior = {
+    hasComparatives: (statements.priorProfitLoss?.length ?? 0) > 0 || Math.abs(bs.priorNetAssets) > 0.5,
+    revenue: priorPl.revenue, cogs: priorPl.cogs, grossProfit: priorPl.grossProfit, overheads: priorPl.overheads, netProfit: priorPl.netProfit,
+    netAssets: bs.priorNetAssets, totalEquity: bs.priorEquity,
+  };
+
   return {
     meta: { companyName: statements.companyName ?? "Company", asOfDate: statements.asOfDate, currency: statements.currency ?? "GBP" },
-    pl, bs, debtors, creditors, cashBalance, unreconciled, kpis,
-    observations: buildObservations(pl, bs, debtors, creditors, cashBalance, kpis, findings),
+    pl, bs, debtors, creditors, cashBalance, unreconciled, kpis, prior,
+    observations: buildObservations(pl, bs, debtors, creditors, cashBalance, kpis, findings, prior),
     notes: buildNotes(pl, bs, debtors, creditors, cashBalance),
   };
 }
@@ -289,6 +307,7 @@ export function renderManagementAccountsHtml(pack: ReturnType<typeof buildManage
     ${kpiCard("Debtors", money(debtors.total))}
     ${kpiCard("Creditors", money(creditors.total))}
   </div>
+  ${pack.prior.hasComparatives ? `<p class="note">Prior period comparatives — revenue ${money(pack.prior.revenue)}, gross profit ${money(pack.prior.grossProfit)}, net profit ${money(pack.prior.netProfit)}, net assets ${money(pack.prior.netAssets)}.</p>` : ""}
 
   <h2>Commentary</h2>
   ${aiHtml}
