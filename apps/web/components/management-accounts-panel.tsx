@@ -43,6 +43,12 @@ export function ManagementAccountsPanel({ tenantId, companyId, companyName, vari
     anchor.rel = "noopener";
     anchor.click();
   };
+  const downloadIxbrl = () => {
+    const anchor = document.createElement("a");
+    anchor.href = `${base}&format=ixbrl`;
+    anchor.rel = "noopener";
+    anchor.click();
+  };
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-6">
@@ -72,6 +78,11 @@ export function ManagementAccountsPanel({ tenantId, companyId, companyName, vari
           <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold text-slate-700" onClick={openView}>
             Preview in browser
           </button>
+          {variant === "statutory" && (
+            <button className="rounded-lg border border-amber-400 bg-amber-50 px-4 py-2 text-sm font-bold text-amber-800" onClick={downloadIxbrl}>
+              Export iXBRL (draft)
+            </button>
+          )}
         </div>
 
         <p className="mt-4 text-xs text-slate-500">

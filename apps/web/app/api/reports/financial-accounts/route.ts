@@ -1,6 +1,7 @@
 import { requireApiSession } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase-server";
 import { buildStatutoryAccounts, renderStatutoryAccountsHtml } from "@/lib/statutory-accounts";
+import { renderIxbrl } from "@/lib/ixbrl";
 import type { SyncStatements } from "@/lib/management-accounts";
 import { NextResponse } from "next/server";
 
@@ -41,8 +42,14 @@ export async function GET(request: Request) {
   if (!statements?.profitLoss) return htmlPage("This review predates accounts-production support. Run a fresh Xero sync (Settings → Sync now), then reopen this page.", 409);
 
   const pack = buildStatutoryAccounts(statements);
-  const html = renderStatutoryAccountsHtml(pack, { autoPrint });
 
+  if (format === "ixbrl" || format === "xbrl") {
+    const companyNumber = url.searchParams.get("companyNumber") ?? "";
+    const filename = `${slug(pack.meta.companyName)}-accounts-${statements.asOfDate}.html`;
+    return new NextResponse(renderIxbrl(pack, companyNumber), { headers: { "Content-Type": "application/xhtml+xml; charset=utf-8", "Content-Disposition": `attachment; filename="${filename}"` } });
+  }
+
+  const html = renderStatutoryAccountsHtml(pack, { autoPrint });
   if (format === "doc" || format === "word") {
     const filename = `${slug(pack.meta.companyName)}-financial-statements-${statements.asOfDate}.doc`;
     return new NextResponse(html, { headers: { "Content-Type": "application/msword", "Content-Disposition": `attachment; filename="${filename}"` } });
