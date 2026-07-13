@@ -71,6 +71,14 @@ export async function GET(request: Request) {
 
   const findings = run.result_summary?.analysis?.findings ?? [];
   const pack = buildManagementAccounts(statements, findings);
+
+  if (format === "xlsx" || format === "excel") {
+    const { buildManagementWorkbook } = await import("@/lib/accounts-xlsx");
+    const buffer = await buildManagementWorkbook(pack).xlsx.writeBuffer();
+    const filename = `${slug(pack.meta.companyName)}-management-accounts-${statements.asOfDate}.xlsx`;
+    return new NextResponse(buffer as ArrayBuffer, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="${filename}"` } });
+  }
+
   const aiCommentary = aiEnabled ? await aiNarrative(managementAccountsFactSheet(pack, findings), pack.meta.companyName, statements.asOfDate) : undefined;
   const isWord = format === "doc" || format === "word";
   const html = renderManagementAccountsHtml(pack, { autoPrint, aiCommentary, word: isWord });

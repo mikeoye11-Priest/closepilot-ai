@@ -84,6 +84,7 @@ export function ManagementAccountsPanel({ tenantId, companyId, companyName, vari
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <FormatCard title="PDF" sub="Print-ready · opens in a tab" tone="primary" onClick={() => open("&print=1")} />
             <FormatCard title="Word (.doc)" sub="Editable in Microsoft Word" onClick={() => download("&format=doc")} />
+            <FormatCard title="Excel (.xlsx)" sub="Formatted · live formulas" onClick={() => download("&format=xlsx")} />
             <FormatCard title="Preview" sub="View in the browser" onClick={() => open("")} />
             {variant === "statutory" && <FormatCard title="iXBRL (draft)" sub="For Companies House filing" tone="amber" onClick={() => download("&format=ixbrl")} />}
           </div>

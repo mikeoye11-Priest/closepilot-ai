@@ -43,6 +43,13 @@ export async function GET(request: Request) {
 
   const pack = buildStatutoryAccounts(statements);
 
+  if (format === "xlsx" || format === "excel") {
+    const { buildStatutoryWorkbook } = await import("@/lib/accounts-xlsx");
+    const buffer = await buildStatutoryWorkbook(pack).xlsx.writeBuffer();
+    const filename = `${slug(pack.meta.companyName)}-financial-statements-${statements.asOfDate}.xlsx`;
+    return new NextResponse(buffer as ArrayBuffer, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="${filename}"` } });
+  }
+
   if (format === "ixbrl" || format === "xbrl") {
     const companyNumber = url.searchParams.get("companyNumber") ?? "";
     const filename = `${slug(pack.meta.companyName)}-accounts-${statements.asOfDate}.html`;
