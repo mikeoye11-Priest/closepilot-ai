@@ -32,7 +32,7 @@ function corporationTax(taxableProfits: number, periodDays: number) {
   return { rate: "25% less marginal relief", band: "Marginal relief applies", tax: taxableProfits * 0.25 - marginalRelief };
 }
 
-export function buildStatutoryAccounts(statements: SyncStatements) {
+export function buildStatutoryAccounts(statements: SyncStatements, opts: { full?: boolean } = {}) {
   const ma = buildManagementAccounts(statements);
   const { pl, bs, prior } = ma;
 
@@ -81,13 +81,32 @@ export function buildStatutoryAccounts(statements: SyncStatements) {
   const taxComputation = { profitBeforeTax, depreciation, taxableProfits, periodDays, rate: ct.rate, band: ct.band, tax: ct.tax };
   const directorsReport = { principalActivity: (statements.companyIndustry ?? "").trim() || null };
 
-  return { meta: ma.meta, sofp, incomeStatement, notes, taxComputation, directorsReport, hasComparatives: prior.hasComparatives, balanced: Math.abs(bs.netAssets - bs.totalEquity) <= 1 };
+  // Full FRS 102 extras (rendered only when opts.full). Both derive from the
+  // period movements the comparatives capture, and the cash flow is built to tie
+  // to the actual cash movement, with a balancing financing line for review.
+  const changesInEquity = {
+    openingEquity: sofp.priorEquity,
+    profit: incomeStatement.profitForYear,
+    other: sofp.totalEquity - sofp.priorEquity - incomeStatement.profitForYear,
+    closingEquity: sofp.totalEquity,
+  };
+  const dDebtors = sofp.debtors - sofp.priorDebtors;
+  const dCreditors = sofp.creditorsWithinYear - sofp.priorCreditors;
+  const netCashOps = incomeStatement.operatingProfit + depreciation - dDebtors + dCreditors;
+  const capex = -((sofp.tangibleFixedAssets - sofp.priorTangible) + depreciation);
+  const cashChange = sofp.cash - sofp.priorCash;
+  const cashFlow = {
+    operatingProfit: incomeStatement.operatingProfit, depreciation, dDebtors, dCreditors, netCashOps, capex,
+    financingOther: cashChange - netCashOps - capex, cashChange, openingCash: sofp.priorCash, closingCash: sofp.cash,
+  };
+
+  return { meta: ma.meta, sofp, incomeStatement, notes, taxComputation, directorsReport, changesInEquity, cashFlow, full: opts.full ?? false, hasComparatives: prior.hasComparatives, balanced: Math.abs(bs.netAssets - bs.totalEquity) <= 1 };
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 
 export function renderStatutoryAccountsHtml(pack: ReturnType<typeof buildStatutoryAccounts>, options: { autoPrint?: boolean; word?: boolean } = {}): string {
-  const { meta, sofp, incomeStatement: is, notes, taxComputation: tc, directorsReport: dr, hasComparatives } = pack;
+  const { meta, sofp, incomeStatement: is, notes, taxComputation: tc, directorsReport: dr, changesInEquity: ce, cashFlow: cf, full, hasComparatives } = pack;
   const asOf = new Date(meta.asOfDate).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   const priorYear = Number(meta.asOfDate.slice(0, 4)) - 1;
   const priorAsOf = new Date(`${priorYear}${meta.asOfDate.slice(4)}`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
@@ -137,7 +156,7 @@ export function renderStatutoryAccountsHtml(pack: ReturnType<typeof buildStatuto
     <div class="kind">Financial Statements</div>
     <h1>${esc(meta.companyName)}</h1>
     <div class="period">For the period ended ${asOf}</div>
-    <div class="period" style="margin-top:24px;font-size:12px">Prepared under FRS 102 Section 1A — Small Entities${hasComparatives ? ` · with ${priorYear} comparatives` : ""}</div>
+    <div class="period" style="margin-top:24px;font-size:12px">${full ? "Prepared under FRS 102" : "Prepared under FRS 102 Section 1A — Small Entities"}${hasComparatives ? ` · with ${priorYear} comparatives` : ""}</div>
     <div class="period" style="font-size:12px">Draft prepared by ClosePilot from the Xero ledger — subject to review and approval</div>
   </div>
 
@@ -153,6 +172,16 @@ export function renderStatutoryAccountsHtml(pack: ReturnType<typeof buildStatuto
     <p>This report has been prepared in accordance with the provisions applicable to companies subject to the small companies regime under Part 15 of the Companies Act 2006.</p>
     <div class="sig"><div class="line"></div>Director &nbsp;·&nbsp; Date: ______________</div>
   </div>
+  ${full ? `
+  <h2>Strategic Report</h2>
+  <p class="sub">For the period ended ${asOf}</p>
+  <div class="note-block">
+    <p>The directors present their strategic report for the period ended ${asOf}.</p>
+    <h3>Review of the business</h3>
+    <p>Turnover for the period was ${money(is.turnover)} (prior period ${money(is.priorTurnover)}), generating an operating profit of ${money(is.operatingProfit)}. The directors' assessment of the results and financial position is to be confirmed.</p>
+    <h3>Principal risks and uncertainties</h3>
+    <p>The principal risks and uncertainties facing the company are to be described by the directors.</p>
+  </div>` : ""}
 
   <h2>Statement of Financial Position</h2>
   <p class="sub">As at ${asOf}</p>
@@ -184,9 +213,41 @@ export function renderStatutoryAccountsHtml(pack: ReturnType<typeof buildStatuto
     ${row("Operating profit", is.operatingProfit, is.priorOperatingProfit, "sub strong")}
     ${row("Profit for the financial period", is.profitForYear, is.priorProfitForYear, "total")}
   </table>
+  ${full ? `
+  <h2>Statement of Changes in Equity</h2>
+  <p class="sub">For the period ended ${asOf}</p>
+  <table>
+    <tr class="indent"><td>Equity at start of period</td><td class="num">${money(ce.openingEquity)}</td></tr>
+    <tr class="indent"><td>Profit for the financial period</td><td class="num">${money(ce.profit)}</td></tr>
+    ${Math.abs(ce.other) > 0.5 ? `<tr class="indent"><td>Dividends and other movements</td><td class="num">${money(ce.other)}</td></tr>` : ""}
+    <tr class="total"><td>Equity at end of period</td><td class="num">${money(ce.closingEquity)}</td></tr>
+  </table>
+
+  <h2>Statement of Cash Flows</h2>
+  <p class="sub">For the period ended ${asOf} · indirect method</p>
+  <table>
+    <tr class="head"><td>Cash flows from operating activities</td><td></td></tr>
+    <tr class="indent"><td>Operating profit</td><td class="num">${money(cf.operatingProfit)}</td></tr>
+    <tr class="indent"><td>Depreciation</td><td class="num">${money(cf.depreciation)}</td></tr>
+    <tr class="indent"><td>(Increase)/decrease in debtors</td><td class="num">${money(-cf.dDebtors)}</td></tr>
+    <tr class="indent"><td>Increase/(decrease) in creditors</td><td class="num">${money(cf.dCreditors)}</td></tr>
+    <tr class="sub strong"><td>Net cash from operating activities</td><td class="num">${money(cf.netCashOps)}</td></tr>
+    <tr class="head"><td>Cash flows from investing activities</td><td></td></tr>
+    <tr class="indent"><td>Purchase of tangible fixed assets</td><td class="num">${money(cf.capex)}</td></tr>
+    <tr class="head"><td>Cash flows from financing activities</td><td></td></tr>
+    <tr class="indent"><td>Financing and other movements</td><td class="num">${money(cf.financingOther)}</td></tr>
+    <tr class="sub strong"><td>Net increase/(decrease) in cash</td><td class="num">${money(cf.cashChange)}</td></tr>
+    <tr class="indent"><td>Cash and equivalents at start of period</td><td class="num">${money(cf.openingCash)}</td></tr>
+    <tr class="total"><td>Cash and equivalents at end of period</td><td class="num">${money(cf.closingCash)}</td></tr>
+  </table>
+  <p class="sub" style="font-size:11px">Prepared by the indirect method. "Financing and other movements" is a balancing figure capturing dividends, loans, tax paid and equity movements — analyse before finalising.</p>` : ""}
 
   <h2>Notes to the Financial Statements</h2>
   ${notes.map((n, i) => `<div class="note-block"><h3>${i + 1}. ${esc(n.title)}</h3>${n.body ? `<p>${esc(n.body)}</p>` : ""}${n.rows?.length ? `<table>${hasComparatives ? `<tr class="colhead"><td></td><td class="num">${meta.asOfDate.slice(0, 4)}</td><td class="num">${priorYear}</td></tr>` : ""}${n.rows.map(noteRow).join("")}</table>` : ""}</div>`).join("")}
+  ${full ? `
+  <div class="note-block"><h3>${notes.length + 1}. Employees</h3><p>The average number of employees during the period, and the related staff costs (wages and salaries, social security and pension costs), are to be confirmed from the payroll records.</p></div>
+  <div class="note-block"><h3>${notes.length + 2}. Directors' remuneration</h3><p>Directors' remuneration for the period is to be confirmed from the payroll records.</p></div>
+  <div class="note-block"><h3>${notes.length + 3}. Related party transactions</h3><p>Details of related party transactions are to be provided by the directors.</p></div>` : ""}
 
   <h2>Corporation Tax Computation</h2>
   <p class="sub">Estimated — draft for review</p>
@@ -200,7 +261,9 @@ export function renderStatutoryAccountsHtml(pack: ReturnType<typeof buildStatuto
 
   <div class="approval">
     <strong>Approval</strong>
-    <p>These financial statements have been prepared in accordance with the provisions applicable to companies subject to the small companies regime and in accordance with FRS 102 Section 1A. For the period ended ${asOf} the company was entitled to exemption from audit under section 477 of the Companies Act 2006. The members have not required the company to obtain an audit of its financial statements.</p>
+    <p>${full
+      ? `These financial statements have been prepared in accordance with FRS 102 and the Companies Act 2006. The financial statements are subject to audit; the independent auditor's report is to be attached.`
+      : `These financial statements have been prepared in accordance with the provisions applicable to companies subject to the small companies regime and in accordance with FRS 102 Section 1A. For the period ended ${asOf} the company was entitled to exemption from audit under section 477 of the Companies Act 2006. The members have not required the company to obtain an audit of its financial statements.`}</p>
     <p>The financial statements were approved by the board of directors and authorised for issue.</p>
     <div class="sig"><div class="line"></div>Director &nbsp;·&nbsp; Date: ______________</div>
   </div>
