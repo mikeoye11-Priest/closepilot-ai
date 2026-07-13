@@ -1,6 +1,8 @@
 // Management accounts pack generated from the synced Xero statement rows.
-// Produces a structured pack (P&L, balance sheet, cash, aged analysis, KPIs) and
-// a self-contained, print-ready HTML document (Save-as-PDF or open as Word).
+// Produces a structured pack (P&L, balance sheet, cash, aged analysis, KPIs,
+// deterministic notes + observations) and a self-contained, print-ready HTML
+// document. An AI-drafted narrative (grounded in these figures) is generated in
+// the route and passed to the renderer — the pack never invents numbers.
 
 type Row = Record<string, string>;
 
@@ -16,6 +18,8 @@ export type SyncStatements = {
   trialBalance: Row[];
 };
 
+export type ManagementAccountsFinding = { severity?: string; title?: string; category?: string; description?: string; expectedImpact?: string };
+type Note = { title: string; body?: string; rows?: { label: string; value: number }[] };
 type Line = { name: string; amount: number };
 type Section = { title: string; lines: Line[]; total: number };
 
@@ -24,6 +28,16 @@ const num = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 const sumSections = (sections: Section[]) => sections.reduce((total, section) => total + section.total, 0);
+
+const esc = (value: string) => value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+const money = (value: number) => {
+  const rounded = Math.round(value);
+  const body = Math.abs(rounded).toLocaleString("en-GB");
+  return rounded < 0 ? `(£${body})` : `£${body}`;
+};
+const pct = (value: number | null) => (value === null ? "—" : `${(value * 100).toFixed(1)}%`);
+const days = (value: number | null) => (value === null ? "—" : `${Math.round(value)} days`);
+const ratio = (value: number | null) => (value === null ? "—" : value.toFixed(2));
 
 function groupSections(rows: Row[], categoryKey: string, nameKey: string): Section[] {
   const map = new Map<string, Line[]>();
@@ -46,9 +60,9 @@ function buildProfitAndLoss(rows: Row[]) {
   const costOfSales = sections.filter((s) => isCogs(s.title));
   const expenses = sections.filter((s) => !isIncome(s.title) && !isCogs(s.title));
   const revenue = sumSections(income);
-  const cogs = sumSections(costOfSales); // negative
+  const cogs = sumSections(costOfSales);
   const grossProfit = revenue + cogs;
-  const overheads = sumSections(expenses); // negative
+  const overheads = sumSections(expenses);
   const netProfit = revenue + cogs + overheads;
   return { income, costOfSales, expenses, revenue, cogs, grossProfit, overheads, netProfit };
 }
@@ -58,7 +72,7 @@ function classifyBalance(title: string): "equity" | "liability" | "fixed" | "cur
   if (/equity|capital|reserve|retained|earnings/.test(t)) return "equity";
   if (/liabilit|creditor|payable|loan|borrowing|accrual|overdraft|provision/.test(t)) return "liability";
   if (/fixed|non-current asset|intangible|tangible/.test(t)) return "fixed";
-  return "currentAsset"; // assets are the residual (bank, current assets, debtors, etc.)
+  return "currentAsset";
 }
 
 function buildBalanceSheet(rows: Row[]) {
@@ -83,17 +97,56 @@ function aging(rows: Row[]) {
   for (const row of rows) {
     const amount = num(row.amount);
     total += amount;
-    const days = num(row.days_overdue);
-    if (days <= 0) buckets.current += amount;
-    else if (days <= 30) buckets.d1_30 += amount;
-    else if (days <= 60) buckets.d31_60 += amount;
-    else if (days <= 90) buckets.d61_90 += amount;
+    const daysOverdue = num(row.days_overdue);
+    if (daysOverdue <= 0) buckets.current += amount;
+    else if (daysOverdue <= 30) buckets.d1_30 += amount;
+    else if (daysOverdue <= 60) buckets.d31_60 += amount;
+    else if (daysOverdue <= 90) buckets.d61_90 += amount;
     else buckets.d90plus += amount;
   }
   return { total, buckets };
 }
 
-export function buildManagementAccounts(statements: SyncStatements) {
+type PL = ReturnType<typeof buildProfitAndLoss>;
+type BS = ReturnType<typeof buildBalanceSheet>;
+type Aged = ReturnType<typeof aging>;
+type Kpis = { grossMargin: number | null; netMargin: number | null; currentRatio: number | null; debtorDays: number | null; creditorDays: number | null };
+
+function buildObservations(pl: PL, bs: BS, debtors: Aged, creditors: Aged, cashBalance: number, kpis: Kpis, findings: ManagementAccountsFinding[]): string[] {
+  const obs: string[] = [];
+  obs.push(`Revenue for the period was ${money(pl.revenue)}, producing a gross profit of ${money(pl.grossProfit)} (${pct(kpis.grossMargin)} margin) and a net ${pl.netProfit >= 0 ? "profit" : "loss"} of ${money(pl.netProfit)} (${pct(kpis.netMargin)}).`);
+  obs.push(`The balance sheet shows net assets of ${money(bs.netAssets)}, a current ratio of ${ratio(kpis.currentRatio)} and a cash position of ${money(cashBalance)}.`);
+  obs.push(`Trade debtors are ${money(debtors.total)} (${days(kpis.debtorDays)}) against trade creditors of ${money(creditors.total)} (${days(kpis.creditorDays)}).`);
+  const overdue = debtors.buckets.d61_90 + debtors.buckets.d90plus;
+  if (overdue > 0) obs.push(`${money(overdue)} of debtors is more than 60 days overdue and should be prioritised for collection.`);
+  if (kpis.currentRatio !== null && kpis.currentRatio < 1) obs.push("The current ratio is below 1.0 — current liabilities exceed current assets, so monitor short-term liquidity.");
+  for (const finding of findings.filter((f) => /high|critical/i.test(String(f.severity))).slice(0, 4)) {
+    if (finding.title) obs.push(`Review point: ${finding.title}.`);
+  }
+  return obs;
+}
+
+function buildNotes(pl: PL, bs: BS, debtors: Aged, creditors: Aged, cashBalance: number): Note[] {
+  const agingRows = (data: Aged) => [
+    { label: "Current", value: data.buckets.current },
+    { label: "1–30 days", value: data.buckets.d1_30 },
+    { label: "31–60 days", value: data.buckets.d31_60 },
+    { label: "61–90 days", value: data.buckets.d61_90 },
+    { label: "Over 90 days", value: data.buckets.d90plus },
+  ];
+  const notes: Note[] = [
+    { title: "Basis of preparation", body: "These management accounts have been prepared from the accounting records maintained in Xero for internal management purposes. They are unaudited and do not constitute statutory financial statements." },
+  ];
+  if (pl.income.length) notes.push({ title: "Turnover", body: "Turnover represents income recognised in the period, analysed below.", rows: pl.income.flatMap((s) => s.lines).map((l) => ({ label: l.name, value: l.amount })) });
+  notes.push({ title: "Trade debtors", body: `Trade debtors totalled ${money(debtors.total)} at the period end.`, rows: agingRows(debtors) });
+  notes.push({ title: "Trade creditors", body: `Trade creditors totalled ${money(creditors.total)} at the period end.`, rows: agingRows(creditors) });
+  if (bs.fixedAssets.length) notes.push({ title: "Tangible fixed assets", body: "Net book value of tangible fixed assets by class.", rows: bs.fixedAssets.flatMap((s) => s.lines).map((l) => ({ label: l.name, value: l.amount })) });
+  const taxLines = bs.liabilities.flatMap((s) => s.lines).filter((l) => /vat|tax/i.test(l.name));
+  notes.push({ title: "Cash and taxation", body: `Cash at bank was ${money(cashBalance)} at the period end.${taxLines.length ? ` The VAT/tax liability was ${money(taxLines.reduce((s, l) => s + l.amount, 0))}.` : ""}` });
+  return notes;
+}
+
+export function buildManagementAccounts(statements: SyncStatements, findings: ManagementAccountsFinding[] = []) {
   const pl = buildProfitAndLoss(statements.profitLoss ?? []);
   const bs = buildBalanceSheet(statements.balanceSheet ?? []);
   const debtors = aging(statements.agedDebtors ?? []);
@@ -102,7 +155,7 @@ export function buildManagementAccounts(statements: SyncStatements) {
   const unreconciled = (statements.bank ?? []).reduce((sum, row) => sum + num(row.unreconciled_count), 0);
   const costBase = Math.abs(pl.cogs + pl.overheads);
 
-  const kpis = {
+  const kpis: Kpis = {
     grossMargin: pl.revenue ? pl.grossProfit / pl.revenue : null,
     netMargin: pl.revenue ? pl.netProfit / pl.revenue : null,
     currentRatio: bs.totalLiabilities ? bs.totalCurrentAssets / bs.totalLiabilities : null,
@@ -110,20 +163,36 @@ export function buildManagementAccounts(statements: SyncStatements) {
     creditorDays: costBase ? (creditors.total / costBase) * 365 : null,
   };
 
-  return { meta: { companyName: statements.companyName ?? "Company", asOfDate: statements.asOfDate, currency: statements.currency ?? "GBP" }, pl, bs, debtors, creditors, cashBalance, unreconciled, kpis };
+  return {
+    meta: { companyName: statements.companyName ?? "Company", asOfDate: statements.asOfDate, currency: statements.currency ?? "GBP" },
+    pl, bs, debtors, creditors, cashBalance, unreconciled, kpis,
+    observations: buildObservations(pl, bs, debtors, creditors, cashBalance, kpis, findings),
+    notes: buildNotes(pl, bs, debtors, creditors, cashBalance),
+  };
+}
+
+// Compact figure summary used to ground the AI narrative — the model narrates
+// only these numbers, it never sources its own.
+export function managementAccountsFactSheet(pack: ReturnType<typeof buildManagementAccounts>, findings: ManagementAccountsFinding[]): string {
+  const { pl, bs, debtors, creditors, kpis } = pack;
+  const findingList = findings.filter((f) => /high|critical/i.test(String(f.severity))).slice(0, 6).map((f) => `- ${f.title}`).join("\n") || "- None flagged.";
+  return `Revenue: ${money(pl.revenue)}
+Cost of sales: ${money(pl.cogs)}
+Gross profit: ${money(pl.grossProfit)} (${pct(kpis.grossMargin)})
+Overheads: ${money(pl.overheads)}
+Net profit: ${money(pl.netProfit)} (${pct(kpis.netMargin)})
+Cash at bank: ${money(pack.cashBalance)}
+Trade debtors: ${money(debtors.total)} (${days(kpis.debtorDays)})
+Trade creditors: ${money(creditors.total)} (${days(kpis.creditorDays)})
+Net current assets: ${money(bs.netCurrentAssets)}
+Net assets: ${money(bs.netAssets)}
+Current ratio: ${ratio(kpis.currentRatio)}
+Debtors over 60 days overdue: ${money(debtors.buckets.d61_90 + debtors.buckets.d90plus)}
+Key review findings:
+${findingList}`;
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
-
-const esc = (value: string) => value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
-const money = (value: number) => {
-  const rounded = Math.round(value);
-  const body = Math.abs(rounded).toLocaleString("en-GB");
-  return rounded < 0 ? `(£${body})` : `£${body}`;
-};
-const pct = (value: number | null) => (value === null ? "—" : `${(value * 100).toFixed(1)}%`);
-const days = (value: number | null) => (value === null ? "—" : `${Math.round(value)} days`);
-const ratio = (value: number | null) => (value === null ? "—" : value.toFixed(2));
 
 function statementRows(sections: Section[]): string {
   return sections
@@ -138,11 +207,11 @@ function statementRows(sections: Section[]): string {
 
 const totalRow = (label: string, value: number, cls = "total") => `<tr class="${cls}"><td>${esc(label)}</td><td class="num">${money(value)}</td></tr>`;
 
-export function renderManagementAccountsHtml(pack: ReturnType<typeof buildManagementAccounts>, options: { autoPrint?: boolean } = {}): string {
-  const { meta, pl, bs, debtors, creditors, kpis } = pack;
+export function renderManagementAccountsHtml(pack: ReturnType<typeof buildManagementAccounts>, options: { autoPrint?: boolean; aiCommentary?: string } = {}): string {
+  const { meta, pl, bs, debtors, creditors, kpis, observations, notes } = pack;
   const asOf = new Date(meta.asOfDate).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   const kpiCard = (label: string, value: string) => `<div class="kpi"><span class="kpi-label">${label}</span><span class="kpi-value">${value}</span></div>`;
-  const agingTable = (title: string, data: ReturnType<typeof aging>) => `
+  const agingTable = (title: string, data: Aged) => `
     <table class="aging"><caption>${title} — ${money(data.total)}</caption>
       <thead><tr><th>Current</th><th>1–30</th><th>31–60</th><th>61–90</th><th>90+</th></tr></thead>
       <tbody><tr>
@@ -150,6 +219,9 @@ export function renderManagementAccountsHtml(pack: ReturnType<typeof buildManage
         <td class="num">${money(data.buckets.d31_60)}</td><td class="num">${money(data.buckets.d61_90)}</td>
         <td class="num">${money(data.buckets.d90plus)}</td>
       </tr></tbody></table>`;
+  const aiHtml = options.aiCommentary
+    ? `<div class="ai"><p class="ai-label">AI-drafted narrative — review before issuing</p>${options.aiCommentary.split(/\n\n+/).filter(Boolean).map((p) => `<p>${esc(p.trim())}</p>`).join("")}</div>`
+    : "";
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(meta.companyName)} — Management Accounts</title>
@@ -163,6 +235,7 @@ export function renderManagementAccountsHtml(pack: ReturnType<typeof buildManage
   header h1 { font-size: 26px; margin: 6px 0 2px; }
   header .sub { color: var(--muted); font-size: 13px; }
   h2 { font-size: 15px; text-transform: uppercase; letter-spacing:.06em; margin: 34px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line); }
+  h3 { font-size: 13px; margin: 16px 0 6px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
   td, th { padding: 5px 8px; }
   .num { text-align: right; white-space: nowrap; }
@@ -175,6 +248,14 @@ export function renderManagementAccountsHtml(pack: ReturnType<typeof buildManage
   .kpi { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
   .kpi-label { display:block; font-size: 10px; text-transform: uppercase; letter-spacing:.06em; color: var(--muted); }
   .kpi-value { display:block; font-size: 20px; font-weight: 800; margin-top: 4px; }
+  .ai { border-left: 3px solid var(--accent); background:#f8faff; padding: 10px 16px; border-radius: 0 8px 8px 0; margin-bottom: 12px; }
+  .ai-label { font-size: 10px; text-transform: uppercase; letter-spacing:.08em; color: var(--accent); font-weight: 800; margin: 0 0 6px; }
+  .ai p { font-size: 13px; line-height: 1.6; margin: 0 0 8px; }
+  ul.obs { margin: 4px 0; padding-left: 20px; font-size: 13px; line-height: 1.6; }
+  ul.obs li { margin-bottom: 4px; }
+  .note-block { margin-bottom: 14px; }
+  .note-block p { font-size: 12px; color:#334155; margin: 0 0 6px; }
+  .note-block table { max-width: 420px; }
   table.aging { margin-top: 10px; }
   table.aging caption { text-align: left; font-weight: 700; padding: 6px 0; }
   table.aging th { background:#f8fafc; text-align:right; border-bottom:1px solid var(--line); font-size:11px; color:var(--muted); }
@@ -209,6 +290,10 @@ export function renderManagementAccountsHtml(pack: ReturnType<typeof buildManage
     ${kpiCard("Creditors", money(creditors.total))}
   </div>
 
+  <h2>Commentary</h2>
+  ${aiHtml}
+  <ul class="obs">${observations.map((o) => `<li>${esc(o)}</li>`).join("")}</ul>
+
   <h2>Profit &amp; Loss</h2>
   <table>
     ${statementRows(pl.income)}
@@ -238,8 +323,11 @@ export function renderManagementAccountsHtml(pack: ReturnType<typeof buildManage
   ${agingTable("Aged creditors", creditors)}
   <p class="note">Cash balance ${money(pack.cashBalance)}${pack.unreconciled ? ` · ${pack.unreconciled} unreconciled bank item(s) to clear` : " · bank reconciled"}.</p>
 
+  <h2>Notes to the accounts</h2>
+  ${notes.map((n, i) => `<div class="note-block"><h3>${i + 1}. ${esc(n.title)}</h3>${n.body ? `<p>${esc(n.body)}</p>` : ""}${n.rows?.length ? `<table>${n.rows.map((r) => `<tr><td class="item">${esc(r.label)}</td><td class="num">${money(r.value)}</td></tr>`).join("")}</table>` : ""}</div>`).join("")}
+
   <footer>
-    Generated by ClosePilot from the connected Xero ledger. These management accounts are prepared for internal management purposes and are subject to review by the preparer. Figures are rounded to the nearest £.
+    Generated by ClosePilot from the connected Xero ledger. These management accounts are prepared for internal management purposes and are subject to review by the preparer. Any AI-drafted narrative is grounded in the figures above and must be reviewed before issue. Figures are rounded to the nearest £.
   </footer>
 </div>
 ${options.autoPrint ? "<script>window.addEventListener('load',()=>window.print());</script>" : ""}
