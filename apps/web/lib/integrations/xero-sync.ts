@@ -238,20 +238,25 @@ function flattenTrialBalance(sections: Array<{ rows?: Array<{ cells?: Array<{ va
   }).filter((row) => row.account_name && !/^total/i.test(row.account_name));
 }
 
-function flattenProfitAndLoss(sections: Array<{ title?: string; rows?: Array<{ cells?: Array<{ value?: string }> }> }>) {
+function flattenProfitAndLoss(sections: Array<{ title?: string; rows?: Array<{ rowType?: unknown; cells?: Array<{ value?: string }> }> }>) {
   const out: Record<string, string>[] = [];
   for (const section of sections) {
     const category = String(section.title ?? "").trim() || "Profit & Loss";
-    // Xero reports expense sections as positive values; ClosePilot's P&L format
-    // expects income positive and costs/expenses negative.
-    const isExpense = /cost|expense|overhead|operating|purchase|payroll|depreciation|admin/i.test(category)
-      && !/income|revenue|turnover|sales|other income/i.test(category);
+    // ClosePilot's P&L format expects income positive and costs/expenses negative.
+    // Xero reports every section as positive, so classify by section: income is
+    // positive, everything else negative. "Cost of Sales" contains "sales" but is
+    // a cost — match it explicitly and keep it out of the income test (otherwise
+    // it was added as income, overstating profit by 2x its value).
+    const isCostOfSales = /cost of (sales|goods)/i.test(category);
+    const isIncome = !isCostOfSales && /income|revenue|turnover|sales|interest received/i.test(category);
     for (const row of section.rows ?? []) {
+      // Skip Xero subtotal rows (Gross/Net/Operating Profit) so they aren't counted.
+      if (String(row.rowType) === "SummaryRow") continue;
       const cells = row.cells ?? [];
       const description = String(cells[0]?.value ?? "").trim();
-      if (!description || /^total/i.test(description)) continue;
+      if (!description || /^(total|gross profit|net profit|operating profit)/i.test(description)) continue;
       const raw = amount(cells[cells.length - 1]?.value);
-      out.push({ category, description, amount: String(isExpense ? -Math.abs(raw) : raw) });
+      out.push({ category, description, amount: String(isIncome ? Math.abs(raw) : -Math.abs(raw)) });
     }
   }
   return out;
