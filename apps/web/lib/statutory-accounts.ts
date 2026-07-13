@@ -17,6 +17,20 @@ const money = (value: number) => {
 const flat = (sections: { lines: Line[] }[]): Line[] => sections.flatMap((s) => s.lines);
 const sum = (lines: Line[], key: "amount" | "prior" = "amount") => lines.reduce((total, line) => total + line[key], 0);
 
+// UK corporation tax with marginal relief (post-April 2023). Limits are
+// pro-rated for periods shorter than 12 months; associated companies are assumed
+// to be nil (a draft estimate the preparer confirms).
+function corporationTax(taxableProfits: number, periodDays: number) {
+  if (taxableProfits <= 0) return { rate: "—", band: "No taxable profit in the period", tax: 0 };
+  const fraction = Math.min(1, periodDays / 365);
+  const lower = 50_000 * fraction;
+  const upper = 250_000 * fraction;
+  if (taxableProfits <= lower) return { rate: "19%", band: "Small profits rate", tax: taxableProfits * 0.19 };
+  if (taxableProfits >= upper) return { rate: "25%", band: "Main rate", tax: taxableProfits * 0.25 };
+  const marginalRelief = (upper - taxableProfits) * (3 / 200);
+  return { rate: "25% less marginal relief", band: "Marginal relief applies", tax: taxableProfits * 0.25 - marginalRelief };
+}
+
 export function buildStatutoryAccounts(statements: SyncStatements) {
   const ma = buildManagementAccounts(statements);
   const { pl, bs, prior } = ma;
@@ -57,13 +71,22 @@ export function buildStatutoryAccounts(statements: SyncStatements) {
     { title: "Capital and reserves", rows: [...sofp.equityLines.map((l) => ({ label: l.name, value: l.amount, prior: l.prior })), { label: "Shareholders' funds", value: bs.totalEquity, prior: bs.priorEquity, strong: true }] },
   ];
 
-  return { meta: ma.meta, sofp, incomeStatement, notes, hasComparatives: prior.hasComparatives, balanced: Math.abs(bs.netAssets - bs.totalEquity) <= 1 };
+  const periodStart = `${ma.meta.asOfDate.slice(0, 4)}-01-01`;
+  const periodDays = Math.max(1, Math.round((Date.parse(ma.meta.asOfDate) - Date.parse(periodStart)) / 86_400_000) + 1);
+  const depreciation = flat(pl.expenses).filter((l) => /depreciat|amortis/i.test(l.name)).reduce((total, l) => total + Math.abs(l.amount), 0);
+  const profitBeforeTax = pl.netProfit;
+  const taxableProfits = Math.max(0, profitBeforeTax + depreciation);
+  const ct = corporationTax(taxableProfits, periodDays);
+  const taxComputation = { profitBeforeTax, depreciation, taxableProfits, periodDays, rate: ct.rate, band: ct.band, tax: ct.tax };
+  const directorsReport = { principalActivity: (statements.companyIndustry ?? "").trim() || null };
+
+  return { meta: ma.meta, sofp, incomeStatement, notes, taxComputation, directorsReport, hasComparatives: prior.hasComparatives, balanced: Math.abs(bs.netAssets - bs.totalEquity) <= 1 };
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 
 export function renderStatutoryAccountsHtml(pack: ReturnType<typeof buildStatutoryAccounts>, options: { autoPrint?: boolean } = {}): string {
-  const { meta, sofp, incomeStatement: is, notes, hasComparatives } = pack;
+  const { meta, sofp, incomeStatement: is, notes, taxComputation: tc, directorsReport: dr, hasComparatives } = pack;
   const asOf = new Date(meta.asOfDate).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   const priorYear = Number(meta.asOfDate.slice(0, 4)) - 1;
   const priorAsOf = new Date(`${priorYear}${meta.asOfDate.slice(4)}`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
@@ -120,6 +143,19 @@ export function renderStatutoryAccountsHtml(pack: ReturnType<typeof buildStatuto
     <div class="period" style="font-size:12px">Draft prepared by ClosePilot from the Xero ledger — subject to review and approval</div>
   </div>
 
+  <h2>Directors' Report</h2>
+  <p class="sub">For the period ended ${asOf}</p>
+  <div class="note-block">
+    <p>The directors present their report and the financial statements for the period ended ${asOf}.</p>
+    <h3>Principal activity</h3>
+    <p>${dr.principalActivity ? `The principal activity of the company during the period was that of ${esc(dr.principalActivity)}.` : "The principal activity of the company during the period is to be confirmed by the directors."}</p>
+    <h3>Directors</h3>
+    <p>The directors who served during the period are set out in the company's statutory records — insert director names before issue.</p>
+    <h3>Small companies exemption</h3>
+    <p>This report has been prepared in accordance with the provisions applicable to companies subject to the small companies regime under Part 15 of the Companies Act 2006.</p>
+    <div class="sig"><div class="line"></div>Director &nbsp;·&nbsp; Date: ______________</div>
+  </div>
+
   <h2>Statement of Financial Position</h2>
   <p class="sub">As at ${asOf}</p>
   <table>
@@ -153,6 +189,16 @@ export function renderStatutoryAccountsHtml(pack: ReturnType<typeof buildStatuto
 
   <h2>Notes to the Financial Statements</h2>
   ${notes.map((n, i) => `<div class="note-block"><h3>${i + 1}. ${esc(n.title)}</h3>${n.body ? `<p>${esc(n.body)}</p>` : ""}${n.rows?.length ? `<table>${hasComparatives ? `<tr class="colhead"><td></td><td class="num">${meta.asOfDate.slice(0, 4)}</td><td class="num">${priorYear}</td></tr>` : ""}${n.rows.map(noteRow).join("")}</table>` : ""}</div>`).join("")}
+
+  <h2>Corporation Tax Computation</h2>
+  <p class="sub">Estimated — draft for review</p>
+  <table>
+    ${row("Profit before taxation", tc.profitBeforeTax, null)}
+    ${row("Add: depreciation charged in the accounts", tc.depreciation, null, "indent")}
+    ${row("Taxable total profits", tc.taxableProfits, null, "sub strong")}
+    ${row(`Corporation tax (${esc(tc.rate)})`, tc.tax, null, "total")}
+  </table>
+  <p class="note" style="color:var(--muted);font-size:11px;margin-top:8px">${esc(tc.band)}. Estimated over a ${tc.periodDays}-day period. This estimate does not include capital allowances, other disallowable expenses (e.g. entertaining) or adjustments requiring the fixed-asset roll-forward, and assumes no associated companies — review before finalising. The liability is not yet provided in these financial statements; a corporation tax provision should be posted before the accounts are approved.</p>
 
   <div class="approval">
     <strong>Approval</strong>
