@@ -8263,6 +8263,164 @@ function buildVatReviewGroups(engineFindings: VatReviewResult["findings"], vatFi
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || b.exposure - a.exposure);
 }
 
+function vatProfileText(profile?: VatReviewResult["assuranceProfile"]) {
+  if (!profile) return "VAT-V3 standard profile";
+  return `${profile.companySize.replaceAll("_", " ")} company / ${profile.scheme.replaceAll("_", " ")} scheme`;
+}
+
+function vatAssuranceExceptionCsv(vatReview: VatReviewResult, vatFindings: Finding[], reviewGroups: VatReviewGroup[]) {
+  const rows: unknown[][] = [];
+  vatReview.findings.forEach((finding) => rows.push([
+    "VAT engine",
+    finding.id ?? "",
+    finding.severity,
+    "open",
+    "calculation or treatment",
+    finding.finding,
+    finding.evidence,
+    finding.recommendation,
+    finding.exposure ?? "",
+  ]));
+  (vatReview.assuranceChecks ?? [])
+    .filter((check) => check.status !== "passed")
+    .forEach((check) => rows.push([
+      "Assurance check",
+      check.id,
+      check.severity,
+      check.status,
+      check.category.replaceAll("_", " "),
+      check.title,
+      check.detail,
+      check.recommendation ?? "",
+      check.difference ?? "",
+    ]));
+  vatReview.reconciliationResults
+    .filter((item) => item.status !== "passed")
+    .forEach((item) => rows.push([
+      "Reconciliation",
+      item.name,
+      item.status === "failed" ? "high" : "medium",
+      item.status,
+      "control reconciliation",
+      item.name,
+      item.detail,
+      "Investigate and resolve before filing sign-off.",
+      item.difference,
+    ]));
+  vatFindings.forEach((finding) => rows.push([
+    "Rule finding",
+    finding.ruleId ?? finding.id,
+    finding.severity,
+    finding.status,
+    finding.category,
+    finding.title,
+    finding.description,
+    finding.recommendation ?? finding.reviewAction ?? "",
+    finding.amount ?? parseImpactAmount(finding.expectedImpact),
+  ]));
+  reviewGroups.forEach((group) => rows.push([
+    "Grouped review",
+    group.id,
+    group.severity,
+    "review",
+    "review workflow",
+    group.title,
+    group.action,
+    `${group.items.length} supporting item(s) grouped for reviewer decision.`,
+    group.exposure,
+  ]));
+  const headers = ["Source", "Reference", "Severity", "Status", "Category", "Title", "Detail", "Recommendation", "Exposure GBP"];
+  return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+}
+
+function vatAssuranceReportHtml({
+  vatReview,
+  vatFindings,
+  reviewGroups,
+  groupDecisions,
+  proposedAdjustments,
+  reviewCoverage,
+  partnerConclusion,
+  partnerComment,
+  preparedBy,
+  generatedAt,
+}: {
+  vatReview: VatReviewResult;
+  vatFindings: Finding[];
+  reviewGroups: VatReviewGroup[];
+  groupDecisions: Record<string, VatGroupDecision>;
+  proposedAdjustments: VatAdjustment[];
+  reviewCoverage: number;
+  partnerConclusion: string;
+  partnerComment: string;
+  preparedBy: string;
+  generatedAt: string;
+}) {
+  const profile = vatReview.assuranceProfile;
+  const checks = vatReview.assuranceChecks ?? [];
+  const exceptionDashboard = vatReview.exceptionDashboard;
+  const filingSignOff = vatReview.filingSignOff;
+  const money = (value: number) => `GBP ${Math.round(Math.abs(value)).toLocaleString("en-GB")}`;
+  const tableRows = (rows: string[][]) => rows.map((row) => `<tr>${row.map((value) => `<td>${htmlCell(value)}</td>`).join("")}</tr>`).join("");
+  const boxRows = Object.entries(vatReview.vatReturn).map(([box, amount]) => [box.replace("box", "Box "), money(amount)]);
+  const checkRows = checks.map((check) => [check.id, check.title, check.status.replaceAll("_", " "), check.severity, check.detail]);
+  const groupRows = reviewGroups.map((group) => {
+    const decision = groupDecisions[group.id];
+    return [group.title, group.severity, money(group.exposure), decision?.status.replaceAll("_", " ") ?? "pending", group.action];
+  });
+  const findingRows = vatReview.findings.map((finding) => [finding.id ?? "", finding.severity, finding.finding, finding.evidence, finding.recommendation]);
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>ClosePilot VAT Assurance V3 Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #111827; line-height: 1.45; }
+    h1, h2 { margin-bottom: 6px; }
+    .muted { color: #64748b; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 18px 0; }
+    .metric { border: 1px solid #dbe4ef; padding: 10px; background: #f8fafc; }
+    .metric strong { display: block; font-size: 20px; }
+    table { border-collapse: collapse; width: 100%; margin: 12px 0 22px; font-size: 12px; }
+    th, td { border: 1px solid #dbe4ef; padding: 8px; vertical-align: top; }
+    th { background: #f1f5f9; text-align: left; }
+  </style>
+</head>
+<body>
+  <h1>ClosePilot VAT Assurance V3 Report</h1>
+  <p class="muted">Generated ${htmlCell(generatedAt)} by ${htmlCell(preparedBy)}. ${htmlCell(vatProfileText(profile))}.</p>
+  <div class="grid">
+    <div class="metric"><span>Readiness</span><strong>${htmlCell(`${vatReview.readinessScore ?? vatReview.healthScore}%`)}</strong></div>
+    <div class="metric"><span>VAT liability</span><strong>${htmlCell(money(vatReview.vatReturn.box5))}</strong></div>
+    <div class="metric"><span>Exceptions</span><strong>${htmlCell(String(exceptionDashboard?.total ?? vatReview.findings.length + vatFindings.length))}</strong></div>
+    <div class="metric"><span>Review coverage</span><strong>${htmlCell(`${reviewCoverage}%`)}</strong></div>
+  </div>
+  <h2>Assurance Profile</h2>
+  <table><tbody>${tableRows([
+    ["Version", profile?.version ?? "VAT-V3"],
+    ["Company size", profile?.companySize.replaceAll("_", " ") ?? "unknown"],
+    ["VAT scheme", profile?.scheme.replaceAll("_", " ") ?? "unknown"],
+    ["Materiality", profile ? money(profile.materiality) : "Not set"],
+    ["Risk tolerance", profile?.riskTolerance ?? "standard"],
+    ["Detected signals", profile?.detectedSignals.join("; ") || "No specific scheme signals detected"],
+    ["Filing assessment", filingSignOff?.label ?? "Not assessed"],
+    ["Partner conclusion", partnerConclusion.replaceAll("_", " ")],
+  ])}</tbody></table>
+  ${partnerComment ? `<h2>Reviewer Comment</h2><p>${htmlCell(partnerComment)}</p>` : ""}
+  <h2>VAT Return Boxes</h2>
+  <table><thead><tr><th>Box</th><th>Amount</th></tr></thead><tbody>${tableRows(boxRows)}</tbody></table>
+  <h2>Assurance Checks</h2>
+  <table><thead><tr><th>ID</th><th>Check</th><th>Status</th><th>Severity</th><th>Detail</th></tr></thead><tbody>${tableRows(checkRows)}</tbody></table>
+  <h2>Grouped Review Work</h2>
+  <table><thead><tr><th>Group</th><th>Severity</th><th>Exposure</th><th>Decision</th><th>Action</th></tr></thead><tbody>${tableRows(groupRows)}</tbody></table>
+  <h2>VAT Engine Findings</h2>
+  <table><thead><tr><th>ID</th><th>Severity</th><th>Finding</th><th>Evidence</th><th>Recommendation</th></tr></thead><tbody>${tableRows(findingRows)}</tbody></table>
+  <h2>Proposed Adjustments</h2>
+  <table><thead><tr><th>Adjustment</th><th>Debit</th><th>Credit</th><th>Value</th></tr></thead><tbody>${tableRows(proposedAdjustments.map((item) => [item.title, item.debitAccount, item.creditAccount, money(item.exposure)]))}</tbody></table>
+</body>
+</html>`;
+}
+
 function severityRank(level: RiskLevel) {
   const ranks: Record<RiskLevel, number> = { low: 1, medium: 2, high: 3, critical: 4 };
   return ranks[level];
@@ -8343,6 +8501,7 @@ function VatAssuranceModule({ vatReview, findings, updateFindingStatus, setActiv
   const health = vatReview?.healthScore ?? 0;
   const vatReadiness = vatReview?.readinessScore ?? health;
   const assuranceChecks = vatReview?.assuranceChecks ?? [];
+  const assuranceProfile = vatReview?.assuranceProfile;
   const exceptionDashboard = vatReview?.exceptionDashboard;
   const periodComparison = vatReview?.periodComparison;
   const filingSignOff = vatReview?.filingSignOff;
@@ -8365,6 +8524,7 @@ function VatAssuranceModule({ vatReview, findings, updateFindingStatus, setActiv
   const [approvedBy, setApprovedBy] = useState(userName);
   const [reopenReason, setReopenReason] = useState("");
   const [signOffError, setSignOffError] = useState("");
+  const [reportExportStatus, setReportExportStatus] = useState("");
   const filingApproval = vatReview?.filingApproval;
   const reviewedRuleFindings = vatFindings.filter((finding) => reviewedFindingStatuses.includes(finding.status)).length;
   const reviewedGroups = reviewGroups.filter((group) => Boolean(groupDecisions[group.id])).length;
@@ -8387,6 +8547,7 @@ function VatAssuranceModule({ vatReview, findings, updateFindingStatus, setActiv
         detail: filingSignOff.detail,
       }
     : workflowSubmissionReadiness;
+  const vatFileSlug = slug(`closepilot_vat_assurance_v3_${new Date().toISOString().slice(0, 10)}`);
 
   const decideGroup = (groupId: string, status: FindingStatus, comment: string) => {
     setGroupDecisions((items) => ({
@@ -8418,6 +8579,82 @@ function VatAssuranceModule({ vatReview, findings, updateFindingStatus, setActiv
     } catch (error) {
       setSignOffError(error instanceof Error ? error.message : "VAT filing approval failed.");
     }
+  };
+
+  const recordVatReportExport = (exportStatus: string) => {
+    if (!vatReview) return;
+    setReportExportStatus("Recording report export...");
+    fetch("/api/reports", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tenantId,
+        companyId,
+        reportType: "vat_assurance_v3",
+        title: "ClosePilot VAT Assurance V3 Review Pack",
+        exportStatus,
+        metadata: {
+          assuranceProfile,
+          readinessScore: vatReadiness,
+          healthScore: health,
+          filingSignOff,
+          exceptionDashboard,
+          transactionsAnalysed: vatReview.transactionsAnalysed,
+          reviewCoverage,
+          partnerConclusion: effectivePartnerConclusion,
+          proposedAdjustments: proposedAdjustments.length,
+          groupDecisions: Object.keys(groupDecisions).length,
+        },
+      }),
+    })
+      .then(() => setReportExportStatus("Report export recorded."))
+      .catch(() => setReportExportStatus("Report downloaded; register update could not be recorded."));
+  };
+
+  const downloadVatEvidenceJson = () => {
+    if (!vatReview) return;
+    recordVatReportExport("evidence_json_downloaded");
+    exportFile("closepilot_vat_evidence_pack.json", JSON.stringify({
+      vatReview,
+      reviewGroups,
+      groupDecisions,
+      proposedAdjustments,
+      adjustedVatReturn,
+      reviewCoverage,
+      groupReviewCoverage,
+      findingReviewCoverage,
+      submissionReadiness,
+      partnerConclusion: effectivePartnerConclusion,
+      partnerComment,
+    }, null, 2), "application/json;charset=utf-8");
+  };
+
+  const downloadVatExceptionRegister = () => {
+    if (!vatReview) return;
+    recordVatReportExport("exception_register_csv_downloaded");
+    exportFile(`${vatFileSlug}_exception_register.csv`, vatAssuranceExceptionCsv(vatReview, vatFindings, reviewGroups), "text/csv;charset=utf-8");
+  };
+
+  const downloadVatV3Report = () => {
+    if (!vatReview) return;
+    const generatedAt = new Date().toLocaleString("en-GB");
+    recordVatReportExport("vat_v3_report_downloaded");
+    exportFile(
+      `${vatFileSlug}_review_report.doc`,
+      vatAssuranceReportHtml({
+        vatReview,
+        vatFindings,
+        reviewGroups,
+        groupDecisions,
+        proposedAdjustments,
+        reviewCoverage,
+        partnerConclusion: effectivePartnerConclusion,
+        partnerComment,
+        preparedBy: userName,
+        generatedAt,
+      }),
+      "application/msword;charset=utf-8",
+    );
   };
 
   const reopenFiling = () => {
@@ -8473,6 +8710,12 @@ function VatAssuranceModule({ vatReview, findings, updateFindingStatus, setActiv
             <Metric title="Reconciliation" value={vatReview.reconciliationStatus ?? (reconciliationFailures ? "FAIL" : "PASS")} detail="VAT return evidence" tone={reconciliationFailures ? "high" : "low"} />
             <Metric title="Computation" value={`${vatReview.scoreBreakdown?.computationAccuracy ?? 0}%`} detail="Box calculation accuracy" tone={(vatReview.scoreBreakdown?.computationAccuracy ?? 0) >= 85 ? "low" : "medium"} />
           </div>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SummaryItem label="VAT-V3 Profile" value={assuranceProfile?.version ?? "VAT-V3"} detail={vatProfileText(assuranceProfile)} level={assuranceProfile?.riskTolerance === "enhanced" ? "high" : assuranceProfile?.riskTolerance === "focused" ? "low" : "medium"} />
+          <SummaryItem label="VAT Scheme" value={(assuranceProfile?.scheme ?? "unknown").replaceAll("_", " ")} detail={`Company size: ${(assuranceProfile?.companySize ?? "unknown").replaceAll("_", " ")}`} level={assuranceProfile?.scheme === "mixed" || assuranceProfile?.scheme === "partial_exemption" ? "high" : assuranceProfile?.scheme === "unknown" ? "medium" : "low"} />
+          <SummaryItem label="Materiality" value={`£${Math.round(assuranceProfile?.materiality ?? 0).toLocaleString("en-GB")}`} detail={`Risk mode: ${assuranceProfile?.riskTolerance ?? "standard"}`} level={(assuranceProfile?.materiality ?? 0) >= 5000 ? "high" : (assuranceProfile?.materiality ?? 0) >= 1000 ? "medium" : "low"} />
+          <SummaryItem label="Scheme Signals" value={String(assuranceProfile?.detectedSignals.length ?? 0)} detail={assuranceProfile?.detectedSignals.slice(0, 2).join("; ") || "No specific scheme signals detected"} level={(assuranceProfile?.detectedSignals.length ?? 0) ? "medium" : "low"} />
         </div>
       </Panel>
 
@@ -8873,29 +9116,30 @@ function VatAssuranceModule({ vatReview, findings, updateFindingStatus, setActiv
         <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
           <div className="rounded-lg border border-line bg-slate-50 p-4">
             <p className="text-xs font-bold uppercase text-muted">Prepared Output</p>
-            <h3 className="mt-1 text-xl font-black">VAT return ready for reviewer sign-off</h3>
-            <p className="mt-2 text-sm text-muted">The pack includes VAT summary, Boxes 1-9, grouped investigations, reconciliation results, reviewer decisions, partner conclusion and evidence appendix.</p>
+            <h3 className="mt-1 text-xl font-black">VAT-V3 review pack ready for sign-off</h3>
+            <p className="mt-2 text-sm text-muted">The pack includes scheme profile, Boxes 1-9, grouped investigations, reconciliation results, reviewer decisions, partner conclusion, exception register and evidence appendix.</p>
             <div className="mt-4 flex flex-wrap gap-2">
               <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => window.print()}>Print VAT Pack</button>
               <button
                 className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-black transition-colors hover:border-brand hover:text-brand"
-                onClick={() => exportFile("closepilot_vat_evidence_pack.json", JSON.stringify({
-                  vatReview,
-                  reviewGroups,
-                  groupDecisions,
-                  proposedAdjustments,
-                  adjustedVatReturn,
-                  reviewCoverage,
-                  groupReviewCoverage,
-                  findingReviewCoverage,
-                  submissionReadiness,
-                  partnerConclusion: effectivePartnerConclusion,
-                  partnerComment,
-                }, null, 2), "application/json;charset=utf-8")}
+                onClick={downloadVatV3Report}
+              >
+                VAT-V3 Report
+              </button>
+              <button
+                className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-black transition-colors hover:border-brand hover:text-brand"
+                onClick={downloadVatExceptionRegister}
+              >
+                Exception CSV
+              </button>
+              <button
+                className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-black transition-colors hover:border-brand hover:text-brand"
+                onClick={downloadVatEvidenceJson}
               >
                 VAT Evidence JSON
               </button>
             </div>
+            {reportExportStatus && <p className="mt-3 text-xs font-semibold text-muted">{reportExportStatus}</p>}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <SummaryItem label="VAT Liability" value={`£${Math.round(Math.abs(vatReview.vatReturn.box5)).toLocaleString("en-GB")}`} detail={vatReview.vatReturn.box5 < 0 ? "reclaim position" : "payable position"} level={vatReview.vatReturn.box5 > 0 ? "medium" : "low"} />
