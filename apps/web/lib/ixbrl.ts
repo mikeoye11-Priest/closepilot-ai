@@ -82,7 +82,7 @@ export function renderIxbrl(pack: Pack, companyNumber = ""): string {
     </ix:header>
   </div>
 
-  <div class="draft"><strong>DRAFT iXBRL — not yet filed.</strong> Tagged against the FRC FRS 102 (2023-01-01) taxonomy. Validate against a filing checker (e.g. the Companies House test service) and insert the company registration number before submission. Concept mapping and dimensions must be confirmed by the preparer.</div>
+  <div class="draft"><strong>DRAFT iXBRL — not for filing as-is.</strong> This tags only the <strong>primary statements</strong> (Statement of Financial Position and Income Statement) against the FRC FRS 102 (2023-01-01) core taxonomy. It does <strong>not</strong> tag the cash flow statement, statement of changes in equity, notes or taxonomy dimensions. Insert the company registration number, complete the tagging, and validate against a filing checker (e.g. the Companies House / HMRC test service) before submission.</div>
 
   <h1><ix:nonNumeric name="uk-bus:EntityCurrentLegalOrRegisteredName" contextRef="dCurrent">${esc(meta.companyName)}</ix:nonNumeric></h1>
   <p>Financial statements for the period ended ${end}</p>
