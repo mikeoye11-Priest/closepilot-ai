@@ -485,10 +485,11 @@ function buildValidationChecks(files: ParsedFile[]): ValidationCheck[] {
   }
 
   if (vatFile && tbFile) {
-    const vatTotal = canonicalVatTotal(vatFile);
+    const vatTotal = netVatReportTotal(vatFile);
+    const vatControlPattern = /\bvat\b|\bgst\b|sales\s*tax|vat\s*control|vat\s*liabilit|tax\s*control|vat payable/i;
     const vatControlTotal = Math.abs(tbFile.trialBalance
-      ?.filter((line) => /vat\s*control|vat\s*liabilit|vat\s*output|vat\s*input|tax\s*control|vat payable/i.test(line.accountName))
-      .reduce((sum, line) => sum + line.balance, 0) ?? sumMatchingRows(tbFile.rows, [/vat\s*control|vat\s*liabilit|vat\s*output|vat\s*input|tax\s*control|vat payable/i]));
+      ?.filter((line) => vatControlPattern.test(line.accountName))
+      .reduce((sum, line) => sum + line.balance, 0) ?? sumMatchingRows(tbFile.rows, [vatControlPattern]));
     const diff = Math.abs(Math.abs(vatTotal) - vatControlTotal);
     checks.push({
       id: `val_xfile_vat_ctrl_${vatFile.upload.id}`,
@@ -565,6 +566,19 @@ function canonicalCreditorTotal(file: ParsedFile) {
 function canonicalVatTotal(file: ParsedFile) {
   return file.vatTransactions?.reduce((sum, transaction) => sum + transaction.vatAmount, 0)
     ?? file.rows.reduce((sum, row) => sum + amnt(row, VAT_AMOUNT_KEYS), 0);
+}
+
+// Net VAT (output minus input) using each row's transaction type, mirroring the
+// reconciliation engine so this cross-check agrees with REC_003 rather than
+// summing both VAT sides gross. Falls back to the canonical sum without types.
+function netVatReportTotal(file: ParsedFile) {
+  const typeKeys = ["type", "transaction_type", "direction", "supply_type"];
+  if (!file.rows.some((row) => val(row, typeKeys))) return Math.abs(canonicalVatTotal(file));
+  return Math.abs(file.rows.reduce((sum, row) => {
+    const vat = amnt(row, VAT_AMOUNT_KEYS);
+    const isInput = /purchase|input|payable|accpay|bill|expense/i.test(val(row, typeKeys));
+    return sum + (isInput ? -vat : vat);
+  }, 0));
 }
 
 function isCanonicalTrialBalanceLine(value: TrialBalanceLine | Record<string, string>): value is TrialBalanceLine {
