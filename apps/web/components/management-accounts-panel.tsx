@@ -12,11 +12,12 @@ export function ManagementAccountsPanel({ tenantId, companyId, companyName }: { 
   };
 
   const contents = [
+    "AI-drafted commentary, grounded in the figures (review before issuing)",
     "Profit & loss with gross and net profit",
     "Balance sheet with net current assets and net assets",
-    "Cash position and bank reconciliation status",
-    "Aged debtors and creditors (current → 90+ days)",
+    "Cash position, bank reconciliation and aged debtors/creditors",
     "KPIs: gross/net margin, current ratio, debtor & creditor days",
+    "Notes to the accounts (turnover, debtors, creditors, fixed assets, policies)",
   ];
 
   return (
