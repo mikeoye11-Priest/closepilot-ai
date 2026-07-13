@@ -83,7 +83,7 @@ async function runXeroSync({ supabase, connection, syncId, sessionUserId, body, 
     const company: Company = { id: companyId, tenantId, name: stringValue(body.companyName) || connection.external_tenant_name || "Xero Company", industry: stringValue(body.companyIndustry), accountingSystem: "Xero", currency: stringValue(body.currency) || "GBP", country: stringValue(body.country) || "United Kingdom" };
     const analysis = scopeAnalysisResult(analyseParsedFiles(parsedFiles), tenant, company);
     const completedAt = new Date().toISOString();
-    await supabase.from("accounting_sync_runs").update({ status: "completed", records_imported: imported, result_summary: { counts: sync.counts, warnings: sync.warnings, reportShapes: sync.reportShapes, analysis }, completed_at: completedAt }).eq("id", syncId);
+    await supabase.from("accounting_sync_runs").update({ status: "completed", records_imported: imported, result_summary: { counts: sync.counts, warnings: sync.warnings, analysis }, completed_at: completedAt }).eq("id", syncId);
     await supabase.from("accounting_integrations").update({ last_synced_at: completedAt, updated_at: completedAt }).eq("id", connection.id);
     await supabase.from("audit_logs").insert({ id: crypto.randomUUID(), tenant_id: tenantId, user_id: sessionUserId, action: "xero_sync_completed", entity_type: "accounting_sync_run", entity_id: syncId });
   } catch (error) {
