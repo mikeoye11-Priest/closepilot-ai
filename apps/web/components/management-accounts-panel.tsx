@@ -7,14 +7,14 @@ const CONFIG: Record<Variant, { eyebrow: string; title: string; route: string; b
     eyebrow: "Accounts Production",
     title: "Management Accounts",
     route: "/api/reports/management-accounts",
-    blurb: "Generate a client-ready management accounts pack directly from the connected Xero ledger — no re-keying. Built from the latest completed sync.",
+    blurb: "A client-ready management accounts pack, generated directly from the connected Xero ledger — no re-keying. Built from the latest completed sync.",
     contents: [
       "AI-drafted commentary, grounded in the figures (review before issuing)",
       "Profit & loss with gross and net profit",
       "Balance sheet with net current assets and net assets",
       "Cash position, bank reconciliation and aged debtors/creditors",
       "KPIs: gross/net margin, current ratio, debtor & creditor days",
-      "Notes to the accounts (turnover, debtors, creditors, fixed assets, policies)",
+      "Prior-period comparatives and notes to the accounts",
     ],
   },
   statutory: {
@@ -23,74 +23,78 @@ const CONFIG: Record<Variant, { eyebrow: string; title: string; route: string; b
     route: "/api/reports/financial-accounts",
     blurb: "Draft statutory financial statements in FRS 102 Section 1A (small company) format from the connected Xero ledger — for review before filing.",
     contents: [
-      "Statement of Financial Position (statutory balance sheet format)",
-      "Income Statement (turnover → gross profit → operating profit)",
-      "Notes to the financial statements (policies, turnover, debtors, creditors, fixed assets)",
-      "Accounting policies under FRS 102 Section 1A",
+      "Statement of Financial Position + Income Statement (with prior-year comparatives)",
+      "Directors' report and accounting policies (FRS 102 Section 1A)",
+      "Notes to the financial statements",
+      "Corporation tax computation (marginal relief, period-pro-rated)",
       "Directors' approval and small-company audit-exemption statement",
     ],
   },
 };
 
+function FormatCard({ title, sub, onClick, tone = "default" }: { title: string; sub: string; onClick: () => void; tone?: "primary" | "default" | "amber" }) {
+  const tones = {
+    primary: "border-brand bg-brand/5 hover:bg-brand/10",
+    default: "border-line bg-white hover:bg-slate-50",
+    amber: "border-amber-300 bg-amber-50 hover:bg-amber-100",
+  } as const;
+  const titleTone = tone === "primary" ? "text-brand" : tone === "amber" ? "text-amber-800" : "text-ink";
+  return (
+    <button onClick={onClick} className={`flex flex-col items-start rounded-xl border px-4 py-3 text-left transition-colors ${tones[tone]}`}>
+      <span className={`text-sm font-black ${titleTone}`}>{title}</span>
+      <span className="mt-0.5 text-xs text-slate-500">{sub}</span>
+    </button>
+  );
+}
+
 export function ManagementAccountsPanel({ tenantId, companyId, companyName, variant = "management" }: { tenantId: string; companyId: string; companyName: string; variant?: Variant }) {
   const config = CONFIG[variant];
   const base = `${config.route}?${new URLSearchParams({ tenantId, companyId }).toString()}`;
-  const openPdf = () => window.open(`${base}&print=1`, "_blank", "noopener,noreferrer");
-  const openView = () => window.open(base, "_blank", "noopener,noreferrer");
-  const downloadWord = () => {
+  const open = (extra = "") => window.open(`${base}${extra}`, "_blank", "noopener,noreferrer");
+  const download = (extra: string) => {
     const anchor = document.createElement("a");
-    anchor.href = `${base}&format=doc`;
-    anchor.rel = "noopener";
-    anchor.click();
-  };
-  const downloadIxbrl = () => {
-    const anchor = document.createElement("a");
-    anchor.href = `${base}&format=ixbrl`;
+    anchor.href = `${base}${extra}`;
     anchor.rel = "noopener";
     anchor.click();
   };
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-6">
-      <div className="rounded-2xl border border-line bg-white p-6 shadow-sm">
-        <p className="text-xs font-black uppercase tracking-wider text-brand">{config.eyebrow}</p>
-        <h1 className="mt-1 text-2xl font-black text-ink">{config.title}</h1>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          {config.blurb.replace("the connected Xero ledger", "")}for <span className="font-bold">{companyName}</span> from the connected Xero ledger.
-        </p>
-
-        <div className="mt-5 grid gap-2 sm:grid-cols-2">
-          {config.contents.map((item) => (
-            <div key={item} className="flex items-start gap-2 text-sm text-slate-700">
-              <span className="mt-0.5 text-brand">✓</span>
-              <span>{item}</span>
-            </div>
-          ))}
+      <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
+        <div className="border-b border-line bg-gradient-to-br from-brand/5 to-transparent px-6 py-5">
+          <p className="text-xs font-black uppercase tracking-wider text-brand">{config.eyebrow}</p>
+          <h1 className="mt-1 text-2xl font-black text-ink">{config.title}</h1>
+          <p className="mt-2 max-w-2xl text-sm text-slate-600">
+            <span className="font-bold">{companyName}</span> — {config.blurb}
+          </p>
         </div>
 
-        <div className="mt-6 flex flex-wrap gap-3">
-          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700" onClick={openPdf}>
-            Open pack — Save as PDF
-          </button>
-          <button className="rounded-lg border border-brand px-4 py-2 text-sm font-bold text-brand" onClick={downloadWord}>
-            Download Word (.doc)
-          </button>
-          <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold text-slate-700" onClick={openView}>
-            Preview in browser
-          </button>
-          {variant === "statutory" && (
-            <button className="rounded-lg border border-amber-400 bg-amber-50 px-4 py-2 text-sm font-bold text-amber-800" onClick={downloadIxbrl}>
-              Export iXBRL (draft)
-            </button>
-          )}
-        </div>
+        <div className="px-6 py-5">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-500">What's included</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {config.contents.map((item) => (
+              <div key={item} className="flex items-start gap-2 text-sm text-slate-700">
+                <span className="mt-0.5 shrink-0 text-brand">✓</span>
+                <span>{item}</span>
+              </div>
+            ))}
+          </div>
 
-        <p className="mt-4 text-xs text-slate-500">
-          {variant === "statutory"
-            ? "Draft statutory statements for review. Tax, directors' report and full statutory disclosures remain the preparer's responsibility before filing."
-            : "The pack is prepared for internal management purposes; any AI-drafted narrative is grounded in the figures and must be reviewed before issue."}
-          {" "}Reflects the most recent Xero sync — if it looks out of date, run <span className="font-semibold">Settings → Sync now</span> first.
-        </p>
+          <p className="mt-6 text-xs font-bold uppercase tracking-wider text-slate-500">Download or view</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <FormatCard title="PDF" sub="Print-ready · opens in a tab" tone="primary" onClick={() => open("&print=1")} />
+            <FormatCard title="Word (.doc)" sub="Editable in Microsoft Word" onClick={() => download("&format=doc")} />
+            <FormatCard title="Preview" sub="View in the browser" onClick={() => open("")} />
+            {variant === "statutory" && <FormatCard title="iXBRL (draft)" sub="For Companies House filing" tone="amber" onClick={() => download("&format=ixbrl")} />}
+          </div>
+
+          <p className="mt-5 text-xs text-slate-500">
+            {variant === "statutory"
+              ? "Draft statutory statements for review. Tax, directors' report and full disclosures remain the preparer's responsibility before filing; the iXBRL must be validated against a filing checker."
+              : "Prepared for internal management purposes; any AI-drafted narrative is grounded in the figures and must be reviewed before issue."}
+            {" "}Reflects the most recent Xero sync — if it looks out of date, run <span className="font-semibold">Settings → Sync now</span> first.
+          </p>
+        </div>
       </div>
     </div>
   );

@@ -49,8 +49,9 @@ export async function GET(request: Request) {
     return new NextResponse(renderIxbrl(pack, companyNumber), { headers: { "Content-Type": "application/xhtml+xml; charset=utf-8", "Content-Disposition": `attachment; filename="${filename}"` } });
   }
 
-  const html = renderStatutoryAccountsHtml(pack, { autoPrint });
-  if (format === "doc" || format === "word") {
+  const isWord = format === "doc" || format === "word";
+  const html = renderStatutoryAccountsHtml(pack, { autoPrint, word: isWord });
+  if (isWord) {
     const filename = `${slug(pack.meta.companyName)}-financial-statements-${statements.asOfDate}.doc`;
     return new NextResponse(html, { headers: { "Content-Type": "application/msword", "Content-Disposition": `attachment; filename="${filename}"` } });
   }
