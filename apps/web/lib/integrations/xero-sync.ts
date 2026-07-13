@@ -1,14 +1,17 @@
 import type { XeroClient, Invoice, BankTransaction, ManualJournal, CreditNote } from "xero-node";
 import { describeXeroError } from "./xero";
 
+type BankAccountBalance = { account: string; closing: number };
+
 export type XeroSyncData = {
   trialBalanceRows: Record<string, string>[];
   profitLossRows: Record<string, string>[];
   balanceSheetRows: Record<string, string>[];
   agedDebtorRows: Record<string, string>[];
   agedCreditorRows: Record<string, string>[];
+  bankReconRows: Record<string, string>[];
   vatRows: Record<string, string>[];
-  counts: { trialBalance: number; profitLoss: number; balanceSheet: number; agedDebtors: number; agedCreditors: number; invoices: number; creditNotes: number; bankTransactions: number; manualJournals: number; vatRows: number };
+  counts: { trialBalance: number; profitLoss: number; balanceSheet: number; agedDebtors: number; agedCreditors: number; invoices: number; creditNotes: number; bankTransactions: number; manualJournals: number; bankAccounts: number; vatRows: number };
   // Per-source failures. Populated when one report/endpoint fails but others
   // succeed, so a single broken source degrades gracefully instead of failing
   // the whole sync (each source below is fetched independently).
@@ -34,7 +37,7 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
   // x-rate-limit-problem: concurrent beyond that). Fetch the six sources through
   // a small pool so we never exceed the limit — firing all six at once was
   // getting invoices rejected while the rest slipped through.
-  const [trialBalanceRows, profitLossRows, balanceSheetRows, invoices, creditNotes, bankTransactions, manualJournals] = await runWithConcurrency<Record<string, string>[] | Invoice[] | CreditNote[] | BankTransaction[] | ManualJournal[]>(4, [
+  const [trialBalanceRows, profitLossRows, balanceSheetRows, invoices, creditNotes, bankTransactions, manualJournals, bankSummary] = await runWithConcurrency<Record<string, string>[] | Invoice[] | CreditNote[] | BankTransaction[] | ManualJournal[] | BankAccountBalance[]>(4, [
     () => safe("trial balance", [] as Record<string, string>[], async () =>
       flattenTrialBalance((await xero.accountingApi.getReportTrialBalance(xeroTenantId, asOfDate, false)).body.reports?.[0]?.rows ?? [])),
     () => safe("profit & loss", [] as Record<string, string>[], async () =>
@@ -47,7 +50,10 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     () => safe("credit notes", [] as CreditNote[], () => fetchAllPages(100, (page) => xero.accountingApi.getCreditNotes(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 4, 100), (body) => body.creditNotes ?? [])),
     () => safe("bank transactions", [] as BankTransaction[], () => fetchAllPages(100, (page) => xero.accountingApi.getBankTransactions(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 4, 100), (body) => body.bankTransactions ?? [])),
     () => safe("manual journals", [] as ManualJournal[], () => fetchAllPages(100, (page) => xero.accountingApi.getManualJournals(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 100), (body) => body.manualJournals ?? [])),
-  ]) as [Record<string, string>[], Record<string, string>[], Record<string, string>[], Invoice[], CreditNote[], BankTransaction[], ManualJournal[]];
+    // Bank Summary needs accounting.reports.banksummary.read (granted on reconnect).
+    () => safe("bank summary", [] as BankAccountBalance[], async () =>
+      flattenBankSummary((await xero.accountingApi.getReportBankSummary(xeroTenantId, plFromDate, asOfDate)).body.reports?.[0]?.rows ?? [])),
+  ]) as [Record<string, string>[], Record<string, string>[], Record<string, string>[], Invoice[], CreditNote[], BankTransaction[], ManualJournal[], BankAccountBalance[]];
 
   const paidOrAuthorised = (status: unknown) => { const s = String(status).toUpperCase(); return s === "AUTHORISED" || s === "PAID"; };
   const authorisedCreditNotes = creditNotes.filter((note) => paidOrAuthorised(note.status));
@@ -118,6 +124,31 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     ...authorisedCreditNotes.filter((note) => String(note.type).startsWith("ACCPAY") && number(note.remainingCredit) > 0).map((note) => agedCreditNoteRow(note, "supplier_name", asOfDate)),
   ];
 
+  // Bank reconciliation: per-account closing balance (from Bank Summary) plus the
+  // count/value of unreconciled transactions in Xero. Xero's API does not expose
+  // the bank *statement* itself, so this is a cash-position + unreconciled-items
+  // review, not a statement tie-out — the closing balance ties to the TB bank.
+  const unreconciled = new Map<string, { count: number; amount: number }>();
+  for (const transaction of bankTransactions) {
+    if (transaction.isReconciled === false) {
+      const name = String(transaction.bankAccount?.name ?? "Bank account");
+      const entry = unreconciled.get(name) ?? { count: 0, amount: 0 };
+      entry.count += 1;
+      entry.amount += Math.abs(number(transaction.total));
+      unreconciled.set(name, entry);
+    }
+  }
+  const bankReconRows = bankSummary.map((account) => {
+    const items = unreconciled.get(account.account) ?? { count: 0, amount: 0 };
+    return {
+      account: account.account,
+      closing_balance: String(account.closing),
+      unreconciled_count: String(items.count),
+      unreconciled_amount: String(items.amount),
+      status: items.count > 0 ? `${items.count} unreconciled item(s)` : "reconciled",
+    };
+  });
+
   const vatRows = [...invoiceRows, ...bankRows, ...journalRows, ...creditNoteRows];
   return {
     trialBalanceRows,
@@ -125,8 +156,9 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     balanceSheetRows,
     agedDebtorRows,
     agedCreditorRows,
+    bankReconRows,
     vatRows,
-    counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, balanceSheet: balanceSheetRows.length, agedDebtors: agedDebtorRows.length, agedCreditors: agedCreditorRows.length, invoices: invoices.length, creditNotes: authorisedCreditNotes.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, vatRows: vatRows.length },
+    counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, balanceSheet: balanceSheetRows.length, agedDebtors: agedDebtorRows.length, agedCreditors: agedCreditorRows.length, invoices: invoices.length, creditNotes: authorisedCreditNotes.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, bankAccounts: bankReconRows.length, vatRows: vatRows.length },
     warnings,
   };
 }
@@ -232,6 +264,21 @@ function flattenBalanceSheet(sections: Array<{ title?: string; rows?: Array<{ ce
       // Skip subtotal/total rows so the analysis isn't double-counted.
       if (!item || /^total/i.test(item)) continue;
       out.push({ category, item, amount: String(amount(cells[cells.length - 1]?.value)) });
+    }
+  }
+  return out;
+}
+
+// Bank Summary report → per-account closing balance (the last column). Subtotal/
+// total and header rows are skipped so only real bank accounts remain.
+function flattenBankSummary(sections: Array<{ rows?: Array<{ cells?: Array<{ value?: string }> }> }>): BankAccountBalance[] {
+  const out: BankAccountBalance[] = [];
+  for (const section of sections) {
+    for (const row of section.rows ?? []) {
+      const cells = row.cells ?? [];
+      const account = String(cells[0]?.value ?? "").trim();
+      if (!account || /^(total|bank account)$/i.test(account)) continue;
+      out.push({ account, closing: amount(cells[cells.length - 1]?.value) });
     }
   }
   return out;

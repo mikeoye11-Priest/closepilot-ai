@@ -12,6 +12,7 @@ export const XERO_SCOPES = [
   "accounting.reports.trialbalance.read",
   "accounting.reports.profitandloss.read",
   "accounting.reports.balancesheet.read",
+  "accounting.reports.banksummary.read",
   "accounting.invoices.read",
   "accounting.banktransactions.read",
   "accounting.manualjournals.read",
