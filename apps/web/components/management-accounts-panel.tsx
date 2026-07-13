@@ -1,8 +1,8 @@
 "use client";
 
-type Variant = "management" | "statutory";
+type Variant = "management" | "statutory" | "full";
 
-const CONFIG: Record<Variant, { eyebrow: string; title: string; route: string; blurb: string; contents: string[] }> = {
+const CONFIG: Record<Variant, { eyebrow: string; title: string; route: string; extra?: string; blurb: string; contents: string[] }> = {
   management: {
     eyebrow: "Accounts Production",
     title: "Management Accounts",
@@ -30,6 +30,20 @@ const CONFIG: Record<Variant, { eyebrow: string; title: string; route: string; b
       "Directors' approval and small-company audit-exemption statement",
     ],
   },
+  full: {
+    eyebrow: "Accounts Production",
+    title: "Financial Accounts (Full FRS 102)",
+    route: "/api/reports/financial-accounts",
+    extra: "&basis=full",
+    blurb: "Draft full FRS 102 financial statements for companies above the small-company thresholds — including the primary statements a small company is exempt from.",
+    contents: [
+      "Statement of Financial Position + Income Statement (with comparatives)",
+      "Statement of Changes in Equity and Statement of Cash Flows (indirect)",
+      "Strategic report and directors' report",
+      "Fuller notes (employees, directors' remuneration, related parties) + tax computation",
+      "Subject to audit — no small-company exemption",
+    ],
+  },
 };
 
 function FormatCard({ title, sub, onClick, tone = "default" }: { title: string; sub: string; onClick: () => void; tone?: "primary" | "default" | "amber" }) {
@@ -49,7 +63,7 @@ function FormatCard({ title, sub, onClick, tone = "default" }: { title: string; 
 
 export function ManagementAccountsPanel({ tenantId, companyId, companyName, variant = "management" }: { tenantId: string; companyId: string; companyName: string; variant?: Variant }) {
   const config = CONFIG[variant];
-  const base = `${config.route}?${new URLSearchParams({ tenantId, companyId }).toString()}`;
+  const base = `${config.route}?${new URLSearchParams({ tenantId, companyId }).toString()}${config.extra ?? ""}`;
   const open = (extra = "") => window.open(`${base}${extra}`, "_blank", "noopener,noreferrer");
   const download = (extra: string) => {
     const anchor = document.createElement("a");
@@ -86,12 +100,12 @@ export function ManagementAccountsPanel({ tenantId, companyId, companyName, vari
             <FormatCard title="Word (.doc)" sub="Editable in Microsoft Word" onClick={() => download("&format=doc")} />
             <FormatCard title="Excel (.xlsx)" sub="Formatted · live formulas" onClick={() => download("&format=xlsx")} />
             <FormatCard title="Preview" sub="View in the browser" onClick={() => open("")} />
-            {variant === "statutory" && <FormatCard title="iXBRL (draft)" sub="For Companies House filing" tone="amber" onClick={() => download("&format=ixbrl")} />}
+            {(variant === "statutory" || variant === "full") && <FormatCard title="iXBRL (draft)" sub="For Companies House filing" tone="amber" onClick={() => download("&format=ixbrl")} />}
           </div>
 
           <p className="mt-5 text-xs text-slate-500">
-            {variant === "statutory"
-              ? "Draft statutory statements for review. Tax, directors' report and full disclosures remain the preparer's responsibility before filing; the iXBRL must be validated against a filing checker."
+            {variant !== "management"
+              ? "Draft statutory statements for review. Tax, directors'/strategic report, audit and full disclosures remain the preparer's responsibility before filing; the iXBRL must be validated against a filing checker."
               : "Prepared for internal management purposes; any AI-drafted narrative is grounded in the figures and must be reviewed before issue."}
             {" "}Reflects the most recent Xero sync — if it looks out of date, run <span className="font-semibold">Settings → Sync now</span> first.
           </p>

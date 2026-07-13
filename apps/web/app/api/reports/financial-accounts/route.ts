@@ -41,7 +41,8 @@ export async function GET(request: Request) {
   const statements = run.result_summary?.statements;
   if (!statements?.profitLoss) return htmlPage("This review predates accounts-production support. Run a fresh Xero sync (Settings → Sync now), then reopen this page.", 409);
 
-  const pack = buildStatutoryAccounts(statements);
+  const full = url.searchParams.get("basis") === "full";
+  const pack = buildStatutoryAccounts(statements, { full });
 
   if (format === "xlsx" || format === "excel") {
     const { buildStatutoryWorkbook } = await import("@/lib/accounts-xlsx");
