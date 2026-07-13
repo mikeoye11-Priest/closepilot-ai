@@ -75,7 +75,7 @@ export function buildStatutoryAccounts(statements: SyncStatements, opts: { full?
     { title: "Capital and reserves", rows: [...sofp.equityLines.map((l) => ({ label: l.name, value: l.amount, prior: l.prior })), { label: "Shareholders' funds", value: bs.totalEquity, prior: bs.priorEquity, strong: true }] },
   ];
 
-  const periodStart = `${ma.meta.asOfDate.slice(0, 4)}-01-01`;
+  const periodStart = statements.periodStart ?? `${ma.meta.asOfDate.slice(0, 4)}-01-01`;
   const periodDays = Math.max(1, Math.round((Date.parse(ma.meta.asOfDate) - Date.parse(periodStart)) / 86_400_000) + 1);
   const depreciation = flat(pl.expenses).filter((l) => /depreciat|amortis/i.test(l.name)).reduce((total, l) => total + Math.abs(l.amount), 0);
   const profitBeforeTax = pl.netProfit;
