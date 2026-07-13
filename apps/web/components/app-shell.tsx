@@ -16,7 +16,7 @@ import { ManagementAccountsPanel } from "@/components/management-accounts-panel"
 
 const navGroups = [
   { label: "", items: ["Partner Summary"] },
-  { label: "Review workflow", items: ["Findings", "Finance Review", "Audit Readiness", "Management Accounts", "Review Pack"] },
+  { label: "Review workflow", items: ["Findings", "Finance Review", "Audit Readiness", "Management Accounts", "Financial Accounts", "Review Pack"] },
   { label: "Intelligence", items: ["Change Intelligence", "Cash Intelligence", "VAT Assurance", "Controls & Fraud", "Collections Intelligence", "Close Review"] },
   { label: "Workspace", items: ["Upload Finance Pack", "Compatibility", "Practice Portal", "Ask ClosePilot", "User Guide"] },
   { label: "Admin", items: ["Assurance Engine", "Settings"], advanced: true },
@@ -2829,6 +2829,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setActive("Findings");
     }} setActive={setActive} />;
     if (active === "Management Accounts") return <ManagementAccountsPanel tenantId={tenant.id} companyId={currentCompany.id} companyName={currentCompany.name} />;
+    if (active === "Financial Accounts") return <ManagementAccountsPanel tenantId={tenant.id} companyId={currentCompany.id} companyName={currentCompany.name} variant="statutory" />;
     if (active === "Review Pack") return <ReviewPack company={currentCompany} tenant={tenant} userName={userName} score={score} risk={risk} findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} recommendations={recommendations} validationChecks={validationChecks} uploads={uploads} financialExposure={financialExposure} cashAtRisk={cashAtRisk} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
     if (active === "Change Intelligence") return <ChangeIntelligence findings={findings} findingActivities={findingActivities} partnerSignOff={partnerSignOff} validationChecks={validationChecks} uploads={uploads} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
