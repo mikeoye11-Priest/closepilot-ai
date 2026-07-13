@@ -13,6 +13,10 @@ export type VatTreatment =
 
 export type VatTransaction = {
   date?: string;
+  taxPointDate?: string;
+  paidDate?: string;
+  reference?: string;
+  status?: string;
   party?: string;
   description?: string;
   netAmount: number;
@@ -28,6 +32,26 @@ export type VatTransaction = {
   type?: "sale" | "purchase" | "adjustment" | "unknown";
   treatment: VatTreatment;
   sourceFile: string;
+};
+
+export type VatCompanySize = "small" | "large" | "unknown";
+
+export type VatScheme =
+  | "standard"
+  | "cash_accounting"
+  | "flat_rate"
+  | "partial_exemption"
+  | "margin_scheme"
+  | "mixed"
+  | "unknown";
+
+export type VatAssuranceProfile = {
+  version: "VAT-V3";
+  companySize: VatCompanySize;
+  scheme: VatScheme;
+  materiality: number;
+  riskTolerance: "focused" | "standard" | "enhanced";
+  detectedSignals: string[];
 };
 
 export type VatReturn = {
@@ -95,8 +119,8 @@ export type VatAssuranceStatus = "passed" | "failed" | "review" | "not_tested";
 
 export type VatAssuranceCheck = {
   id: string;
-  suite: "vat_assurance_v2";
-  category: "box_validation" | "control_reconciliation" | "manual_journals" | "reverse_charge" | "piva" | "trend_analysis";
+  suite: "vat_assurance_v2" | "vat_assurance_v3";
+  category: "box_validation" | "control_reconciliation" | "manual_journals" | "reverse_charge" | "piva" | "trend_analysis" | "scheme_compliance" | "coding_and_rates" | "evidence_quality";
   title: string;
   status: VatAssuranceStatus;
   severity: RiskLevel;
@@ -113,6 +137,8 @@ export type VatReadinessDrivers = {
   piva: number;
   reverseCharge: number;
   evidence: number;
+  schemeCompliance?: number;
+  codingAndRates?: number;
 };
 
 export type VatWorkpaper = {
@@ -149,6 +175,8 @@ export type VatExceptionDashboard = {
     piva: number;
     trendAnalysis: number;
     codingAndRates: number;
+    schemeCompliance: number;
+    evidenceQuality: number;
   };
 };
 
@@ -207,6 +235,7 @@ export type VatScoreBreakdown = {
 
 export type VatReviewResult = {
   vatReturn: VatReturn;
+  assuranceProfile?: VatAssuranceProfile;
   findings: VatFinding[];
   healthScore: number;
   readinessScore?: number;

@@ -6,6 +6,7 @@ import type {
   VatTransaction,
   VatWorkpaper,
   VatPeriodComparison,
+  VatAssuranceProfile,
 } from "./types";
 import { fc } from "./utils";
 
@@ -17,6 +18,7 @@ type AssuranceInput = {
   hasExplicitReturn: boolean;
   evidenceReviewed: string[];
   previousVatReturn?: VatReturn;
+  profile: VatAssuranceProfile;
 };
 
 type AssuranceOutput = {
@@ -47,6 +49,12 @@ export function runVatAssurance(input: AssuranceInput): AssuranceOutput {
     reverseChargeNetCheck(input),
     pivaTreatmentCheck(input),
     pivaBox4Check(input),
+    schemeProfileCheck(input),
+    cashAccountingEvidenceCheck(input),
+    partialExemptionRecoverabilityCheck(input),
+    flatRateSchemeCheck(input),
+    duplicateVatClaimCheck(input),
+    highValueZeroExemptCheck(input),
   ];
 
   const readinessDrivers: VatReadinessDrivers = {
@@ -55,13 +63,17 @@ export function runVatAssurance(input: AssuranceInput): AssuranceOutput {
     piva: categoryScore(checks, "piva"),
     reverseCharge: categoryScore(checks, "reverse_charge"),
     evidence: evidenceScore(input),
+    schemeCompliance: categoryScore(checks, "scheme_compliance"),
+    codingAndRates: categoryScore(checks, "coding_and_rates"),
   };
   const readinessScore = Math.round(
-    readinessDrivers.boxValidation * 0.25 +
-      readinessDrivers.controlReconciliations * 0.3 +
-      readinessDrivers.piva * 0.15 +
-      readinessDrivers.reverseCharge * 0.15 +
-      readinessDrivers.evidence * 0.15,
+    readinessDrivers.boxValidation * 0.2 +
+      readinessDrivers.controlReconciliations * 0.25 +
+      readinessDrivers.piva * 0.12 +
+      readinessDrivers.reverseCharge * 0.12 +
+      readinessDrivers.evidence * 0.12 +
+      (readinessDrivers.schemeCompliance ?? 60) * 0.12 +
+      (readinessDrivers.codingAndRates ?? 60) * 0.07,
   );
 
   return {
@@ -74,7 +86,7 @@ export function runVatAssurance(input: AssuranceInput): AssuranceOutput {
 }
 
 function baseCheck(check: Omit<VatAssuranceCheck, "suite">): VatAssuranceCheck {
-  return { suite: "vat_assurance_v2", ...check };
+  return { suite: "vat_assurance_v3", ...check };
 }
 
 function arithmeticCheck(id: string, title: string, expected: number, actual: number) {
@@ -244,11 +256,133 @@ function pivaBox4Check(input: AssuranceInput) {
   return baseCheck({ id: "VAT_041", category: "piva", title: "PIVA in Box 1 is also included in Box 4", status: difference <= TOLERANCE ? "passed" : "failed", severity: "high", expected: box1, actual: box4, difference, detail: difference <= TOLERANCE ? "PASS: PIVA Box 1 and Box 4 contributions agree." : `PIVA Box 1 ${fc(box1)} versus Box 4 ${fc(box4)}.`, recommendation: difference > TOLERANCE ? "Include recoverable postponed import VAT in Box 4." : undefined });
 }
 
+function schemeProfileCheck(input: AssuranceInput) {
+  const { profile } = input;
+  const detail = `VAT-V3 profile: ${profile.companySize} company, ${profile.scheme.replaceAll("_", " ")} scheme, materiality ${fc(profile.materiality)}.`;
+  return baseCheck({
+    id: "VAT_070",
+    category: "scheme_compliance",
+    title: "VAT scheme and company-size profile identified",
+    status: profile.scheme === "unknown" ? "review" : "passed",
+    severity: profile.companySize === "large" ? "high" : "medium",
+    detail: profile.detectedSignals.length ? `${detail} Signals: ${profile.detectedSignals.join("; ")}.` : `${detail} No explicit scheme signal was found; standard VAT checks applied.`,
+    recommendation: profile.scheme === "unknown" ? "Confirm whether the business uses standard VAT, cash accounting, flat rate, partial exemption or a specialist scheme." : undefined,
+  });
+}
+
+function cashAccountingEvidenceCheck(input: AssuranceInput) {
+  const applies = input.profile.scheme === "cash_accounting" || (input.profile.scheme === "mixed" && input.profile.detectedSignals.some((signal) => /cash/i.test(signal)));
+  if (!applies) {
+    return baseCheck({ id: "VAT_071", category: "scheme_compliance", title: "Cash accounting payment evidence tested", status: "not_tested", severity: "medium", detail: "Cash accounting was not detected for this VAT review." });
+  }
+  const taxable = input.transactions.filter((item) => item.treatment !== "outside_scope" && item.treatment !== "unknown");
+  const unsupported = taxable.filter((item) => !item.paidDate && !/paid|settled|received|cleared/i.test(`${item.status ?? ""} ${item.description ?? ""}`));
+  const exposure = unsupported.reduce((sum, item) => sum + Math.abs(item.vatAmount), 0);
+  return baseCheck({
+    id: "VAT_071",
+    category: "scheme_compliance",
+    title: "Cash accounting includes only paid/received transactions",
+    status: unsupported.length ? "failed" : "passed",
+    severity: "high",
+    actual: unsupported.length,
+    difference: exposure,
+    detail: unsupported.length ? `${unsupported.length} transaction(s) lack paid/received evidence under cash accounting; VAT exposure ${fc(exposure)}.` : "PASS: cash accounting transactions include paid/received evidence.",
+    recommendation: unsupported.length ? "Exclude unpaid transactions from the cash-accounting return or attach settlement evidence." : undefined,
+  });
+}
+
+function partialExemptionRecoverabilityCheck(input: AssuranceInput) {
+  if (input.profile.scheme !== "partial_exemption" && input.profile.scheme !== "mixed") {
+    return baseCheck({ id: "VAT_072", category: "scheme_compliance", title: "Partial exemption recovery reviewed", status: "not_tested", severity: "medium", detail: "Partial exemption was not detected for this VAT review." });
+  }
+  const inputVat = input.transactions.filter((item) => item.type === "purchase" && Math.abs(item.vatAmount) > 0);
+  const exemptOrResidual = inputVat.filter((item) => /exempt|insurance|finance|bank charge|medical|education|residual|mixed use|partial exemption/i.test(`${item.vatCode ?? ""} ${item.description ?? ""} ${item.party ?? ""}`));
+  const exposure = exemptOrResidual.reduce((sum, item) => sum + Math.abs(item.vatAmount), 0);
+  return baseCheck({
+    id: "VAT_072",
+    category: "scheme_compliance",
+    title: "Partial exemption input VAT is flagged for recoverability review",
+    status: exemptOrResidual.length ? "review" : "passed",
+    severity: "high",
+    actual: exemptOrResidual.length,
+    difference: exposure,
+    detail: exemptOrResidual.length ? `${exemptOrResidual.length} exempt/residual input VAT transaction(s) require partial-exemption attribution; exposure ${fc(exposure)}.` : "PASS: no exempt/residual input VAT recovery indicators were detected.",
+    recommendation: exemptOrResidual.length ? "Apply the partial-exemption method and restrict non-recoverable input VAT before filing." : undefined,
+  });
+}
+
+function flatRateSchemeCheck(input: AssuranceInput) {
+  const applies = input.profile.scheme === "flat_rate" || (input.profile.scheme === "mixed" && input.profile.detectedSignals.some((signal) => /flat/i.test(signal)));
+  if (!applies) {
+    return baseCheck({ id: "VAT_073", category: "scheme_compliance", title: "Flat Rate Scheme treatment reviewed", status: "not_tested", severity: "medium", detail: "Flat Rate Scheme was not detected for this VAT review." });
+  }
+  const inputClaims = input.contributions.filter((item) => item.box === "box4").reduce((sum, item) => sum + Math.abs(item.amount), 0);
+  return baseCheck({
+    id: "VAT_073",
+    category: "scheme_compliance",
+    title: "Flat Rate Scheme input VAT claims are restricted",
+    status: inputClaims > input.profile.materiality ? "review" : "passed",
+    severity: "high",
+    actual: inputClaims,
+    detail: inputClaims > input.profile.materiality ? `Box 4 input VAT contributions total ${fc(inputClaims)} under a flat-rate profile.` : "PASS: no material Box 4 input VAT claim detected under the flat-rate profile.",
+    recommendation: inputClaims > input.profile.materiality ? "Confirm the claim is allowed under the Flat Rate Scheme, such as eligible capital assets, before filing." : undefined,
+  });
+}
+
+function duplicateVatClaimCheck(input: AssuranceInput) {
+  const seen = new Map<string, VatTransaction[]>();
+  for (const item of input.transactions) {
+    if (item.type !== "purchase" || Math.abs(item.vatAmount) <= 0) continue;
+    const key = [normaliseKey(item.reference), normaliseKey(item.party), Math.round(Math.abs(item.netAmount) * 100), Math.round(Math.abs(item.vatAmount) * 100), item.date ?? ""].join("|");
+    const list = seen.get(key) ?? [];
+    list.push(item);
+    seen.set(key, list);
+  }
+  const duplicates = [...seen.values()].filter((items) => items.length > 1).flat();
+  const exposure = duplicates.reduce((sum, item) => sum + Math.abs(item.vatAmount), 0);
+  return baseCheck({
+    id: "VAT_074",
+    category: "coding_and_rates",
+    title: "Duplicate input VAT claims reviewed",
+    status: duplicates.length ? "failed" : "passed",
+    severity: input.profile.companySize === "large" ? "critical" : "high",
+    actual: duplicates.length,
+    difference: exposure,
+    detail: duplicates.length ? `${duplicates.length} possible duplicate purchase VAT transaction(s) detected; duplicated VAT exposure ${fc(exposure)}.` : "PASS: no duplicate input VAT claim pattern detected.",
+    recommendation: duplicates.length ? "Remove duplicate purchase VAT claims or document why the transactions are genuinely separate." : undefined,
+  });
+}
+
+function highValueZeroExemptCheck(input: AssuranceInput) {
+  const threshold = input.profile.companySize === "large" ? Math.max(input.profile.materiality, 10_000) : Math.max(input.profile.materiality, 2_500);
+  const rows = input.transactions.filter((item) =>
+    item.type === "sale" &&
+    Math.abs(item.netAmount) >= threshold &&
+    (item.treatment === "zero" || item.treatment === "exempt" || item.treatment === "outside_scope")
+  );
+  const exposure = rows.reduce((sum, item) => sum + Math.abs(item.netAmount), 0);
+  return baseCheck({
+    id: "VAT_075",
+    category: "evidence_quality",
+    title: "High-value zero-rated, exempt or outside-scope sales supported",
+    status: rows.length ? "review" : "passed",
+    severity: input.profile.companySize === "large" ? "high" : "medium",
+    actual: rows.length,
+    difference: exposure,
+    detail: rows.length ? `${rows.length} high-value zero/exempt/outside-scope sale(s) need evidence review; net value ${fc(exposure)}.` : "PASS: no high-value zero/exempt/outside-scope sales above the review threshold.",
+    recommendation: rows.length ? "Attach export evidence, exemption rationale or place-of-supply support before submission." : undefined,
+  });
+}
+
 function categoryScore(checks: VatAssuranceCheck[], category: VatAssuranceCheck["category"]) {
   const relevant = checks.filter((check) => check.category === category);
   if (!relevant.length) return 60;
   const points = relevant.reduce((sum, check) => sum + (check.status === "passed" ? 100 : check.status === "review" ? 70 : check.status === "not_tested" ? 60 : 0), 0);
   return Math.round(points / relevant.length);
+}
+
+function normaliseKey(value: string | undefined) {
+  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function evidenceScore(input: AssuranceInput) {

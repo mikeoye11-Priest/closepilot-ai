@@ -8489,7 +8489,7 @@ function VatAssuranceModule({ vatReview, findings, updateFindingStatus, setActiv
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
                 {(Object.entries(exceptionDashboard.categories) as Array<[keyof typeof exceptionDashboard.categories, number]>).map(([category, count]) => (
                   <div key={category} className="flex items-center justify-between rounded-lg border border-line bg-slate-50 px-3 py-2 text-sm">
-                    <span className="font-semibold">{({ boxValidation: "Box Validation", controlReconciliation: "Control Reconciliation", manualJournals: "Manual Journals", reverseCharge: "Reverse Charge", piva: "PIVA", trendAnalysis: "Trend Analysis", codingAndRates: "Coding & Rates" } as const)[category]}</span>
+                    <span className="font-semibold">{({ boxValidation: "Box Validation", controlReconciliation: "Control Reconciliation", manualJournals: "Manual Journals", reverseCharge: "Reverse Charge", piva: "PIVA", trendAnalysis: "Trend Analysis", codingAndRates: "Coding & Rates", schemeCompliance: "Scheme Compliance", evidenceQuality: "Evidence Quality" } as const)[category]}</span>
                     <Pill level={count ? "medium" : "low"}>{count}</Pill>
                   </div>
                 ))}
@@ -8588,7 +8588,7 @@ function VatAssuranceModule({ vatReview, findings, updateFindingStatus, setActiv
             {vatReview.readinessDrivers && (Object.entries(vatReview.readinessDrivers) as Array<[keyof NonNullable<VatReviewResult["readinessDrivers"]>, number]>).map(([driver, value]) => (
               <SummaryItem
                 key={driver}
-                label={({ boxValidation: "Box Validation", controlReconciliations: "Control Reconciliations", piva: "PIVA", reverseCharge: "Reverse Charge", evidence: "Evidence" } as const)[driver]}
+                label={({ boxValidation: "Box Validation", controlReconciliations: "Control Reconciliations", piva: "PIVA", reverseCharge: "Reverse Charge", evidence: "Evidence", schemeCompliance: "Scheme Compliance", codingAndRates: "Coding & Rates" } as const)[driver] ?? driver}
                 value={`${value}%`}
                 detail={value >= 85 ? "Ready" : value >= 70 ? "Review" : "Evidence or remediation required"}
                 level={value >= 85 ? "low" : value >= 70 ? "medium" : "high"}
@@ -8597,7 +8597,7 @@ function VatAssuranceModule({ vatReview, findings, updateFindingStatus, setActiv
           </div>
         </Panel>
 
-        <Panel title="VAT Assurance V2 Checks">
+        <Panel title="VAT Assurance Checks">
           <div className="grid gap-3">
             {assuranceChecks.map((check) => (
               <div key={check.id} className="rounded-lg border border-line bg-slate-50 p-4">

@@ -54,7 +54,7 @@ const pilotVatReview: VatReviewResult = {
   findings: [],
   healthScore: 96,
   readinessScore: 92,
-  readinessDrivers: { boxValidation: 100, controlReconciliations: 100, piva: 95, reverseCharge: 95, evidence: 90 },
+  readinessDrivers: { boxValidation: 100, controlReconciliations: 100, piva: 95, reverseCharge: 95, evidence: 90, schemeCompliance: 90, codingAndRates: 95 },
   assuranceChecks: [
     { id: "VAT-A01", suite: "vat_assurance_v2", category: "box_validation", title: "VAT return arithmetic", status: "passed", severity: "high", expected: 15200, actual: 15200, difference: 0, detail: "Boxes 1–5 recalculate correctly." },
     { id: "VAT-A02", suite: "vat_assurance_v2", category: "control_reconciliation", title: "VAT control reconciliation", status: "passed", severity: "high", expected: 15200, actual: 15200, difference: 0, detail: "VAT control agrees to the adjusted return after the late purchase journal." },
@@ -72,7 +72,7 @@ const pilotVatReview: VatReviewResult = {
     conclusion: "The adjusted VAT return is ready for reviewer acknowledgement. Prior-period trend comparison remains outside this synthetic pack.",
   },
   periodComparison: { currentVatDue: 15200, previousVatDue: 0, movement: 15200, percentageChange: null, threshold: 30, status: "not_available", primaryDriver: "Prior-period data unavailable", detail: "Load a comparative VAT return to activate movement analysis." },
-  exceptionDashboard: { high: 0, medium: 0, low: 1, total: 1, categories: { boxValidation: 0, controlReconciliation: 0, manualJournals: 0, reverseCharge: 0, piva: 0, trendAnalysis: 1, codingAndRates: 0 } },
+  exceptionDashboard: { high: 0, medium: 0, low: 1, total: 1, categories: { boxValidation: 0, controlReconciliation: 0, manualJournals: 0, reverseCharge: 0, piva: 0, trendAnalysis: 1, codingAndRates: 0, schemeCompliance: 0, evidenceQuality: 0 } },
   filingSignOff: { status: "ready_with_risks", label: "Ready with Risks", blockers: [], risks: ["Prior-period VAT comparison not tested in the synthetic pack."], detail: "Core return and reconciliation checks passed; acknowledge the missing comparative review." },
   scoreBreakdown: { computationAccuracy: 100, reconciliation: 100, missingVatCodes: 100, blockedVatExposure: 100, documentationQuality: 90, manualAdjustments: 85 },
   status: "HMRC VAT Return Ready for Review",

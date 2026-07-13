@@ -3,7 +3,7 @@ import { classifyVatTransaction } from "./classification";
 import { computeVatReturnWithContributions, emptyVatReturn } from "./computation";
 import { calculateVatScoreBreakdown, vatReviewStatus } from "./health-score";
 import { reconcileVatReturn } from "./reconciliation";
-import type { VatAssuranceCheck, VatBoxContribution, VatExceptionDashboard, VatFilingSignOff, VatFinding, VatReturn, VatTransaction, VatReviewResult } from "./types";
+import type { VatAssuranceCheck, VatAssuranceProfile, VatBoxContribution, VatExceptionDashboard, VatFilingSignOff, VatFinding, VatReturn, VatTransaction, VatReviewResult } from "./types";
 import { fc, money, rowText, text } from "./utils";
 import { vatRule } from "./rule-catalog";
 import { normaliseCountry } from "./country";
@@ -21,6 +21,10 @@ const supplierIdentityKeys = ["supplier", "supplier_name", "vendor", "vendor_nam
 const customerIdentityKeys = ["customer", "customer_name", "debtor", "debtor_name"];
 const descKeys = ["description", "details", "notes", "narration", "account_name"];
 const dateKeys = ["date", "transaction_date", "posting_date", "document_date"];
+const taxPointKeys = ["tax_point", "tax_point_date", "invoice_date", "document_date"];
+const paidDateKeys = ["paid_date", "payment_date", "settled_date", "cleared_date"];
+const referenceKeys = ["reference", "invoice_number", "invoice_no", "document_number", "transaction_id", "source_id"];
+const statusKeys = ["status", "payment_status", "paid_status"];
 const nominalKeys = ["nominal_code", "account_code", "g_l_account", "gl_account"];
 const countryKeys = ["country", "customer_country", "supplier_country", "ship_to_country", "bill_to_country"];
 const supplyTypeKeys = ["supply_type", "goods_services", "goods_or_services", "item_type"];
@@ -51,7 +55,8 @@ export function runVatEngine(files: ParsedFile[]): VatReviewResult {
   const vatControl = extractVatControl(files);
   const hmrcPayment = extractHmrcPayment(vatFiles);
   const reconciliationResults = reconcileVatReturn(vatReturn, vatControl, computed.boxContributions, transactions, hmrcPayment);
-  const findings = buildVatEngineFindings(vatReturn, transactions, reconciliationResults);
+  const profile = inferVatAssuranceProfile(files, transactions, vatReturn);
+  const findings = buildVatEngineFindings(vatReturn, transactions, reconciliationResults, profile);
   const assurance = runVatAssurance({
     vatReturn,
     transactions,
@@ -60,6 +65,7 @@ export function runVatEngine(files: ParsedFile[]): VatReviewResult {
     hasExplicitReturn: Boolean(explicitReturn),
     evidenceReviewed: buildEvidenceReviewed(files, transactions),
     previousVatReturn,
+    profile,
   });
   const score = calculateVatScoreBreakdown(findings, reconciliationResults, transactions);
   const healthScore = score.overall;
@@ -73,6 +79,7 @@ export function runVatEngine(files: ParsedFile[]): VatReviewResult {
 
   return {
     vatReturn,
+    assuranceProfile: profile,
     findings,
     healthScore,
     readinessScore: assurance.readinessScore,
@@ -111,7 +118,7 @@ function buildVatExceptionDashboard(findings: VatFinding[], checks: VatAssurance
     ...reconciliations.filter((item) => item.status === "failed").map(() => "high" as const),
   ];
   const categoryCount = (category: VatAssuranceCheck["category"]) => exceptionChecks.filter((check) => check.category === category).length;
-  const codingAndRates = findings.filter((finding) => /VAT100|VAT101|VAT102|VAT104|missing|code|rate/i.test(`${finding.id ?? ""} ${finding.finding}`)).length;
+  const codingAndRates = findings.filter((finding) => /VAT100|VAT101|VAT102|VAT104|VAT207|missing|code|rate|duplicate/i.test(`${finding.id ?? ""} ${finding.finding}`)).length;
   const categories = {
     boxValidation: categoryCount("box_validation"),
     controlReconciliation: categoryCount("control_reconciliation") + reconciliations.filter((item) => item.status === "failed").length,
@@ -120,6 +127,8 @@ function buildVatExceptionDashboard(findings: VatFinding[], checks: VatAssurance
     piva: categoryCount("piva"),
     trendAnalysis: categoryCount("trend_analysis"),
     codingAndRates,
+    schemeCompliance: categoryCount("scheme_compliance"),
+    evidenceQuality: categoryCount("evidence_quality"),
   };
   return {
     high: severityItems.filter((severity) => severity === "critical" || severity === "high").length,
@@ -227,6 +236,10 @@ function normaliseVatTransactions(file: ParsedFile): VatTransaction[] {
       const supplyType = /goods|stock|inventory|product/.test(rawSupplyType) ? "goods" : /service|subscription|licence|license|consult/.test(rawSupplyType) ? "services" : "unknown";
       const base = {
         date: text(row, dateKeys),
+        taxPointDate: text(row, taxPointKeys),
+        paidDate: text(row, paidDateKeys),
+        reference: text(row, referenceKeys),
+        status: text(row, statusKeys),
         party,
         description,
         netAmount,
@@ -272,7 +285,30 @@ function inferTransactionType(row: Record<string, string>, rawType: string, part
   return "unknown";
 }
 
-function buildVatEngineFindings(vatReturn: VatReturn, transactions: VatTransaction[], reconciliations: ReturnType<typeof reconcileVatReturn>): VatFinding[] {
+function inferVatAssuranceProfile(files: ParsedFile[], transactions: VatTransaction[], vatReturn: VatReturn): VatAssuranceProfile {
+  const corpus = `${files.map((file) => `${file.upload.fileName} ${file.upload.originalFileName ?? ""} ${file.rows.map(rowText).join(" ")}`).join(" ")} ${transactions.map((item) => `${item.description ?? ""} ${item.vatCode ?? ""} ${item.status ?? ""}`).join(" ")}`.toLowerCase();
+  const signals: string[] = [];
+  const has = (pattern: RegExp, signal: string) => {
+    const matched = pattern.test(corpus);
+    if (matched) signals.push(signal);
+    return matched;
+  };
+  const cash = has(/cash accounting|cash basis|paid date|payment date|settled date|received date/, "cash-accounting evidence");
+  const flat = has(/flat rate scheme|\bfrs\b|flat-rate|limited cost trader/, "flat-rate scheme signal");
+  const partial = has(/partial exemption|partly exempt|residual input|exempt supplies|exempt income|de minimis/, "partial-exemption signal");
+  const margin = has(/margin scheme|second hand|auctioneer|tour operators margin|toms\b/, "margin-scheme signal");
+  const schemeSignals = [cash, flat, partial, margin].filter(Boolean).length;
+  const scheme = schemeSignals > 1 ? "mixed" : cash ? "cash_accounting" : flat ? "flat_rate" : partial ? "partial_exemption" : margin ? "margin_scheme" : "standard";
+  const transactionVolume = transactions.length;
+  const grossThroughput = Math.abs(vatReturn.box6) + Math.abs(vatReturn.box7);
+  const highValueRows = transactions.filter((item) => Math.abs(item.netAmount) >= 25_000).length;
+  const companySize = transactionVolume >= 1000 || grossThroughput >= 5_000_000 || highValueRows >= 20 ? "large" : transactionVolume > 0 || grossThroughput > 0 ? "small" : "unknown";
+  const materiality = companySize === "large" ? Math.max(1_000, Math.round(grossThroughput * 0.0025)) : Math.max(100, Math.round(grossThroughput * 0.01));
+  const riskTolerance = companySize === "large" ? "enhanced" : "focused";
+  return { version: "VAT-V3", companySize, scheme, materiality, riskTolerance, detectedSignals: signals };
+}
+
+function buildVatEngineFindings(vatReturn: VatReturn, transactions: VatTransaction[], reconciliations: ReturnType<typeof reconcileVatReturn>, profile: VatAssuranceProfile): VatFinding[] {
   const findings: VatFinding[] = [];
   reconciliations.filter((item) => item.status === "failed").forEach((item) => {
     findings.push(makeVatFinding("VAT300", "high", item.name, item.detail, "Potential VAT return/control account mismatch", item.difference, "Resolve this reconciliation difference before treating the VAT return as ready."));
@@ -286,6 +322,28 @@ function buildVatEngineFindings(vatReturn: VatReturn, transactions: VatTransacti
   const blocked = transactions.filter((transaction) => /entertainment|hospitality|client dinner|golf/i.test(`${transaction.description} ${transaction.party}`) && transaction.vatAmount > 0);
   if (blocked.length) {
     findings.push(makeVatFinding("VAT200", "high", `Client entertainment VAT claimed — ${fc(blocked.reduce((sum, item) => sum + Math.abs(item.vatAmount), 0))}`, `${blocked.length} entertainment/hospitality transaction(s) include input VAT.`, "Potential Box 4 overclaim", blocked.reduce((sum, item) => sum + Math.abs(item.vatAmount), 0), "Remove VAT claim or provide supporting evidence.", blocked[0]));
+  }
+
+  const partialExemptionRows = transactions.filter((transaction) => transaction.type === "purchase" && Math.abs(transaction.vatAmount) > 0 && /partial exemption|partly exempt|residual|mixed use|insurance|finance|bank charge|medical|education/i.test(`${transaction.description ?? ""} ${transaction.party ?? ""} ${transaction.vatCode ?? ""}`));
+  if ((profile.scheme === "partial_exemption" || profile.scheme === "mixed") && partialExemptionRows.length) {
+    findings.push(makeVatFinding("VAT206", "high", `Partial exemption input VAT requires attribution — ${fc(partialExemptionRows.reduce((sum, item) => sum + Math.abs(item.vatAmount), 0))}`, `${partialExemptionRows.length} input VAT transaction(s) appear exempt, residual or mixed-use.`, "Potential Box 4 overclaim", partialExemptionRows.reduce((sum, item) => sum + Math.abs(item.vatAmount), 0), "Apply the partial-exemption method and restrict non-recoverable input VAT before submission.", partialExemptionRows[0]));
+  }
+
+  const duplicateGroups = new Map<string, VatTransaction[]>();
+  for (const transaction of transactions.filter((item) => item.type === "purchase" && Math.abs(item.vatAmount) > 0)) {
+    const key = [transaction.reference, transaction.party, Math.round(Math.abs(transaction.netAmount) * 100), Math.round(Math.abs(transaction.vatAmount) * 100), transaction.date].map((value) => String(value ?? "").trim().toLowerCase()).join("|");
+    const list = duplicateGroups.get(key) ?? [];
+    list.push(transaction);
+    duplicateGroups.set(key, list);
+  }
+  const duplicateRows = [...duplicateGroups.values()].filter((items) => items.length > 1).flat();
+  if (duplicateRows.length) {
+    findings.push(makeVatFinding("VAT207", profile.companySize === "large" ? "critical" : "high", `Possible duplicate input VAT claims — ${fc(duplicateRows.reduce((sum, item) => sum + Math.abs(item.vatAmount), 0))}`, `${duplicateRows.length} purchase VAT transaction(s) share reference, party, amount and date.`, "Duplicate VAT reclaim risk", duplicateRows.reduce((sum, item) => sum + Math.abs(item.vatAmount), 0), "Remove duplicate VAT claims or evidence why each line is a separate supply.", duplicateRows[0]));
+  }
+
+  const highValueZeroExempt = transactions.filter((transaction) => transaction.type === "sale" && Math.abs(transaction.netAmount) >= profile.materiality && (transaction.treatment === "zero" || transaction.treatment === "exempt" || transaction.treatment === "outside_scope"));
+  if (highValueZeroExempt.length) {
+    findings.push(makeVatFinding("VAT208", profile.companySize === "large" ? "high" : "medium", `High-value zero/exempt/outside-scope sales need support — ${fc(highValueZeroExempt.reduce((sum, item) => sum + Math.abs(item.netAmount), 0))}`, `${highValueZeroExempt.length} sale transaction(s) exceed VAT-V3 materiality and carry no output VAT.`, "Output VAT under-declaration risk if treatment is unsupported", highValueZeroExempt.reduce((sum, item) => sum + Math.abs(item.netAmount) * 0.2, 0), "Attach export evidence, exemption basis, or place-of-supply analysis before sign-off.", highValueZeroExempt[0]));
   }
 
   const blockedCars = transactions.filter((transaction) => /company car|car purchase|vehicle purchase|motor car|bmw|mercedes|audi|tesla/i.test(`${transaction.description} ${transaction.party}`) && transaction.vatAmount > 0);
