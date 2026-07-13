@@ -6,6 +6,7 @@ type BankAccountBalance = { account: string; closing: number };
 export type XeroSyncData = {
   trialBalanceRows: Record<string, string>[];
   profitLossRows: Record<string, string>[];
+  priorProfitLossRows: Record<string, string>[];
   balanceSheetRows: Record<string, string>[];
   agedDebtorRows: Record<string, string>[];
   agedCreditorRows: Record<string, string>[];
@@ -20,6 +21,10 @@ export type XeroSyncData = {
 
 export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, asOfDate: string, modifiedSince?: Date): Promise<XeroSyncData> {
   const plFromDate = `${asOfDate.slice(0, 4)}-01-01`;
+  // Prior-period comparatives: same year-to-date window, one year earlier.
+  const priorYear = Number(asOfDate.slice(0, 4)) - 1;
+  const priorFromDate = `${priorYear}-01-01`;
+  const priorToDate = `${priorYear}${asOfDate.slice(4)}`;
   const warnings: string[] = [];
   // Each source is fetched (and parsed) independently: one failing report or
   // endpoint records a warning and yields an empty result instead of rejecting
@@ -37,11 +42,15 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
   // x-rate-limit-problem: concurrent beyond that). Fetch the six sources through
   // a small pool so we never exceed the limit — firing all six at once was
   // getting invoices rejected while the rest slipped through.
-  const [trialBalanceRows, profitLossRows, balanceSheetRows, invoices, creditNotes, bankTransactions, manualJournals, bankSummary] = await runWithConcurrency<Record<string, string>[] | Invoice[] | CreditNote[] | BankTransaction[] | ManualJournal[] | BankAccountBalance[]>(4, [
+  const [trialBalanceRows, profitLossRows, priorProfitLossRows, balanceSheetRows, invoices, creditNotes, bankTransactions, manualJournals, bankSummary] = await runWithConcurrency<Record<string, string>[] | Invoice[] | CreditNote[] | BankTransaction[] | ManualJournal[] | BankAccountBalance[]>(4, [
     () => safe("trial balance", [] as Record<string, string>[], async () =>
       flattenTrialBalance((await xero.accountingApi.getReportTrialBalance(xeroTenantId, asOfDate, false)).body.reports?.[0]?.rows ?? [])),
     () => safe("profit & loss", [] as Record<string, string>[], async () =>
       flattenProfitAndLoss((await xero.accountingApi.getReportProfitAndLoss(xeroTenantId, plFromDate, asOfDate)).body.reports?.[0]?.rows ?? [])),
+    // Prior-period P&L for comparatives (a separate fetch keeps the current P&L
+    // parse — and its Cost-of-Sales sign fix — untouched).
+    () => safe("prior profit & loss", [] as Record<string, string>[], async () =>
+      flattenProfitAndLoss((await xero.accountingApi.getReportProfitAndLoss(xeroTenantId, priorFromDate, priorToDate)).body.reports?.[0]?.rows ?? [])),
     () => safe("balance sheet", [] as Record<string, string>[], async () =>
       flattenBalanceSheet((await xero.accountingApi.getReportBalanceSheet(xeroTenantId, asOfDate)).body.reports?.[0]?.rows ?? [])),
     () => safe("invoices", [] as Invoice[], () => fetchAllPages(100, (page) => xero.accountingApi.getInvoices(xeroTenantId, modifiedSince, undefined, "Date ASC", undefined, undefined, undefined, ["AUTHORISED", "PAID"], page, false, false, 4, false, 100), (body) => body.invoices ?? [])),
@@ -53,7 +62,7 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     // Bank Summary needs accounting.reports.banksummary.read (granted on reconnect).
     () => safe("bank summary", [] as BankAccountBalance[], async () =>
       flattenBankSummary((await xero.accountingApi.getReportBankSummary(xeroTenantId, plFromDate, asOfDate)).body.reports?.[0]?.rows ?? [])),
-  ]) as [Record<string, string>[], Record<string, string>[], Record<string, string>[], Invoice[], CreditNote[], BankTransaction[], ManualJournal[], BankAccountBalance[]];
+  ]) as [Record<string, string>[], Record<string, string>[], Record<string, string>[], Record<string, string>[], Invoice[], CreditNote[], BankTransaction[], ManualJournal[], BankAccountBalance[]];
 
   const paidOrAuthorised = (status: unknown) => { const s = String(status).toUpperCase(); return s === "AUTHORISED" || s === "PAID"; };
   const authorisedCreditNotes = creditNotes.filter((note) => paidOrAuthorised(note.status));
@@ -153,6 +162,7 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
   return {
     trialBalanceRows,
     profitLossRows,
+    priorProfitLossRows,
     balanceSheetRows,
     agedDebtorRows,
     agedCreditorRows,
@@ -275,8 +285,9 @@ function flattenBalanceSheet(sections: Array<{ title?: string; rows?: Array<{ ro
       const item = String(cells[0]?.value ?? "").trim();
       if (!item || /^(total|net assets|net current assets)\b/i.test(item)) continue;
       // Xero's BS report is [label, <this period>, <prior year>]; use the current
-      // period (first value cell), not the last cell (the prior-year comparison).
-      out.push({ category, item, amount: String(amount(cells[1]?.value)) });
+      // period (first value cell) as the amount and capture the prior-year cell
+      // for comparatives (0 when the report has no comparison column).
+      out.push({ category, item, amount: String(amount(cells[1]?.value)), prior_amount: String(amount(cells[2]?.value)) });
     }
   }
   return out;
