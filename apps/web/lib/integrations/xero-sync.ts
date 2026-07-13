@@ -257,15 +257,18 @@ function flattenProfitAndLoss(sections: Array<{ title?: string; rows?: Array<{ c
   return out;
 }
 
-function flattenBalanceSheet(sections: Array<{ title?: string; rows?: Array<{ cells?: Array<{ value?: string }> }> }>) {
+function flattenBalanceSheet(sections: Array<{ title?: string; rows?: Array<{ rowType?: unknown; cells?: Array<{ value?: string }> }> }>) {
   const out: Record<string, string>[] = [];
   for (const section of sections) {
     const category = String(section.title ?? "").trim() || "Balance Sheet";
     for (const row of section.rows ?? []) {
+      // Skip Xero subtotal/total rows (RowType "SummaryRow", e.g. "Net Assets",
+      // "Total …") — otherwise a summary line is double-counted and the balance
+      // sheet equation looks unbalanced by exactly that subtotal.
+      if (String(row.rowType) === "SummaryRow") continue;
       const cells = row.cells ?? [];
       const item = String(cells[0]?.value ?? "").trim();
-      // Skip subtotal/total rows so the analysis isn't double-counted.
-      if (!item || /^total/i.test(item)) continue;
+      if (!item || /^(total|net assets|net current assets)\b/i.test(item)) continue;
       // Xero's BS report is [label, <this period>, <prior year>]; use the current
       // period (first value cell), not the last cell (the prior-year comparison).
       out.push({ category, item, amount: String(amount(cells[1]?.value)) });
