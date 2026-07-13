@@ -149,7 +149,7 @@ export function runReconciliationEngine(files: ReconciliationFile[]): Reconcilia
   }
 
   if (tbFile && bankReconFile) {
-    const tbBankRows = matchingRows(tbFile.rows, [/bank.*current account|current account/i], [/overdraft|loan|interest|charges?/i]);
+    const tbBankRows = matchingRows(tbFile.rows, [/\bbank\b|current account|cash at bank|petty cash|checking|savings/i], [/overdraft|loan|interest|charges?|\bfees?\b|sales|revenue|income|receivable|payable/i]);
     const tbBank = Math.abs(sumRows(tbBankRows, BALANCE_KEYS));
     const reconBank = bankStatementBalance(bankReconFile.rows) ?? Math.abs(sumRows(bankReconFile.rows, BALANCE_KEYS));
     const diff = Math.abs(reconBank - tbBank);

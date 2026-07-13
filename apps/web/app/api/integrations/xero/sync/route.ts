@@ -100,6 +100,7 @@ function xeroParsedFiles(sync: Awaited<ReturnType<typeof fetchXeroSyncData>>, or
   const bsHeaders = ["category", "item", "amount"];
   const arHeaders = ["customer_name", "invoice_number", "invoice_date", "due_date", "days_overdue", "amount", "status"];
   const apHeaders = ["supplier_name", "invoice_number", "invoice_date", "due_date", "days_overdue", "amount", "status"];
+  const bankHeaders = ["account", "closing_balance", "unreconciled_count", "unreconciled_amount", "status"];
   const vatHeaders = ["date", "type", "party", "description", "net_amount", "vat_amount", "gross_amount", "vat_code", "nominal_code", "reference", "source_system"];
   return [
     { upload: { ...createUpload(`${prefix}-xero-trial-balance-${asOfDate}.csv`, sync.trialBalanceRows.length), fileType: "trial_balance", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: tbHeaders, rows: sync.trialBalanceRows, isParsed: true },
@@ -107,6 +108,7 @@ function xeroParsedFiles(sync: Awaited<ReturnType<typeof fetchXeroSyncData>>, or
     { upload: { ...createUpload(`${prefix}-xero-balance-sheet-${asOfDate}.csv`, sync.balanceSheetRows.length), fileType: "balance_sheet", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: bsHeaders, rows: sync.balanceSheetRows, isParsed: true },
     { upload: { ...createUpload(`${prefix}-xero-aged-debtors-${asOfDate}.csv`, sync.agedDebtorRows.length), fileType: "aged_debtors", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: arHeaders, rows: sync.agedDebtorRows, isParsed: true },
     { upload: { ...createUpload(`${prefix}-xero-aged-creditors-${asOfDate}.csv`, sync.agedCreditorRows.length), fileType: "aged_creditors", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: apHeaders, rows: sync.agedCreditorRows, isParsed: true },
+    { upload: { ...createUpload(`${prefix}-xero-bank-reconciliation-${asOfDate}.csv`, sync.bankReconRows.length), fileType: "bank_reconciliation", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: bankHeaders, rows: sync.bankReconRows, isParsed: true },
     { upload: { ...createUpload(`${prefix}-xero-vat-transactions-${asOfDate}.csv`, sync.vatRows.length), fileType: "vat_report", detectedVendor: "Xero", detectionConfidence: 100, detectionBasis: "Direct Xero Accounting API sync" }, headers: vatHeaders, rows: sync.vatRows, isParsed: true },
   ];
 }
