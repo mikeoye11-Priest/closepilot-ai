@@ -229,14 +229,15 @@ function normaliseVatTransactions(file: ParsedFile): VatTransaction[] {
     return file.vatTransactions
       .map((transaction) => {
         const row = file.rows[Math.max(0, (transaction.sourceRowIndex ?? 2) - 2)] ?? {};
-        const rawNetAmount = transaction.netAmount;
-        const vatAmount = transaction.vatAmount;
+        const vatCode = transaction.vatCode || text(row, vatCodeKeys);
         const rawGrossAmount = money(text(row, grossKeys));
+        const recovered = recoverGrossOnlyAmounts(transaction.netAmount, transaction.vatAmount, rawGrossAmount, vatCode);
+        const rawNetAmount = recovered.rawNetAmount;
+        const vatAmount = recovered.vatAmount;
         const { netAmount, grossAmount } = normaliseVatAmounts(rawNetAmount, vatAmount, rawGrossAmount);
         const rawType = text(row, typeKeys).toLowerCase();
         const party = text(row, partyKeys);
         const description = text(row, descKeys);
-        const vatCode = transaction.vatCode || text(row, vatCodeKeys);
         const transactionType = inferTransactionType(row, rawType, party, description, vatCode);
         const country = text(row, countryKeys);
         const normalisedCountry = normaliseCountry(country);
@@ -275,14 +276,15 @@ function normaliseRawVatTransactions(file: ParsedFile): VatTransaction[] {
   return file.rows
     .filter((row) => !isVatSummaryOrReconciliationRow(row))
     .map((row) => {
-      const rawNetAmount = money(text(row, netKeys));
-      const vatAmount = money(text(row, vatKeys));
+      const vatCode = text(row, vatCodeKeys);
       const rawGrossAmount = money(text(row, grossKeys));
+      const recovered = recoverGrossOnlyAmounts(money(text(row, netKeys)), money(text(row, vatKeys)), rawGrossAmount, vatCode);
+      const rawNetAmount = recovered.rawNetAmount;
+      const vatAmount = recovered.vatAmount;
       const { netAmount, grossAmount } = normaliseVatAmounts(rawNetAmount, vatAmount, rawGrossAmount);
       const rawType = text(row, typeKeys).toLowerCase();
       const party = text(row, partyKeys);
       const description = text(row, descKeys);
-      const vatCode = text(row, vatCodeKeys);
       const transactionType = inferTransactionType(row, rawType, party, description, vatCode);
       const country = text(row, countryKeys);
       const normalisedCountry = normaliseCountry(country);
@@ -312,6 +314,30 @@ function normaliseRawVatTransactions(file: ParsedFile): VatTransaction[] {
       return { ...base, treatment: classifyVatTransaction(base) };
     })
     .filter((transaction) => Math.abs(transaction.netAmount) > 0 || Math.abs(transaction.vatAmount) > 0);
+}
+
+// The rate a VAT code fixes when only a gross (VAT-inclusive) amount is
+// supplied. Blank or unrecognised codes return 0 so we never fabricate VAT — we
+// keep the gross as net and let the missing-code finding (VAT100) flag it.
+function rateForVatCode(vatCode: string): number {
+  const code = vatCode.trim().toUpperCase().replace(/[^A-Z0-9%]/g, "");
+  if (!code) return 0;
+  if (/^(5|R5)$|REDUCED|RED5|5%/.test(code)) return 0.05;
+  if (/^(20|S20)$|STANDARD|STD|PSTD|20%/.test(code)) return 0.2;
+  return 0;
+}
+
+// Xero and some prepared VAT exports emit rows carrying only a gross amount with
+// the net/tax columns blank. Left alone, such a row has net 0 and vat 0 and is
+// dropped by the amount filter below, so a VAT report that is "present" produces
+// an empty review. Recover the net (and, where the VAT code fixes the rate, the
+// tax) from the gross so the evidence is not silently lost.
+function recoverGrossOnlyAmounts(rawNetAmount: number, vatAmount: number, rawGrossAmount: number, vatCode: string): { rawNetAmount: number; vatAmount: number } {
+  if (rawNetAmount !== 0 || vatAmount !== 0 || rawGrossAmount === 0) return { rawNetAmount, vatAmount };
+  const rate = rateForVatCode(vatCode);
+  if (rate === 0) return { rawNetAmount: rawGrossAmount, vatAmount: 0 };
+  const net = Math.round((rawGrossAmount / (1 + rate)) * 100) / 100;
+  return { rawNetAmount: net, vatAmount: Math.round((rawGrossAmount - net) * 100) / 100 };
 }
 
 function normaliseVatAmounts(rawNetAmount: number, vatAmount: number, rawGrossAmount: number) {
