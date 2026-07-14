@@ -43,7 +43,11 @@ function integrationState(provider: AccountingIntegrationState["provider"], labe
         : configured
       ? "OAuth application credentials detected. Ready to authorise."
       : `Set ${prefix}_CLIENT_ID, ${prefix}_CLIENT_SECRET and ${prefix}_REDIRECT_URI.`,
-    connectUrl: configured && provider === "xero" && tenantId && companyId ? `/api/integrations/xero/connect?tenantId=${encodeURIComponent(tenantId)}&companyId=${encodeURIComponent(companyId)}` : undefined,
+    // Only offer a connect link for a real (UUID) workspace. The sample/demo
+    // workspace uses non-UUID ids (e.g. company_pilot_brightlane); linking it
+    // would dead-end on the connect route's 400 "A UUID tenantId and companyId
+    // are required." The client shows a "create a workspace first" guard instead.
+    connectUrl: configured && provider === "xero" && UUID_RE.test(tenantId) && UUID_RE.test(companyId) ? `/api/integrations/xero/connect?tenantId=${encodeURIComponent(tenantId)}&companyId=${encodeURIComponent(companyId)}` : undefined,
     organisations,
   };
 }

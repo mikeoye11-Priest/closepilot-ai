@@ -254,6 +254,12 @@ function emptySnapshot(): AnalysisResult {
   return { ...emptyAnalysisResult, uploads: [], validationChecks: [], findings: [], importProfiles: [], findingEvidence: [], findingComments: [], findingActivities: [], collectionCases: [], partnerSignOff: undefined, recommendations: [] };
 }
 
+// A real (persistable) workspace has UUID tenant/company ids. The sample/demo
+// workspace uses non-UUID placeholders (e.g. company_pilot_brightlane), which
+// the accounting-integration routes reject — so a live Xero connection can only
+// be offered once the user has created their own workspace.
+const WORKSPACE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 // A saved VAT review is *unusable* only when it was produced by the superseded
 // VAT-inclusive import bug — computation accuracy collapsed to zero with a flood
 // of false "invalid VAT rate" findings. Those numbers are materially wrong and
@@ -2882,7 +2888,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setActive("Findings");
     }} setActive={setActive} />;
     if (active === "User Guide") return <UserGuide isPilotDemo={isPilotDemo} hasData={hasUploadedData} loadPilotDemo={loadPilotDemo} setActive={setActive} setPilotWalkthroughStep={setPilotWalkthroughStep} />;
-    if (active === "Settings") return <SettingsPanel tenant={tenant} company={currentCompany} userEmail={userEmail} userName={userName} onIntegrationAnalysis={applyIntegrationAnalysis} />;
+    if (active === "Settings") return <SettingsPanel tenant={tenant} company={currentCompany} userEmail={userEmail} userName={userName} onIntegrationAnalysis={applyIntegrationAnalysis} setActive={setActive} presentationMode={presentationMode} />;
     return <PracticePortal tenant={tenant} clients={portfolioClients} currentCompanyId={currentCompany.id} switchCompany={switchCompany} companySnapshots={companySnapshots} />;
   }, [active, assurance, assistantResult, cashAtRisk, collectionCases, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, isAnalysing, isPilotDemo, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, risk, score, tenant, timeSaved, uploadJob, uploadMessage, uploads, userName, validationBlockers, validationChecks, validationWarnings, vatReview]);
 
@@ -10398,7 +10404,8 @@ async function pollXeroSync(syncId: string, onProgress: (status: XeroSyncPollRes
   throw new Error("Xero sync is still running. You can leave this page and check again shortly.");
 }
 
-function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnalysis }: { tenant: Tenant; company: Company; userEmail: string; userName: string; onIntegrationAnalysis: (result: AnalysisResult) => void }) {
+function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnalysis, setActive, presentationMode }: { tenant: Tenant; company: Company; userEmail: string; userName: string; onIntegrationAnalysis: (result: AnalysisResult) => void; setActive: (value: string) => void; presentationMode: boolean }) {
+  const canConnectLiveIntegration = WORKSPACE_UUID_RE.test(tenant.id) && WORKSPACE_UUID_RE.test(company.id);
   const [name, setName] = useState(userName);
   const [email, setEmail] = useState(userEmail);
   const [role, setRole] = useState("Practice Admin");
@@ -10561,6 +10568,13 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
                 </div>
               ) : integration.connectUrl ? (
                 <a className="mt-3 inline-block rounded-lg bg-brand px-3 py-2 text-sm font-black text-white" href={integration.connectUrl}>Connect {integration.label}</a>
+              ) : integration.configured && !canConnectLiveIntegration ? (
+                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                  <p><strong>Create your workspace to connect {integration.label}.</strong> This is the read-only sample workspace, so it can&apos;t hold a live accounting connection. Start your own workspace and its data will sync here.</p>
+                  {!presentationMode
+                    ? <button className="mt-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white" onClick={() => setActive("Onboarding")}>Create a workspace</button>
+                    : <a className="mt-2 inline-block rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white" href="/login">Sign in to get started</a>}
+                </div>
               ) : (
                 <button className="mt-3 rounded-lg border border-line bg-white px-3 py-2 text-sm font-black disabled:cursor-not-allowed disabled:text-muted" disabled>{integration.configured ? "Connector unavailable" : "Awaiting credentials"}</button>
               )}
