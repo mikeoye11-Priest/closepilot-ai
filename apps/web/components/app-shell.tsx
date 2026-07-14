@@ -8531,9 +8531,19 @@ function VatReviewGroupCard({ group, decision, onDecision, updateFindingStatus }
 
 function VatAssuranceModule({ vatReview, findings, uploads, updateFindingStatus, setActive, userName, tenantId, companyId, onVatReviewChange }: { vatReview?: VatReviewResult; findings: Finding[]; uploads: Upload[]; updateFindingStatus: (findingId: string, status: FindingStatus, reason?: string) => void; setActive: (value: string) => void; userName: string; tenantId: string; companyId: string; onVatReviewChange: (review: VatReviewResult) => void }) {
   const vatFindings = findings.filter((item) => item.category === "vat");
+  const vatUpload = uploads.find((upload) => upload.fileType === "vat_report");
   const xeroVatUpload = uploads.find((upload) => upload.fileType === "vat_report" && /xero/i.test(`${upload.fileName} ${upload.detectedVendor ?? ""} ${upload.detectionBasis ?? ""}`));
-  const xeroVatRows = xeroVatUpload?.rowCount ?? 0;
-  const hasXeroEvidenceWithoutVatRows = Boolean(xeroVatUpload && xeroVatRows === 0);
+  const vatUploadRows = vatUpload?.rowCount ?? 0;
+  const vatUploadGate = vatUpload?.importGateStatus;
+  const hasVatUploadWithoutUsableReview = Boolean(vatUpload);
+  const vatDiagnosticTitle = xeroVatUpload
+    ? "Xero synced, but VAT Assurance could not build VAT data"
+    : "VAT report is present, but no usable VAT calculation was produced";
+  const vatDiagnosticDetail = vatUploadRows === 0
+    ? "The VAT evidence file is present, but it contains 0 rows. Reconnect Xero if transaction/journal scopes were added recently, then sync again."
+    : vatUploadGate && vatUploadGate !== "ready"
+      ? `The VAT file has ${vatUploadRows} row(s), but the import gate is ${vatUploadGate.replaceAll("_", " ")}. ClosePilot will still try the VAT engine; if this remains empty, confirm the VAT columns or upload a VAT return export.`
+      : `The VAT file has ${vatUploadRows} row(s), but ClosePilot could not find VAT box labels or transaction rows with net/tax/gross amounts and VAT codes. Upload a VAT transaction detail export or reconnect Xero and sync again.`;
   const engineFindings = vatReview?.findings ?? [];
   const health = vatReview?.healthScore ?? 0;
   const vatReadiness = vatReview?.readinessScore ?? health;
@@ -8710,14 +8720,14 @@ function VatAssuranceModule({ vatReview, findings, uploads, updateFindingStatus,
   if (!vatReview || vatReview.source === "empty" || !hasVatReturnData) {
     return (
       <Panel title="ClosePilot VAT Assurance">
-        {hasXeroEvidenceWithoutVatRows && (
+        {hasVatUploadWithoutUsableReview && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <strong className="block">Xero synced, but VAT Assurance received 0 VAT transaction rows</strong>
-                <p className="mt-1">The finance exports arrived, but the Xero VAT evidence file has no invoice, bill, bank transaction, credit note or manual-journal tax lines for ClosePilot to calculate Boxes 1-9.</p>
+                <strong className="block">{vatDiagnosticTitle}</strong>
+                <p className="mt-1">{vatDiagnosticDetail}</p>
               </div>
-              <button className="shrink-0 rounded-lg bg-amber-600 px-4 py-2 text-sm font-black text-white" onClick={() => setActive("Settings")}>Reconnect Xero</button>
+              <button className="shrink-0 rounded-lg bg-amber-600 px-4 py-2 text-sm font-black text-white" onClick={() => setActive(xeroVatUpload ? "Settings" : "Upload Finance Pack")}>{xeroVatUpload ? "Reconnect Xero" : "Upload VAT Evidence"}</button>
             </div>
           </div>
         )}
@@ -8729,7 +8739,7 @@ function VatAssuranceModule({ vatReview, findings, uploads, updateFindingStatus,
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <Metric title="VAT Health Score" value="—" detail="Awaiting VAT data" tone="medium" />
-            <Metric title="Review Status" value="Required" detail="No VAT report uploaded" tone="medium" />
+            <Metric title="Review Status" value="Required" detail={vatUpload ? "VAT report present; no usable VAT rows" : "No VAT report uploaded"} tone="medium" />
           </div>
         </div>
       </Panel>

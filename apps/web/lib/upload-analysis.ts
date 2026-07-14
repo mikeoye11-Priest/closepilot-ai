@@ -168,7 +168,7 @@ function attachCanonicalImport(file: ParsedFile, savedProfiles: ImportMappingPro
 function isRuleReadyFile(file: ParsedFile) {
   if (!file.isParsed) return false;
   if (!IMPORT_ENGINE_FILE_TYPES.includes(file.upload.fileType as ImportFileType)) return true;
-  if (file.upload.fileType === "vat_report" && isExplicitVatReturnFile(file)) return true;
+  if (file.upload.fileType === "vat_report") return true;
   return file.importResult?.gateStatus === "ready";
 }
 
