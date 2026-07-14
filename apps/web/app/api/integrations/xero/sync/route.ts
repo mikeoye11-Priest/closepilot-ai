@@ -93,6 +93,14 @@ async function runXeroSync({ supabase, connection, syncId, sessionUserId, body, 
       const sample = sync.vatRows.slice(0, 4).map((row) => `{net:${row.net_amount ?? ""}, vat:${row.vat_amount ?? ""}, gross:${row.gross_amount ?? ""}, code:${row.vat_code ?? ""}, type:${row.type ?? ""}}`);
       sync.warnings.push(`vat diagnostic: ${sync.vatRows.length} VAT row(s) but the review is empty. First rows — ${sample.join(" ")}`);
     }
+    // Persist the VAT-related sync warnings onto the review so the diagnostic is
+    // visible on the VAT Assurance page whenever the empty review is shown — not
+    // only in the session that ran the sync (navigation/company switch reset the
+    // in-session copy).
+    if (analysis.vatReview) {
+      const vatWarnings = sync.warnings.filter((warning) => /vat/i.test(warning));
+      if (vatWarnings.length) analysis.vatReview.syncDiagnostics = vatWarnings;
+    }
     const completedAt = new Date().toISOString();
     // Persist the statement line items (not just analysis metadata) so the
     // management-accounts pack can render P&L / balance sheet / aged / cash.

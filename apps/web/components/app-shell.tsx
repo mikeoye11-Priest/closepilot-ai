@@ -8747,11 +8747,11 @@ function VatAssuranceModule({ vatReview, findings, uploads, updateFindingStatus,
             </div>
           </div>
         )}
-        {syncDiagnostics.filter((warning) => /vat/i.test(warning)).length > 0 && (
+        {[...new Set([...(vatReview?.syncDiagnostics ?? []), ...syncDiagnostics])].filter((warning) => /vat/i.test(warning)).length > 0 && (
           <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
             <strong className="block text-xs font-bold uppercase text-muted">Last Xero sync — VAT evidence diagnostics</strong>
             <ul className="mt-2 list-disc space-y-1 pl-5">
-              {syncDiagnostics.filter((warning) => /vat/i.test(warning)).map((warning, index) => (
+              {[...new Set([...(vatReview?.syncDiagnostics ?? []), ...syncDiagnostics])].filter((warning) => /vat/i.test(warning)).map((warning, index) => (
                 <li key={index} className="break-words font-mono text-xs">{warning}</li>
               ))}
             </ul>

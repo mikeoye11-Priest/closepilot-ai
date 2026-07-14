@@ -258,4 +258,9 @@ export type VatReviewResult = {
   reconciliationStatus?: "PASS" | "REVIEW" | "FAIL";
   transactionsAnalysed: number;
   source: "explicit_return" | "computed_transactions" | "empty";
+  // Diagnostics attached by the sync route when a synced VAT file yielded an
+  // empty review (per-source counts + a redacted row sample). Persisted with the
+  // review so it stays visible on the VAT Assurance empty state across reloads
+  // and company switches, not only in the session that ran the sync.
+  syncDiagnostics?: string[];
 };
