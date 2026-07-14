@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { runVatEngine } from "../apps/web/lib/vat-engine";
+import type { VatAssuranceStatus, VatReviewResult } from "../apps/web/lib/vat-engine/types";
 
 function vatFile(fileName: string, rows: Record<string, string>[]) {
   return {
@@ -17,6 +18,83 @@ function vatFile(fileName: string, rows: Record<string, string>[]) {
     isParsed: true,
   } as never;
 }
+
+function assuranceCheck(result: VatReviewResult, id: string) {
+  const check = result.assuranceChecks?.find((item) => item.id === id);
+  assert.ok(check, `Expected assurance check ${id}`);
+  return check;
+}
+
+function assertCheckStatus(result: VatReviewResult, id: string, status: VatAssuranceStatus) {
+  assert.equal(assuranceCheck(result, id).status, status);
+}
+
+test("VAT-V3 demo: standard small-company VAT boxes calculate exactly", () => {
+  const result = runVatEngine([vatFile("standard-small-company-vat.csv", [
+    { date: "2026-06-30", type: "Sale", customer: "Domestic Customer", description: "Standard rated sale", net_amount: "1000", vat_amount: "200", gross_amount: "1200", vat_code: "STD", reference: "S-STD-1" },
+    { date: "2026-06-30", type: "Purchase", supplier: "Office Supplier", description: "Standard rated purchase", net_amount: "400", vat_amount: "80", gross_amount: "480", vat_code: "PSTD", reference: "P-STD-1" },
+    { date: "2026-06-30", type: "Sale", customer: "Zero Rated Customer", description: "Small zero-rated sale", net_amount: "200", vat_amount: "0", gross_amount: "200", vat_code: "ZR", reference: "S-ZR-1" },
+  ])]);
+
+  assert.deepEqual(result.vatReturn, {
+    box1: 200,
+    box2: 0,
+    box3: 200,
+    box4: 80,
+    box5: 120,
+    box6: 1200,
+    box7: 400,
+    box8: 0,
+    box9: 0,
+  });
+  assert.equal(result.assuranceProfile?.companySize, "small");
+  assert.equal(result.assuranceProfile?.scheme, "standard");
+  assertCheckStatus(result, "VAT_001", "passed");
+  assertCheckStatus(result, "VAT_002", "passed");
+  assertCheckStatus(result, "VAT_074", "passed");
+});
+
+test("VAT-V3 demo: reverse charge produces equal Box 1 and Box 4 entries", () => {
+  const result = runVatEngine([vatFile("reverse-charge-vat.csv", [
+    { date: "2026-06-30", type: "Purchase", supplier: "Google Ireland", supplier_country: "IE", description: "Reverse charge cloud services", net_amount: "1000", vat_amount: "0", gross_amount: "1000", vat_code: "RC", reference: "RC-1" },
+  ])]);
+
+  assert.equal(result.vatReturn.box1, 200);
+  assert.equal(result.vatReturn.box3, 200);
+  assert.equal(result.vatReturn.box4, 200);
+  assert.equal(result.vatReturn.box5, 0);
+  assert.equal(result.vatReturn.box7, 1000);
+  assertCheckStatus(result, "VAT_030", "passed");
+  assertCheckStatus(result, "VAT_031", "passed");
+  assertCheckStatus(result, "VAT_032", "passed");
+  assert.equal(result.reconciliationStatus, "PASS");
+});
+
+test("VAT-V3 demo: blocked input VAT is excluded from Box 4 and raised as a high-risk finding", () => {
+  const result = runVatEngine([vatFile("blocked-input-vat.csv", [
+    { date: "2026-06-30", type: "Purchase", supplier: "Hospitality Venue", description: "Client dinner entertainment", net_amount: "1000", vat_amount: "200", gross_amount: "1200", vat_code: "PSTD", reference: "ENT-1" },
+    { date: "2026-06-30", type: "Purchase", supplier: "Office Supplier", description: "Recoverable office supplies", net_amount: "500", vat_amount: "100", gross_amount: "600", vat_code: "PSTD", reference: "OFF-1" },
+  ])]);
+
+  assert.equal(result.vatReturn.box4, 100);
+  assert.equal(result.vatReturn.box7, 500);
+  assert.ok(result.findings.some((finding) => finding.id === "VAT200" && finding.severity === "high" && finding.exposure === 200));
+  assert.equal(result.blockedVatRisk, 200);
+});
+
+test("VAT-V3 demo: flat-rate profile flags material input VAT claims", () => {
+  const result = runVatEngine([vatFile("flat-rate-scheme-vat.csv", [
+    { scheme: "flat rate scheme", date: "2026-06-30", type: "Sale", customer: "Retail Customer", description: "Flat rate scheme sale", net_amount: "6000", vat_amount: "1200", gross_amount: "7200", vat_code: "STD", reference: "FRS-S-1" },
+    { scheme: "flat rate scheme", date: "2026-06-30", type: "Purchase", supplier: "Equipment Supplier", description: "Input VAT claimed while on flat rate scheme", net_amount: "2000", vat_amount: "400", gross_amount: "2400", vat_code: "PSTD", reference: "FRS-P-1" },
+  ])]);
+
+  assert.equal(result.assuranceProfile?.scheme, "flat_rate");
+  assert.equal(result.vatReturn.box1, 1200);
+  assert.equal(result.vatReturn.box4, 400);
+  assertCheckStatus(result, "VAT_073", "review");
+  assert.ok((assuranceCheck(result, "VAT_073").actual ?? 0) > (result.assuranceProfile?.materiality ?? Number.MAX_SAFE_INTEGER));
+  assert.ok((result.exceptionDashboard?.categories.schemeCompliance ?? 0) > 0);
+});
 
 test("VAT-V3 profiles large companies and blocks duplicate input VAT claims", () => {
   const highVolumeSales = Array.from({ length: 1010 }, (_, index) => ({
