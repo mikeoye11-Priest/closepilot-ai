@@ -254,9 +254,10 @@ function emptySnapshot(): AnalysisResult {
   return { ...emptyAnalysisResult, uploads: [], validationChecks: [], findings: [], importProfiles: [], findingEvidence: [], findingComments: [], findingActivities: [], collectionCases: [], partnerSignOff: undefined, recommendations: [] };
 }
 
-function normaliseSnapshot(snapshot?: AnalysisResult): AnalysisResult {
+function normaliseSnapshot(snapshot?: AnalysisResult, options: { preserveStaleVatReview?: boolean } = {}): AnalysisResult {
   if (!snapshot || snapshot.uploads.length === 0) return emptySnapshot();
   const reviewLocked = snapshot.partnerSignOff?.reviewPackStatus === "LOCKED" || snapshot.partnerSignOff?.status === "locked" || snapshot.partnerSignOff?.status === "signed";
+  const staleVatReview = Boolean(snapshot.vatReview && snapshot.vatReview.source !== "empty" && snapshot.vatReview.engineVersion !== VAT_ENGINE_VERSION);
   return {
     uploads: snapshot.uploads,
     validationChecks: snapshot.validationChecks ?? [],
@@ -268,7 +269,7 @@ function normaliseSnapshot(snapshot?: AnalysisResult): AnalysisResult {
     collectionCases: snapshot.collectionCases ?? [],
     partnerSignOff: snapshot.partnerSignOff,
     recommendations: (snapshot.recommendations ?? []).map((recommendation) => reviewLocked ? { ...recommendation, completed: true } : recommendation),
-    vatReview: snapshot.vatReview,
+    vatReview: staleVatReview && !options.preserveStaleVatReview ? undefined : snapshot.vatReview,
   };
 }
 
@@ -1678,7 +1679,7 @@ function findingTypeLabel(finding: Finding) {
 
 export function AppShell({ userEmail, presentationMode = false }: { userEmail: string; presentationMode?: boolean }) {
   const workspaceLoadCancelled = useRef(false);
-  const initialPilotSnapshot = presentationMode ? normaliseSnapshot(pilotAnalysisResult) : undefined;
+  const initialPilotSnapshot = presentationMode ? normaliseSnapshot(pilotAnalysisResult, { preserveStaleVatReview: true }) : undefined;
   const [active, setActive] = useState(presentationMode ? "Partner Summary" : "Onboarding");
   const [tenant, setTenant] = useState<Tenant>(presentationMode ? pilotTenant : seededTenant);
   const [currentCompany, setCurrentCompany] = useState<Company>(presentationMode ? pilotCompany : seededCompany);
@@ -2650,7 +2651,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
 
   const loadPilotDemo = () => {
     workspaceLoadCancelled.current = true;
-    const snapshot = normaliseSnapshot(pilotAnalysisResult);
+    const snapshot = normaliseSnapshot(pilotAnalysisResult, { preserveStaleVatReview: true });
     setTenant(pilotTenant);
     setCurrentCompany(pilotCompany);
     setCompanies([pilotCompany]);
