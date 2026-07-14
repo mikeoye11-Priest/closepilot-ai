@@ -32,10 +32,12 @@ const balanceKeys = ["balance", "closing_balance", "net_balance", "net_movement"
 const debitKeys = ["debit", "debits", "dr", "debit_amount"];
 const creditKeys = ["credit", "credits", "cr", "credit_amount"];
 
+export const VAT_ENGINE_VERSION = "VAT-V3.1-inclusive-normalisation";
+
 export function runVatEngine(files: ParsedFile[]): VatReviewResult {
   const vatFiles = files.filter((file) => file.upload.fileType === "vat_report" && file.isParsed);
   if (!vatFiles.length) {
-    return { vatReturn: emptyVatReturn, findings: [], healthScore: 0, readinessScore: 0, scoreBreakdown: undefined, status: "VAT Data Required", reconciliationResults: [], boxContributions: [], blockedVatRisk: 0, highRiskCount: 0, exceptionsCount: 0, reconciliationStatus: "REVIEW", transactionsAnalysed: 0, source: "empty" };
+    return { engineVersion: VAT_ENGINE_VERSION, vatReturn: emptyVatReturn, findings: [], healthScore: 0, readinessScore: 0, scoreBreakdown: undefined, status: "VAT Data Required", reconciliationResults: [], boxContributions: [], blockedVatRisk: 0, highRiskCount: 0, exceptionsCount: 0, reconciliationStatus: "REVIEW", transactionsAnalysed: 0, source: "empty" };
   }
 
   const identifiedCurrentFiles = vatFiles.filter((file) => !isPriorPeriodVatFile(file));
@@ -46,7 +48,7 @@ export function runVatEngine(files: ParsedFile[]): VatReviewResult {
   const computed = computeVatReturnWithContributions(transactions);
   const vatReturn = explicitReturn ?? computed.vatReturn;
   if (transactions.length === 0 && (!explicitReturn || isEmptyVatReturn(explicitReturn))) {
-    return { vatReturn: emptyVatReturn, findings: [], healthScore: 0, readinessScore: 0, scoreBreakdown: undefined, status: "VAT Data Required", reconciliationResults: [], boxContributions: [], reviewActions: [], blockedVatRisk: 0, highRiskCount: 0, exceptionsCount: 0, reconciliationStatus: "REVIEW", transactionsAnalysed: 0, source: "empty" };
+    return { engineVersion: VAT_ENGINE_VERSION, vatReturn: emptyVatReturn, findings: [], healthScore: 0, readinessScore: 0, scoreBreakdown: undefined, status: "VAT Data Required", reconciliationResults: [], boxContributions: [], reviewActions: [], blockedVatRisk: 0, highRiskCount: 0, exceptionsCount: 0, reconciliationStatus: "REVIEW", transactionsAnalysed: 0, source: "empty" };
   }
   const priorTransactions = priorVatFiles.flatMap(normaliseVatTransactions);
   const priorComputed = computeVatReturnWithContributions(priorTransactions).vatReturn;
@@ -78,6 +80,7 @@ export function runVatEngine(files: ParsedFile[]): VatReviewResult {
   const filingSignOff = buildVatFilingSignOff(healthScore, assurance.readinessScore, findings, assurance.checks, reconciliationResults);
 
   return {
+    engineVersion: VAT_ENGINE_VERSION,
     vatReturn,
     assuranceProfile: profile,
     findings,

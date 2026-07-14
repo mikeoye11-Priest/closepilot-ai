@@ -234,6 +234,7 @@ export type VatScoreBreakdown = {
 };
 
 export type VatReviewResult = {
+  engineVersion?: string;
   vatReturn: VatReturn;
   assuranceProfile?: VatAssuranceProfile;
   findings: VatFinding[];

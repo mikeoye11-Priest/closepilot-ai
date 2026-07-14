@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runVatEngine } from "../apps/web/lib/vat-engine";
+import { runVatEngine, VAT_ENGINE_VERSION } from "../apps/web/lib/vat-engine";
 import type { VatAssuranceStatus, VatReviewResult } from "../apps/web/lib/vat-engine/types";
 
 function vatFile(fileName: string, rows: Record<string, string>[]) {
@@ -36,6 +36,7 @@ test("VAT-V3 demo: standard small-company VAT boxes calculate exactly", () => {
     { date: "2026-06-30", type: "Sale", customer: "Zero Rated Customer", description: "Small zero-rated sale", net_amount: "200", vat_amount: "0", gross_amount: "200", vat_code: "ZR", reference: "S-ZR-1" },
   ])]);
 
+  assert.equal(result.engineVersion, VAT_ENGINE_VERSION);
   assert.deepEqual(result.vatReturn, {
     box1: 200,
     box2: 0,
