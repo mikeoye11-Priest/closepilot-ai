@@ -55,6 +55,23 @@ test("VAT-V3 demo: standard small-company VAT boxes calculate exactly", () => {
   assertCheckStatus(result, "VAT_074", "passed");
 });
 
+test("VAT-V3: gross-only rows are recovered, not dropped into an empty review", () => {
+  // Xero and some prepared VAT exports carry only a gross (VAT-inclusive) amount
+  // with net/tax blank. These rows must still produce a usable review rather than
+  // collapsing to source:"empty" (the VAT-report-present-but-page-empty symptom).
+  const result = runVatEngine([vatFile("gross-only-vat.csv", [
+    { date: "2026-06-30", type: "Sale", customer: "Domestic Customer", description: "Standard rated sale", net_amount: "", vat_amount: "", gross_amount: "1200", vat_code: "STD", reference: "S-1" },
+    { date: "2026-06-30", type: "Purchase", supplier: "Office Supplier", description: "Standard rated purchase", net_amount: "", vat_amount: "", gross_amount: "480", vat_code: "PSTD", reference: "P-1" },
+  ])]);
+
+  assert.equal(result.source, "computed_transactions");
+  assert.equal(result.transactionsAnalysed, 2);
+  assert.equal(result.vatReturn.box1, 200);
+  assert.equal(result.vatReturn.box4, 80);
+  assert.equal(result.vatReturn.box6, 1000);
+  assert.equal(result.vatReturn.box7, 400);
+});
+
 test("VAT-V3 demo: reverse charge produces equal Box 1 and Box 4 entries", () => {
   const result = runVatEngine([vatFile("reverse-charge-vat.csv", [
     { date: "2026-06-30", type: "Purchase", supplier: "Google Ireland", supplier_country: "IE", description: "Reverse charge cloud services", net_amount: "1000", vat_amount: "0", gross_amount: "1000", vat_code: "RC", reference: "RC-1" },
