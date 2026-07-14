@@ -254,10 +254,18 @@ function emptySnapshot(): AnalysisResult {
   return { ...emptyAnalysisResult, uploads: [], validationChecks: [], findings: [], importProfiles: [], findingEvidence: [], findingComments: [], findingActivities: [], collectionCases: [], partnerSignOff: undefined, recommendations: [] };
 }
 
+function isStaleVatReview(vatReview?: VatReviewResult) {
+  if (!vatReview || vatReview.source === "empty") return false;
+  const legacyVersion = vatReview.engineVersion !== VAT_ENGINE_VERSION;
+  const rateFindingFlood = vatReview.findings.filter((finding) => finding.id === "VAT101" || /Invalid VAT rate detected/i.test(finding.finding)).length;
+  const suspiciousInclusiveImport = (vatReview.scoreBreakdown?.computationAccuracy ?? 100) === 0 && rateFindingFlood >= 20;
+  return legacyVersion || suspiciousInclusiveImport;
+}
+
 function normaliseSnapshot(snapshot?: AnalysisResult, options: { preserveStaleVatReview?: boolean } = {}): AnalysisResult {
   if (!snapshot || snapshot.uploads.length === 0) return emptySnapshot();
   const reviewLocked = snapshot.partnerSignOff?.reviewPackStatus === "LOCKED" || snapshot.partnerSignOff?.status === "locked" || snapshot.partnerSignOff?.status === "signed";
-  const staleVatReview = Boolean(snapshot.vatReview && snapshot.vatReview.source !== "empty" && snapshot.vatReview.engineVersion !== VAT_ENGINE_VERSION);
+  const staleVatReview = isStaleVatReview(snapshot.vatReview);
   return {
     uploads: snapshot.uploads,
     validationChecks: snapshot.validationChecks ?? [],
@@ -1800,7 +1808,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   }, [currentCompany.id, findings.length, recommendations.length, uploads.length, validationChecks.length, vatReview]);
 
   useEffect(() => {
-    if (!vatReview || vatReview.source === "empty" || vatReview.engineVersion === VAT_ENGINE_VERSION) return;
+    if (!isStaleVatReview(vatReview)) return;
     setVatReview(undefined);
     setCompanySnapshots((items) => ({
       ...items,
