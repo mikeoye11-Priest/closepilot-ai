@@ -84,6 +84,15 @@ async function runXeroSync({ supabase, connection, syncId, sessionUserId, body, 
     const tenant: Tenant = { id: tenantId, name: stringValue(body.tenantName) || "ClosePilot Workspace", type: body.tenantType === "company" ? "company" : "accounting_practice", plan: stringValue(body.tenantPlan) || "practice" };
     const company: Company = { id: companyId, tenantId, name: stringValue(body.companyName) || connection.external_tenant_name || "Xero Company", industry: stringValue(body.companyIndustry), accountingSystem: "Xero", currency: stringValue(body.currency) || "GBP", country: stringValue(body.country) || "United Kingdom" };
     const analysis = scopeAnalysisResult(analyseParsedFiles(parsedFiles), tenant, company);
+    // Definitive VAT diagnostic: when VAT rows were synced but the engine still
+    // produced an empty review, capture the actual shape of the first few rows
+    // (amounts/codes/type only — no party or description) so we can see whether
+    // the rows are amount-less or the engine is dropping populated rows. Surfaces
+    // in the sync warnings and on the VAT Assurance empty state.
+    if (analysis.vatReview?.source === "empty" && sync.vatRows.length) {
+      const sample = sync.vatRows.slice(0, 4).map((row) => `{net:${row.net_amount ?? ""}, vat:${row.vat_amount ?? ""}, gross:${row.gross_amount ?? ""}, code:${row.vat_code ?? ""}, type:${row.type ?? ""}}`);
+      sync.warnings.push(`vat diagnostic: ${sync.vatRows.length} VAT row(s) but the review is empty. First rows — ${sample.join(" ")}`);
+    }
     const completedAt = new Date().toISOString();
     // Persist the statement line items (not just analysis metadata) so the
     // management-accounts pack can render P&L / balance sheet / aged / cash.
