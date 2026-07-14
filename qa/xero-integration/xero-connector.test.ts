@@ -26,6 +26,7 @@ test("Xero responses map into ClosePilot trial balance and VAT evidence", async 
         { type: "ACCREC", date: "2026-04-03", invoiceNumber: "INV-1", contact: { name: "Atlas Ltd" }, lineItems: [{ description: "Sale", lineAmount: 1000, taxAmount: 200, taxType: "OUTPUT", accountCode: "4000" }] },
         { type: "ACCPAY", date: "2026-04-04", invoiceNumber: "BILL-1", contact: { name: "Google Ireland" }, lineItems: [{ description: "Cloud", lineAmount: 500, taxAmount: 0, taxType: "ECINPUTSERVICES", accountCode: "6000" }] },
       ] : [] } }),
+      getJournals: async () => ({ body: { journals: [] } }),
       getBankTransactions: async () => ({ body: { bankTransactions: [] } }),
       getManualJournals: async () => ({ body: { manualJournals: [{ narration: "VAT control adjustment", date: "2026-04-30", manualJournalID: "MJ-1", journalLines: [{ description: "Manual VAT journal", lineAmount: 100, taxAmount: 20, taxType: "INPUT", accountCode: "2200" }] }] } }),
     },
@@ -42,6 +43,42 @@ test("Xero responses map into ClosePilot trial balance and VAT evidence", async 
   assert.equal(vatReview.source, "computed_transactions");
   assert.equal(vatReview.transactionsAnalysed, 3);
   assert.equal(vatReview.vatReturn.box1, 300);
+});
+
+test("Xero posted journals backfill VAT assurance when source transaction lines are empty", async () => {
+  const xero = {
+    accountingApi: {
+      getReportTrialBalance: async () => ({ body: { reports: [{ rows: [{ rows: [
+        { cells: [{ value: "VAT Control", attributes: [{ id: "account", value: "2200" }] }, { value: "0" }, { value: "300" }] },
+      ] }] }] } }),
+      getReportProfitAndLoss: async () => ({ body: { reports: [{ rows: [] }] } }),
+      getReportBalanceSheet: async () => ({ body: { reports: [{ rows: [] }] } }),
+      getReportBankSummary: async () => ({ body: { reports: [{ rows: [] }] } }),
+      getInvoices: async () => ({ body: { invoices: [] } }),
+      getCreditNotes: async () => ({ body: { creditNotes: [] } }),
+      getBankTransactions: async () => ({ body: { bankTransactions: [] } }),
+      getManualJournals: async () => ({ body: { manualJournals: [] } }),
+      getJournals: async (_tenant: string, _since: Date | undefined, offset?: number) => ({ body: { journals: offset ? [] : [
+        { journalID: "J-1", journalNumber: 42, journalDate: "2026-04-12", sourceType: "ACCREC", sourceID: "INV-J-1", journalLines: [
+          { accountCode: "4000", accountName: "Sales", description: "Posted sale", netAmount: -1000, grossAmount: -1200, taxAmount: -200, taxType: "OUTPUT" },
+        ] },
+        { journalID: "J-2", journalNumber: 43, journalDate: "2026-04-15", sourceType: "ACCPAY", sourceID: "BILL-J-1", journalLines: [
+          { accountCode: "6000", accountName: "Purchases", description: "Posted purchase", netAmount: 500, grossAmount: 600, taxAmount: 100, taxType: "INPUT" },
+        ] },
+      ] } }),
+    },
+  };
+
+  const sync = await fetchXeroSyncData(xero as never, "xero-tenant", "2026-04-30");
+  assert.equal(sync.vatRows.length, 2);
+  assert.equal(sync.counts.journals, 2);
+  assert.match(sync.warnings.join(" "), /posted Xero journal line/);
+
+  const vatReview = runVatEngine(xeroParsedFiles(sync, "Xero Demo", "2026-04-30"));
+  assert.equal(vatReview.source, "computed_transactions");
+  assert.equal(vatReview.transactionsAnalysed, 2);
+  assert.equal(vatReview.vatReturn.box1, 200);
+  assert.equal(vatReview.vatReturn.box4, 100);
 });
 
 test("Xero tax types map to canonical ClosePilot VAT treatments", () => {

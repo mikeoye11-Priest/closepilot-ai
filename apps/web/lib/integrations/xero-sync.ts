@@ -1,4 +1,4 @@
-import type { XeroClient, Invoice, BankTransaction, ManualJournal, CreditNote } from "xero-node";
+import type { XeroClient, Invoice, BankTransaction, ManualJournal, CreditNote, Journal } from "xero-node";
 import { describeXeroError } from "./xero";
 
 type BankAccountBalance = { account: string; closing: number };
@@ -12,7 +12,7 @@ export type XeroSyncData = {
   agedCreditorRows: Record<string, string>[];
   bankReconRows: Record<string, string>[];
   vatRows: Record<string, string>[];
-  counts: { trialBalance: number; profitLoss: number; balanceSheet: number; agedDebtors: number; agedCreditors: number; invoices: number; creditNotes: number; bankTransactions: number; manualJournals: number; bankAccounts: number; vatRows: number };
+  counts: { trialBalance: number; profitLoss: number; balanceSheet: number; agedDebtors: number; agedCreditors: number; invoices: number; creditNotes: number; bankTransactions: number; manualJournals: number; journals: number; bankAccounts: number; vatRows: number };
   // Per-source failures. Populated when one report/endpoint fails but others
   // succeed, so a single broken source degrades gracefully instead of failing
   // the whole sync (each source below is fetched independently).
@@ -55,7 +55,7 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
   // x-rate-limit-problem: concurrent beyond that). Fetch the six sources through
   // a small pool so we never exceed the limit — firing all six at once was
   // getting invoices rejected while the rest slipped through.
-  const [trialBalanceRows, profitLossRows, priorProfitLossRows, balanceSheetRows, invoices, creditNotes, bankTransactions, manualJournals, bankSummary] = await runWithConcurrency<Record<string, string>[] | Invoice[] | CreditNote[] | BankTransaction[] | ManualJournal[] | BankAccountBalance[]>(4, [
+  const [trialBalanceRows, profitLossRows, priorProfitLossRows, balanceSheetRows, invoices, creditNotes, bankTransactions, manualJournals, journals, bankSummary] = await runWithConcurrency<Record<string, string>[] | Invoice[] | CreditNote[] | BankTransaction[] | ManualJournal[] | Journal[] | BankAccountBalance[]>(4, [
     () => safe("trial balance", [] as Record<string, string>[], async () =>
       flattenTrialBalance((await xero.accountingApi.getReportTrialBalance(xeroTenantId, asOfDate, false)).body.reports?.[0]?.rows ?? [])),
     () => safe("profit & loss", [] as Record<string, string>[], async () =>
@@ -72,10 +72,11 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     () => safe("credit notes", [] as CreditNote[], () => fetchAllPages(100, (page) => xero.accountingApi.getCreditNotes(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 4, 100), (body) => body.creditNotes ?? [])),
     () => safe("bank transactions", [] as BankTransaction[], () => fetchAllPages(100, (page) => xero.accountingApi.getBankTransactions(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 4, 100), (body) => body.bankTransactions ?? [])),
     () => safe("manual journals", [] as ManualJournal[], () => fetchAllPages(100, (page) => xero.accountingApi.getManualJournals(xeroTenantId, modifiedSince, undefined, "Date ASC", page, 100), (body) => body.manualJournals ?? [])),
+    () => safe("journals", [] as Journal[], () => fetchAllJournals(xero, xeroTenantId, modifiedSince, plFromDate, asOfDate)),
     // Bank Summary needs accounting.reports.banksummary.read (granted on reconnect).
     () => safe("bank summary", [] as BankAccountBalance[], async () =>
       flattenBankSummary((await xero.accountingApi.getReportBankSummary(xeroTenantId, plFromDate, asOfDate)).body.reports?.[0]?.rows ?? [])),
-  ]) as [Record<string, string>[], Record<string, string>[], Record<string, string>[], Record<string, string>[], Invoice[], CreditNote[], BankTransaction[], ManualJournal[], BankAccountBalance[]];
+  ]) as [Record<string, string>[], Record<string, string>[], Record<string, string>[], Record<string, string>[], Invoice[], CreditNote[], BankTransaction[], ManualJournal[], Journal[], BankAccountBalance[]];
 
   const paidOrAuthorised = (status: unknown) => { const s = String(status).toUpperCase(); return s === "AUTHORISED" || s === "PAID"; };
   const authorisedCreditNotes = creditNotes.filter((note) => paidOrAuthorised(note.status));
@@ -104,7 +105,7 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     accountCode: line.accountCode,
     reference: transaction.reference || transaction.bankTransactionID || `bank-${index + 1}`,
   })));
-  const journalRows = manualJournals.flatMap((journal) => (journal.journalLines ?? []).filter((line) => number(line.taxAmount) !== 0 || /vat|tax/i.test(`${journal.narration} ${line.description ?? ""}`)).map((line, index) => vatRow({
+  const manualJournalRows = manualJournals.flatMap((journal) => (journal.journalLines ?? []).filter((line) => number(line.taxAmount) !== 0 || /vat|tax/i.test(`${journal.narration} ${line.description ?? ""}`)).map((line, index) => vatRow({
     date: journal.date,
     type: "Adjustment",
     party: "Manual Journal",
@@ -116,6 +117,20 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     accountCode: line.accountCode,
     reference: journal.manualJournalID || `journal-${index + 1}`,
   })));
+  const postedJournalRows = journals.flatMap((journal) => (journal.journalLines ?? [])
+    .filter((line) => number(line.taxAmount) !== 0 || line.taxType)
+    .map((line, index) => vatRow({
+      date: journal.journalDate,
+      type: journalVatType(journal),
+      party: String(journal.sourceType ?? "Xero journal"),
+      description: line.description || line.accountName || journal.reference || "Xero posted journal line",
+      net: line.netAmount,
+      vat: line.taxAmount,
+      gross: line.grossAmount ?? number(line.netAmount) + number(line.taxAmount),
+      taxType: line.taxType,
+      accountCode: line.accountCode,
+      reference: journal.sourceID || journal.journalID || (journal.journalNumber ? `journal-${journal.journalNumber}-${index + 1}` : `journal-${index + 1}`),
+    })));
 
   // Credit notes reverse the supply they relate to: a sales credit note reduces
   // output VAT, a purchase credit note reduces input VAT. Emit each line negated
@@ -171,8 +186,12 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     };
   });
 
-  const vatRows = [...invoiceRows, ...bankRows, ...journalRows, ...creditNoteRows];
-  if (!vatRows.length && (invoices.length || bankTransactions.length || manualJournals.length || authorisedCreditNotes.length)) {
+  const sourceVatRows = [...invoiceRows, ...bankRows, ...manualJournalRows, ...creditNoteRows];
+  const vatRows = sourceVatRows.length ? sourceVatRows : postedJournalRows;
+  if (!sourceVatRows.length && postedJournalRows.length) {
+    warnings.push(`vat evidence: used ${postedJournalRows.length} posted Xero journal line(s) because source transaction VAT lines were unavailable.`);
+  }
+  if (!vatRows.length && (invoices.length || bankTransactions.length || manualJournals.length || authorisedCreditNotes.length || journals.length)) {
     warnings.push("vat evidence: Xero returned source records but no VAT/tax line rows. VAT Assurance needs invoice, bill, bank transaction, credit note or manual journal lines with tax amounts.");
   }
   return {
@@ -184,7 +203,7 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     agedCreditorRows,
     bankReconRows,
     vatRows,
-    counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, balanceSheet: balanceSheetRows.length, agedDebtors: agedDebtorRows.length, agedCreditors: agedCreditorRows.length, invoices: invoices.length, creditNotes: authorisedCreditNotes.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, bankAccounts: bankReconRows.length, vatRows: vatRows.length },
+    counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, balanceSheet: balanceSheetRows.length, agedDebtors: agedDebtorRows.length, agedCreditors: agedCreditorRows.length, invoices: invoices.length, creditNotes: authorisedCreditNotes.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, journals: journals.length, bankAccounts: bankReconRows.length, vatRows: vatRows.length },
     warnings,
     periodStart,
   };
@@ -264,6 +283,31 @@ async function fetchAllPages<TBody, TItem>(pageSize: number, request: (page: num
     if (batch.length < pageSize) break;
   }
   return result;
+}
+
+async function fetchAllJournals(xero: XeroClient, xeroTenantId: string, modifiedSince: Date | undefined, fromDate: string, toDate: string) {
+  const result: Journal[] = [];
+  let offset: number | undefined;
+  for (let page = 1; page <= 100; page += 1) {
+    const response = await xero.accountingApi.getJournals(xeroTenantId, modifiedSince, offset, false);
+    const batch = response.body.journals ?? [];
+    const inPeriod = batch.filter((journal) => {
+      const date = xeroDateString(journal.journalDate);
+      return date >= fromDate && date <= toDate;
+    });
+    result.push(...inPeriod);
+    const lastJournalNumber = batch.reduce((max, journal) => Math.max(max, number(journal.journalNumber)), offset ?? 0);
+    if (!batch.length || lastJournalNumber <= (offset ?? 0)) break;
+    offset = lastJournalNumber;
+  }
+  return result;
+}
+
+function journalVatType(journal: Journal) {
+  const sourceType = String(journal.sourceType ?? "").toUpperCase();
+  if (/ACCREC|CASHREC|AR/.test(sourceType)) return "Sale";
+  if (/ACCPAY|CASHPAID|AP|EXPCLAIM/.test(sourceType)) return "Purchase";
+  return "Adjustment";
 }
 
 function flattenTrialBalance(sections: Array<{ rows?: Array<{ cells?: Array<{ value?: string; attributes?: Array<{ id?: string; value?: string }> }> }> }>) {
