@@ -86,6 +86,25 @@ test("VAT-V3 normalises VAT-inclusive source amounts before rate checks", () => 
   assert.equal(result.scoreBreakdown?.computationAccuracy, 100);
 });
 
+test("VAT-V3 consumes canonical VAT transactions from the import mapper", () => {
+  const result = runVatEngine([{
+    ...vatFile("mapped-vat-export.csv", [
+      { posting_day: "2026-06-30", contact_name: "Domestic Customer", memo: "Standard rated sale", tax_treatment: "STD", taxable_value: "ignored by old engine", tax_value: "ignored by old engine" },
+      { posting_day: "2026-06-30", contact_name: "Office Supplier", memo: "Standard rated purchase", tax_treatment: "PSTD", taxable_value: "ignored by old engine", tax_value: "ignored by old engine" },
+    ]),
+    vatTransactions: [
+      { date: new Date("2026-06-30T00:00:00.000Z"), vatCode: "STD", netAmount: 1000, vatAmount: 200, sourceRowIndex: 2, sourceFile: "mapped-vat-export.csv" },
+      { date: new Date("2026-06-30T00:00:00.000Z"), vatCode: "PSTD", netAmount: 400, vatAmount: 80, sourceRowIndex: 3, sourceFile: "mapped-vat-export.csv" },
+    ],
+  } as never]);
+
+  assert.notEqual(result.source, "empty");
+  assert.equal(result.transactionsAnalysed, 2);
+  assert.equal(result.vatReturn.box1, 200);
+  assert.equal(result.vatReturn.box4, 80);
+  assert.equal(result.vatReturn.box5, 120);
+});
+
 test("VAT-V3 demo: blocked input VAT is excluded from Box 4 and raised as a high-risk finding", () => {
   const result = runVatEngine([vatFile("blocked-input-vat.csv", [
     { date: "2026-06-30", type: "Purchase", supplier: "Hospitality Venue", description: "Client dinner entertainment", net_amount: "1000", vat_amount: "200", gross_amount: "1200", vat_code: "PSTD", reference: "ENT-1" },

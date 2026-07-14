@@ -222,6 +222,56 @@ function extractHmrcPayment(files: ParsedFile[]) {
 }
 
 function normaliseVatTransactions(file: ParsedFile): VatTransaction[] {
+  const rawTransactions = normaliseRawVatTransactions(file);
+  if (rawTransactions.length) return rawTransactions;
+
+  if (file.vatTransactions?.length) {
+    return file.vatTransactions
+      .map((transaction) => {
+        const row = file.rows[Math.max(0, (transaction.sourceRowIndex ?? 2) - 2)] ?? {};
+        const rawNetAmount = transaction.netAmount;
+        const vatAmount = transaction.vatAmount;
+        const rawGrossAmount = money(text(row, grossKeys));
+        const { netAmount, grossAmount } = normaliseVatAmounts(rawNetAmount, vatAmount, rawGrossAmount);
+        const rawType = text(row, typeKeys).toLowerCase();
+        const party = text(row, partyKeys);
+        const description = text(row, descKeys);
+        const vatCode = transaction.vatCode || text(row, vatCodeKeys);
+        const transactionType = inferTransactionType(row, rawType, party, description, vatCode);
+        const country = text(row, countryKeys);
+        const normalisedCountry = normaliseCountry(country);
+        const rawSupplyType = text(row, supplyTypeKeys).toLowerCase();
+        const supplyType = /goods|stock|inventory|product/.test(rawSupplyType) ? "goods" : /service|subscription|licence|license|consult/.test(rawSupplyType) ? "services" : "unknown";
+        const base = {
+          date: transaction.date instanceof Date ? transaction.date.toISOString().slice(0, 10) : text(row, dateKeys),
+          taxPointDate: text(row, taxPointKeys),
+          paidDate: text(row, paidDateKeys),
+          reference: text(row, referenceKeys),
+          status: text(row, statusKeys),
+          party,
+          description,
+          netAmount,
+          vatAmount,
+          grossAmount,
+          vatCode,
+          nominalCode: text(row, nominalKeys),
+          customerCountry: transactionType === "sale" ? country : undefined,
+          supplierCountry: transactionType === "purchase" ? country : undefined,
+          countryCode: normalisedCountry.code,
+          countryRegion: normalisedCountry.region,
+          supplyType,
+          type: transactionType,
+          sourceFile: transaction.sourceFile ?? file.upload.fileName,
+        } satisfies Omit<VatTransaction, "treatment">;
+        return { ...base, treatment: classifyVatTransaction(base) };
+      })
+      .filter((transaction) => Math.abs(transaction.netAmount) > 0 || Math.abs(transaction.vatAmount) > 0);
+  }
+
+  return [];
+}
+
+function normaliseRawVatTransactions(file: ParsedFile): VatTransaction[] {
   return file.rows
     .filter((row) => !isVatSummaryOrReconciliationRow(row))
     .map((row) => {
