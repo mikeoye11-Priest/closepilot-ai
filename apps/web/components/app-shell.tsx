@@ -10349,6 +10349,7 @@ function partnerReviewQuestions(findings: Finding[], validationChecks: Validatio
 type XeroSyncPollResult = {
   status: "queued" | "running" | "completed" | "failed";
   counts?: { trialBalance?: number; vatRows?: number };
+  warnings?: string[];
   analysis?: AnalysisResult;
   error?: string;
 };
@@ -10415,7 +10416,12 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
       if (!completed.analysis) throw new Error("Xero sync completed without an analysis result.");
       onIntegrationAnalysis(completed.analysis);
       await reloadIntegrations();
-      setIntegrationMessage(`Xero sync completed: ${completed.counts?.trialBalance ?? 0} trial-balance and ${completed.counts?.vatRows ?? 0} VAT row(s).`);
+      const vatRows = completed.counts?.vatRows ?? 0;
+      const warningText = completed.warnings?.length ? ` Warnings: ${completed.warnings.join("; ")}` : "";
+      const vatText = vatRows
+        ? `${vatRows} VAT row(s).`
+        : "0 VAT row(s). VAT Assurance needs Xero invoice/bill/bank/journal tax lines; reconnect Xero if transaction scopes were added recently, or upload a VAT evidence export.";
+      setIntegrationMessage(`Xero sync completed: ${completed.counts?.trialBalance ?? 0} trial-balance and ${vatText}${warningText}`);
     } catch (error) { setIntegrationMessage(error instanceof Error ? error.message : "Xero sync failed."); }
     finally { setIntegrationBusy(false); }
   };

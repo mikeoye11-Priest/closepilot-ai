@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { decryptIntegrationSecret, encryptIntegrationSecret } from "../../apps/web/lib/integrations/crypto";
+import { xeroParsedFiles } from "../../apps/web/lib/integrations/xero-parsed-files";
 import { canonicalVatCode, fetchXeroSyncData } from "../../apps/web/lib/integrations/xero-sync";
+import { runVatEngine } from "../../apps/web/lib/vat-engine";
 
 test("integration secrets use authenticated encryption", () => {
   process.env.INTEGRATION_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
@@ -35,6 +37,11 @@ test("Xero responses map into ClosePilot trial balance and VAT evidence", async 
   assert.equal(sync.vatRows[0].vat_code, "STD");
   assert.equal(sync.vatRows[1].vat_code, "RC");
   assert.match(sync.vatRows[2].description, /Manual journal/);
+
+  const vatReview = runVatEngine(xeroParsedFiles(sync, "Xero Demo", "2026-04-30"));
+  assert.equal(vatReview.source, "computed_transactions");
+  assert.equal(vatReview.transactionsAnalysed, 3);
+  assert.equal(vatReview.vatReturn.box1, 300);
 });
 
 test("Xero tax types map to canonical ClosePilot VAT treatments", () => {

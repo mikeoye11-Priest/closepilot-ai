@@ -172,6 +172,9 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
   });
 
   const vatRows = [...invoiceRows, ...bankRows, ...journalRows, ...creditNoteRows];
+  if (!vatRows.length && (invoices.length || bankTransactions.length || manualJournals.length || authorisedCreditNotes.length)) {
+    warnings.push("vat evidence: Xero returned source records but no VAT/tax line rows. VAT Assurance needs invoice, bill, bank transaction, credit note or manual journal lines with tax amounts.");
+  }
   return {
     trialBalanceRows,
     profitLossRows,
