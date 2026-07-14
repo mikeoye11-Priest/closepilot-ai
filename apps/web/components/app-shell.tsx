@@ -1717,6 +1717,10 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const [collectionCases, setCollectionCases] = useState<CollectionCase[]>(initialPilotSnapshot?.collectionCases ?? []);
   const [partnerSignOff, setPartnerSignOff] = useState<PartnerSignOff | undefined>(initialPilotSnapshot?.partnerSignOff);
   const [isAnalysing, setIsAnalysing] = useState(false);
+  // Warnings from the most recent live sync (e.g. why a synced VAT file yielded
+  // no usable rows). Surfaced on the VAT Assurance empty state so the reason is
+  // visible where the user is, not only in the Settings sync message.
+  const [integrationDiagnostics, setIntegrationDiagnostics] = useState<string[]>([]);
   const [uploadMessage, setUploadMessage] = useState("Upload your finance pack to run a real deterministic review.");
   const [question, setQuestion] = useState("Why is cash getting tighter?");
   const [showExport, setShowExport] = useState(false);
@@ -2644,7 +2648,8 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     else window.localStorage.setItem(key, JSON.stringify(uploadJob));
   }, [currentCompany.id, presentationMode, uploadJob]);
 
-  const applyIntegrationAnalysis = (result: AnalysisResult) => {
+  const applyIntegrationAnalysis = (result: AnalysisResult, warnings: string[] = []) => {
+    setIntegrationDiagnostics(warnings);
     const scoped = scopeAnalysisResult(result, tenant, currentCompany);
     const nextImportProfiles = mergeImportProfiles(importProfiles, scoped.importProfiles ?? []);
     const generatedAt = new Date().toISOString();
@@ -2862,7 +2867,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setFocusedFindingId(findingId);
       setActive("Findings");
     }} />;
-    if (active === "VAT Assurance") return <VatAssuranceModule vatReview={vatReview} findings={findings} uploads={uploads} updateFindingStatus={updateFindingStatus} setActive={setActive} userName={userName} tenantId={tenant.id} companyId={currentCompany.id} onVatReviewChange={setVatReview} />;
+    if (active === "VAT Assurance") return <VatAssuranceModule vatReview={vatReview} findings={findings} uploads={uploads} updateFindingStatus={updateFindingStatus} setActive={setActive} userName={userName} tenantId={tenant.id} companyId={currentCompany.id} onVatReviewChange={setVatReview} syncDiagnostics={integrationDiagnostics} />;
     if (active === "Controls & Fraud") return <ControlsFraudPanel findings={findings} validationChecks={validationChecks} uploads={uploads} partnerSignOff={partnerSignOff} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_close_001" ? 3 : 1);
       setFocusedFindingId(findingId);
@@ -2890,7 +2895,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     if (active === "User Guide") return <UserGuide isPilotDemo={isPilotDemo} hasData={hasUploadedData} loadPilotDemo={loadPilotDemo} setActive={setActive} setPilotWalkthroughStep={setPilotWalkthroughStep} />;
     if (active === "Settings") return <SettingsPanel tenant={tenant} company={currentCompany} userEmail={userEmail} userName={userName} onIntegrationAnalysis={applyIntegrationAnalysis} setActive={setActive} presentationMode={presentationMode} />;
     return <PracticePortal tenant={tenant} clients={portfolioClients} currentCompanyId={currentCompany.id} switchCompany={switchCompany} companySnapshots={companySnapshots} />;
-  }, [active, assurance, assistantResult, cashAtRisk, collectionCases, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, isAnalysing, isPilotDemo, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, risk, score, tenant, timeSaved, uploadJob, uploadMessage, uploads, userName, validationBlockers, validationChecks, validationWarnings, vatReview]);
+  }, [active, assurance, assistantResult, cashAtRisk, collectionCases, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, integrationDiagnostics, isAnalysing, isPilotDemo, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, risk, score, tenant, timeSaved, uploadJob, uploadMessage, uploads, userName, validationBlockers, validationChecks, validationWarnings, vatReview]);
 
   return (
     <div className="min-h-screen bg-page text-ink lg:grid lg:grid-cols-[280px_1fr]">
@@ -8540,7 +8545,7 @@ function VatReviewGroupCard({ group, decision, onDecision, updateFindingStatus }
   );
 }
 
-function VatAssuranceModule({ vatReview, findings, uploads, updateFindingStatus, setActive, userName, tenantId, companyId, onVatReviewChange }: { vatReview?: VatReviewResult; findings: Finding[]; uploads: Upload[]; updateFindingStatus: (findingId: string, status: FindingStatus, reason?: string) => void; setActive: (value: string) => void; userName: string; tenantId: string; companyId: string; onVatReviewChange: (review: VatReviewResult) => void }) {
+function VatAssuranceModule({ vatReview, findings, uploads, updateFindingStatus, setActive, userName, tenantId, companyId, onVatReviewChange, syncDiagnostics = [] }: { vatReview?: VatReviewResult; findings: Finding[]; uploads: Upload[]; updateFindingStatus: (findingId: string, status: FindingStatus, reason?: string) => void; setActive: (value: string) => void; userName: string; tenantId: string; companyId: string; onVatReviewChange: (review: VatReviewResult) => void; syncDiagnostics?: string[] }) {
   const vatFindings = findings.filter((item) => item.category === "vat");
   const vatUpload = uploads.find((upload) => upload.fileType === "vat_report");
   const xeroVatUpload = uploads.find((upload) => upload.fileType === "vat_report" && /xero/i.test(`${upload.fileName} ${upload.detectedVendor ?? ""} ${upload.detectionBasis ?? ""}`));
@@ -8740,6 +8745,16 @@ function VatAssuranceModule({ vatReview, findings, uploads, updateFindingStatus,
               </div>
               <button className="shrink-0 rounded-lg bg-amber-600 px-4 py-2 text-sm font-black text-white" onClick={() => setActive(xeroVatUpload ? "Settings" : "Upload Finance Pack")}>{xeroVatUpload ? "Reconnect Xero" : "Upload VAT Evidence"}</button>
             </div>
+          </div>
+        )}
+        {syncDiagnostics.filter((warning) => /vat/i.test(warning)).length > 0 && (
+          <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+            <strong className="block text-xs font-bold uppercase text-muted">Last Xero sync — VAT evidence diagnostics</strong>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {syncDiagnostics.filter((warning) => /vat/i.test(warning)).map((warning, index) => (
+                <li key={index} className="break-words font-mono text-xs">{warning}</li>
+              ))}
+            </ul>
           </div>
         )}
         <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
@@ -10404,7 +10419,7 @@ async function pollXeroSync(syncId: string, onProgress: (status: XeroSyncPollRes
   throw new Error("Xero sync is still running. You can leave this page and check again shortly.");
 }
 
-function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnalysis, setActive, presentationMode }: { tenant: Tenant; company: Company; userEmail: string; userName: string; onIntegrationAnalysis: (result: AnalysisResult) => void; setActive: (value: string) => void; presentationMode: boolean }) {
+function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnalysis, setActive, presentationMode }: { tenant: Tenant; company: Company; userEmail: string; userName: string; onIntegrationAnalysis: (result: AnalysisResult, warnings?: string[]) => void; setActive: (value: string) => void; presentationMode: boolean }) {
   const canConnectLiveIntegration = WORKSPACE_UUID_RE.test(tenant.id) && WORKSPACE_UUID_RE.test(company.id);
   const [name, setName] = useState(userName);
   const [email, setEmail] = useState(userEmail);
@@ -10451,7 +10466,7 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
       setIntegrationMessage("Xero sync is running in the background…");
       const completed = await pollXeroSync(result.syncId, (status) => setIntegrationMessage(status === "queued" ? "Xero sync queued…" : "Syncing Xero pages and running assurance checks…"));
       if (!completed.analysis) throw new Error("Xero sync completed without an analysis result.");
-      onIntegrationAnalysis(completed.analysis);
+      onIntegrationAnalysis(completed.analysis, completed.warnings ?? []);
       await reloadIntegrations();
       const vatRows = completed.counts?.vatRows ?? 0;
       const warningText = completed.warnings?.length ? ` Warnings: ${completed.warnings.join("; ")}` : "";
