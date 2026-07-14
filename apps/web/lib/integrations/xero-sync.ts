@@ -186,10 +186,24 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     };
   });
 
+  const hasUsableVat = (rows: Record<string, string>[]) => rows.some((row) => Math.abs(number(row.net_amount)) > 0 || Math.abs(number(row.vat_amount)) > 0);
   const sourceVatRows = [...invoiceRows, ...bankRows, ...manualJournalRows, ...creditNoteRows];
-  const vatRows = sourceVatRows.length ? sourceVatRows : postedJournalRows;
-  if (!sourceVatRows.length && postedJournalRows.length) {
-    warnings.push(`vat evidence: used ${postedJournalRows.length} posted Xero journal line(s) because source transaction VAT lines were unavailable.`);
+  // Prefer whichever evidence set actually carries VAT amounts. Falling back to
+  // posted journals only when the source rows were *absent* missed the case
+  // where they are present but amount-less, which left VAT Assurance empty
+  // ("VAT report present; no usable VAT rows") despite a synced VAT file.
+  const vatRows = hasUsableVat(sourceVatRows)
+    ? sourceVatRows
+    : hasUsableVat(postedJournalRows)
+      ? postedJournalRows
+      : (sourceVatRows.length ? sourceVatRows : postedJournalRows);
+  if (!hasUsableVat(sourceVatRows) && hasUsableVat(postedJournalRows)) {
+    warnings.push(`vat evidence: used ${postedJournalRows.length} posted Xero journal line(s) because source transaction VAT lines ${sourceVatRows.length ? "carried no amounts" : "were unavailable"}.`);
+  }
+  // Diagnostic: a "present" VAT file that carries no net/VAT amounts. Names the
+  // source counts so an empty VAT Assurance can be traced without the raw rows.
+  if (vatRows.length && !hasUsableVat(vatRows)) {
+    warnings.push(`vat evidence unusable: ${vatRows.length} VAT row(s) but none carry a net/VAT amount. Sources — invoices ${invoiceRows.length}, bank ${bankRows.length}, manual journals ${manualJournalRows.length}, credit notes ${creditNoteRows.length}, posted journals ${postedJournalRows.length}; records — invoices ${invoices.length}, bankTx ${bankTransactions.length}, manualJournals ${manualJournals.length}, creditNotes ${authorisedCreditNotes.length}, journals ${journals.length}.`);
   }
   if (!vatRows.length && (invoices.length || bankTransactions.length || manualJournals.length || authorisedCreditNotes.length || journals.length)) {
     warnings.push("vat evidence: Xero returned source records but no VAT/tax line rows. VAT Assurance needs invoice, bill, bank transaction, credit note or manual journal lines with tax amounts.");
