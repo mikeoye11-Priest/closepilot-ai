@@ -2652,7 +2652,8 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     setVatReview(scoped.vatReview);
     setCompanySnapshots((items) => ({ ...items, [currentCompany.id]: scopedWithWorkflow }));
     setPortfolioClients((items) => updateClientSummary(items, currentCompany, scopedWithWorkflow));
-    setUploadMessage(`Live Xero sync completed for ${currentCompany.name}: ${scoped.uploads.length} evidence source(s), ${scoped.findings.length} finding(s).`);
+    const xeroVatRows = scoped.uploads.find((upload) => upload.fileType === "vat_report" && /xero/i.test(`${upload.fileName} ${upload.detectedVendor ?? ""} ${upload.detectionBasis ?? ""}`))?.rowCount ?? 0;
+    setUploadMessage(`Live Xero sync completed for ${currentCompany.name}: ${scoped.uploads.length} evidence source(s), ${xeroVatRows} VAT row(s), ${scoped.findings.length} finding(s).`);
     setActive("VAT Assurance");
   };
   const onboardWorkspace = (nextTenant: Tenant, nextCompany: Company) => {
@@ -2850,7 +2851,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setFocusedFindingId(findingId);
       setActive("Findings");
     }} />;
-    if (active === "VAT Assurance") return <VatAssuranceModule vatReview={vatReview} findings={findings} updateFindingStatus={updateFindingStatus} setActive={setActive} userName={userName} tenantId={tenant.id} companyId={currentCompany.id} onVatReviewChange={setVatReview} />;
+    if (active === "VAT Assurance") return <VatAssuranceModule vatReview={vatReview} findings={findings} uploads={uploads} updateFindingStatus={updateFindingStatus} setActive={setActive} userName={userName} tenantId={tenant.id} companyId={currentCompany.id} onVatReviewChange={setVatReview} />;
     if (active === "Controls & Fraud") return <ControlsFraudPanel findings={findings} validationChecks={validationChecks} uploads={uploads} partnerSignOff={partnerSignOff} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_close_001" ? 3 : 1);
       setFocusedFindingId(findingId);
@@ -8528,8 +8529,11 @@ function VatReviewGroupCard({ group, decision, onDecision, updateFindingStatus }
   );
 }
 
-function VatAssuranceModule({ vatReview, findings, updateFindingStatus, setActive, userName, tenantId, companyId, onVatReviewChange }: { vatReview?: VatReviewResult; findings: Finding[]; updateFindingStatus: (findingId: string, status: FindingStatus, reason?: string) => void; setActive: (value: string) => void; userName: string; tenantId: string; companyId: string; onVatReviewChange: (review: VatReviewResult) => void }) {
+function VatAssuranceModule({ vatReview, findings, uploads, updateFindingStatus, setActive, userName, tenantId, companyId, onVatReviewChange }: { vatReview?: VatReviewResult; findings: Finding[]; uploads: Upload[]; updateFindingStatus: (findingId: string, status: FindingStatus, reason?: string) => void; setActive: (value: string) => void; userName: string; tenantId: string; companyId: string; onVatReviewChange: (review: VatReviewResult) => void }) {
   const vatFindings = findings.filter((item) => item.category === "vat");
+  const xeroVatUpload = uploads.find((upload) => upload.fileType === "vat_report" && /xero/i.test(`${upload.fileName} ${upload.detectedVendor ?? ""} ${upload.detectionBasis ?? ""}`));
+  const xeroVatRows = xeroVatUpload?.rowCount ?? 0;
+  const hasXeroEvidenceWithoutVatRows = Boolean(xeroVatUpload && xeroVatRows === 0);
   const engineFindings = vatReview?.findings ?? [];
   const health = vatReview?.healthScore ?? 0;
   const vatReadiness = vatReview?.readinessScore ?? health;
@@ -8706,6 +8710,17 @@ function VatAssuranceModule({ vatReview, findings, updateFindingStatus, setActiv
   if (!vatReview || vatReview.source === "empty" || !hasVatReturnData) {
     return (
       <Panel title="ClosePilot VAT Assurance">
+        {hasXeroEvidenceWithoutVatRows && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <strong className="block">Xero synced, but VAT Assurance received 0 VAT transaction rows</strong>
+                <p className="mt-1">The finance exports arrived, but the Xero VAT evidence file has no invoice, bill, bank transaction, credit note or manual-journal tax lines for ClosePilot to calculate Boxes 1-9.</p>
+              </div>
+              <button className="shrink-0 rounded-lg bg-amber-600 px-4 py-2 text-sm font-black text-white" onClick={() => setActive("Settings")}>Reconnect Xero</button>
+            </div>
+          </div>
+        )}
         <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
           <div className="rounded-lg border border-dashed border-line bg-slate-50 p-6">
             <p className="text-xs font-bold uppercase text-muted">VAT Return</p>
