@@ -344,19 +344,27 @@ function normaliseVatAmounts(rawNetAmount: number, vatAmount: number, rawGrossAm
   const netAbs = Math.abs(rawNetAmount);
   const vatAbs = Math.abs(vatAmount);
   const grossAbs = Math.abs(rawGrossAmount);
+  // vat/net ≈ 1/6 AND vat/(net−vat) ≈ 20% is a definitive signature of a
+  // VAT-inclusive "net" (genuine exclusive 20% gives vat/net = 0.2, not 1/6), so
+  // those two ratios alone identify it. The supplied gross must not veto this:
+  // Xero tax-inclusive lines arrive with gross computed as net+vat (overstated),
+  // which the old `|gross − net| ≤ 1` guard rejected — leaving the inclusive
+  // amount uncorrected and firing a flood of false "invalid VAT rate" findings.
   const suppliedAmountLooksGross =
     netAbs > vatAbs &&
     vatAbs > 0 &&
     Math.abs(vatAbs / netAbs - 1 / 6) <= 0.015 &&
     Math.abs(vatAbs / (netAbs - vatAbs) - 0.2) <= 0.02 &&
-    (!grossAbs || Math.abs(grossAbs - netAbs) <= 1);
+    (!grossAbs || Math.abs(grossAbs - netAbs) <= 1 || Math.abs(grossAbs - (netAbs + vatAbs)) <= 1);
 
   if (suppliedAmountLooksGross) {
     const sign = rawNetAmount < 0 ? -1 : 1;
     const netAmount = sign * (netAbs - vatAbs);
     return {
       netAmount,
-      grossAmount: rawGrossAmount || rawNetAmount,
+      // The inclusive figure IS the true gross; a supplied net+vat gross is the
+      // overstated one we are correcting, so never use it here.
+      grossAmount: rawNetAmount,
     };
   }
 

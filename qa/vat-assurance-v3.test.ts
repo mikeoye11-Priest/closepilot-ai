@@ -72,6 +72,23 @@ test("VAT-V3: gross-only rows are recovered, not dropped into an empty review", 
   assert.equal(result.vatReturn.box7, 400);
 });
 
+test("VAT-V3: Xero tax-inclusive lines (gross computed as net+vat) normalise, not flag", () => {
+  // Xero returns tax-inclusive line amounts; xero-sync builds gross as net+vat,
+  // so the row is {net:<inclusive>, vat, gross:net+vat}. This must be recognised
+  // as VAT-inclusive and corrected — otherwise every line reads ~16.7% and fires
+  // a false VAT101, which drove computationAccuracy to 0 and blanked the review.
+  const result = runVatEngine([vatFile("xero-inclusive-vat.csv", [
+    { date: "2026-05-10", type: "Sale", customer: "A", description: "Sale", net_amount: "4200", vat_amount: "700", gross_amount: "4900", vat_code: "STD", reference: "S1" },
+    { date: "2026-05-10", type: "Purchase", supplier: "B", description: "Bill", net_amount: "1200", vat_amount: "200", gross_amount: "1400", vat_code: "PSTD", reference: "P1" },
+  ])]);
+
+  assert.equal(result.findings.filter((finding) => finding.id === "VAT101").length, 0);
+  assert.equal(result.vatReturn.box1, 700);
+  assert.equal(result.vatReturn.box6, 3500); // true net, not the inclusive 4200
+  assert.equal(result.vatReturn.box4, 200);
+  assert.equal(result.vatReturn.box7, 1000); // true net, not the inclusive 1200
+});
+
 test("VAT-V3 demo: reverse charge produces equal Box 1 and Box 4 entries", () => {
   const result = runVatEngine([vatFile("reverse-charge-vat.csv", [
     { date: "2026-06-30", type: "Purchase", supplier: "Google Ireland", supplier_country: "IE", description: "Reverse charge cloud services", net_amount: "1000", vat_amount: "0", gross_amount: "1000", vat_code: "RC", reference: "RC-1" },
