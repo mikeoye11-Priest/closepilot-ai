@@ -222,9 +222,10 @@ function normaliseVatTransactions(file: ParsedFile): VatTransaction[] {
   return file.rows
     .filter((row) => !isVatSummaryOrReconciliationRow(row))
     .map((row) => {
-      const netAmount = money(text(row, netKeys));
+      const rawNetAmount = money(text(row, netKeys));
       const vatAmount = money(text(row, vatKeys));
-      const grossAmount = money(text(row, grossKeys)) || netAmount + vatAmount;
+      const rawGrossAmount = money(text(row, grossKeys));
+      const { netAmount, grossAmount } = normaliseVatAmounts(rawNetAmount, vatAmount, rawGrossAmount);
       const rawType = text(row, typeKeys).toLowerCase();
       const party = text(row, partyKeys);
       const description = text(row, descKeys);
@@ -258,6 +259,32 @@ function normaliseVatTransactions(file: ParsedFile): VatTransaction[] {
       return { ...base, treatment: classifyVatTransaction(base) };
     })
     .filter((transaction) => Math.abs(transaction.netAmount) > 0 || Math.abs(transaction.vatAmount) > 0);
+}
+
+function normaliseVatAmounts(rawNetAmount: number, vatAmount: number, rawGrossAmount: number) {
+  const netAbs = Math.abs(rawNetAmount);
+  const vatAbs = Math.abs(vatAmount);
+  const grossAbs = Math.abs(rawGrossAmount);
+  const suppliedAmountLooksGross =
+    netAbs > vatAbs &&
+    vatAbs > 0 &&
+    Math.abs(vatAbs / netAbs - 1 / 6) <= 0.015 &&
+    Math.abs(vatAbs / (netAbs - vatAbs) - 0.2) <= 0.02 &&
+    (!grossAbs || Math.abs(grossAbs - netAbs) <= 1);
+
+  if (suppliedAmountLooksGross) {
+    const sign = rawNetAmount < 0 ? -1 : 1;
+    const netAmount = sign * (netAbs - vatAbs);
+    return {
+      netAmount,
+      grossAmount: rawGrossAmount || rawNetAmount,
+    };
+  }
+
+  return {
+    netAmount: rawNetAmount,
+    grossAmount: rawGrossAmount || rawNetAmount + vatAmount,
+  };
 }
 
 function isVatSummaryOrReconciliationRow(row: Record<string, string>) {

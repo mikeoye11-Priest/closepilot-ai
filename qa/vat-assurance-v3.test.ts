@@ -70,6 +70,21 @@ test("VAT-V3 demo: reverse charge produces equal Box 1 and Box 4 entries", () =>
   assert.equal(result.reconciliationStatus, "PASS");
 });
 
+test("VAT-V3 normalises VAT-inclusive source amounts before rate checks", () => {
+  const result = runVatEngine([vatFile("xero-inclusive-vat-export.csv", [
+    { date: "2026-06-30", type: "Sale", customer: "Ridgeway University", description: "Retainer for consulting work", net_amount: "500", vat_amount: "83", gross_amount: "500", vat_code: "STD", reference: "INC-S-1" },
+    { date: "2026-06-30", type: "Purchase", supplier: "Training Supplier", description: "VAT-inclusive supplier invoice", net_amount: "1200", vat_amount: "200", gross_amount: "1200", vat_code: "PSTD", reference: "INC-P-1" },
+  ])]);
+
+  assert.equal(result.vatReturn.box1, 83);
+  assert.equal(result.vatReturn.box4, 200);
+  assert.equal(result.vatReturn.box5, -117);
+  assert.equal(result.vatReturn.box6, 417);
+  assert.equal(result.vatReturn.box7, 1000);
+  assert.equal(result.findings.filter((finding) => finding.id === "VAT101").length, 0);
+  assert.equal(result.scoreBreakdown?.computationAccuracy, 100);
+});
+
 test("VAT-V3 demo: blocked input VAT is excluded from Box 4 and raised as a high-risk finding", () => {
   const result = runVatEngine([vatFile("blocked-input-vat.csv", [
     { date: "2026-06-30", type: "Purchase", supplier: "Hospitality Venue", description: "Client dinner entertainment", net_amount: "1000", vat_amount: "200", gross_amount: "1200", vat_code: "PSTD", reference: "ENT-1" },
@@ -94,6 +109,16 @@ test("VAT-V3 demo: flat-rate profile flags material input VAT claims", () => {
   assertCheckStatus(result, "VAT_073", "review");
   assert.ok((assuranceCheck(result, "VAT_073").actual ?? 0) > (result.assuranceProfile?.materiality ?? Number.MAX_SAFE_INTEGER));
   assert.ok((result.exceptionDashboard?.categories.schemeCompliance ?? 0) > 0);
+});
+
+test("VAT-V3 workpaper lists not-tested evidence gaps", () => {
+  const result = runVatEngine([vatFile("standard-no-comparative-or-control.csv", [
+    { date: "2026-06-30", type: "Sale", customer: "Domestic Customer", description: "Standard rated sale", net_amount: "1000", vat_amount: "200", gross_amount: "1200", vat_code: "STD", reference: "S-1" },
+  ])]);
+
+  assert.ok(result.workpaper?.findings.some((finding) => finding.includes("VAT_010") && finding.includes("not tested")));
+  assert.ok(result.workpaper?.findings.some((finding) => finding.includes("VAT_022") && finding.includes("not tested")));
+  assert.ok(!result.workpaper?.findings.includes("No exceptions identified by the tests performed."));
 });
 
 test("VAT-V3 profiles large companies and blocks duplicate input VAT claims", () => {

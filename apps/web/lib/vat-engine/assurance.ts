@@ -398,13 +398,17 @@ function evidenceScore(input: AssuranceInput) {
 function buildWorkpaper(checks: VatAssuranceCheck[], evidenceReviewed: string[]): VatWorkpaper {
   const exceptions = checks.filter((check) => check.status === "failed" || check.status === "review");
   const notTested = checks.filter((check) => check.status === "not_tested");
+  const findings = [
+    ...exceptions.map((check) => `${check.id}: ${check.title} — ${check.detail}`),
+    ...notTested.map((check) => `${check.id}: ${check.title} not tested — ${check.detail}`),
+  ];
   return {
     reference: "WP-02 VAT",
     objective: "Verify VAT return completeness and accuracy.",
     risk: "Incorrect VAT filing, unsupported VAT recovery, or omitted output tax.",
     evidenceReviewed,
     proceduresPerformed: ["Validated VAT return box arithmetic and presentation.", "Reconciled available VAT return, ledger and control-account evidence.", "Reviewed manual journals and round-number VAT entries.", "Tested detected reverse-charge and PIVA box treatment."],
-    findings: exceptions.length ? exceptions.map((check) => `${check.id}: ${check.title} — ${check.detail}`) : ["No exceptions identified by the tests performed."],
+    findings: findings.length ? findings : ["No exceptions identified by the tests performed."],
     conclusion: exceptions.some((check) => check.severity === "high" && check.status === "failed") ? "Partner review required before submission." : notTested.length ? "Review required: complete the outstanding evidence-led procedures before submission." : "No material exceptions identified; VAT return is ready for reviewer sign-off.",
   };
 }
