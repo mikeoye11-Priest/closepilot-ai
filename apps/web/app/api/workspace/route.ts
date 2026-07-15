@@ -19,10 +19,15 @@ export async function GET() {
     .from("user_workspaces")
     .select("data")
     .eq("user_id", user.id)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) return NextResponse.json({ workspace: null });
-  return NextResponse.json({ workspace: data.data });
+  // Distinguish "no workspace yet" (authoritative empty → null) from a query
+  // failure (500). Returning null on error made the client treat a transient
+  // failure as "no workspace", wipe its local backup and force onboarding — the
+  // disappearing-workspace bug. maybeSingle() returns null data without error
+  // when there is no row, so only a real error reaches the 500 branch.
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ workspace: data?.data ?? null });
 }
 
 export async function POST(request: Request) {
