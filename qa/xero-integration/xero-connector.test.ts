@@ -45,6 +45,26 @@ test("Xero responses map into ClosePilot trial balance and VAT evidence", async 
   assert.equal(vatReview.vatReturn.box1, 300);
 });
 
+test("VAT rows are scoped to the accounting period (out-of-period invoices excluded)", async () => {
+  const xero = {
+    accountingApi: {
+      // No FY-end settings -> periodStart falls back to 2026-01-01, so the VAT
+      // period is [2026-01-01, 2026-04-30]. Only the in-period invoice counts.
+      getInvoices: async (_t: string, _s: Date | undefined, _w: undefined, _o: string, _i: undefined, _n: undefined, _c: undefined, _st: string[], page: number) => ({ body: { invoices: page === 1 ? [
+        { type: "ACCREC", date: "2026-03-10", invoiceNumber: "IN-PERIOD", contact: { name: "Atlas Ltd" }, lineItems: [{ description: "In period sale", lineAmount: 1000, taxAmount: 200, taxType: "OUTPUT", accountCode: "4000" }] },
+        { type: "ACCREC", date: "2025-11-15", invoiceNumber: "OUT-OF-PERIOD", contact: { name: "Old Co" }, lineItems: [{ description: "Prior year sale", lineAmount: 5000, taxAmount: 1000, taxType: "OUTPUT", accountCode: "4000" }] },
+      ] : [] } }),
+    },
+  };
+  const sync = await fetchXeroSyncData(xero as never, "xero-tenant", "2026-04-30");
+  assert.equal(sync.vatRows.length, 1);
+  assert.equal(sync.vatRows[0].reference, "IN-PERIOD");
+
+  const vatReview = runVatEngine(xeroParsedFiles(sync, "Xero Demo", "2026-04-30"));
+  assert.equal(vatReview.vatReturn.box6, 1000); // in-period net only, not 6000
+  assert.equal(vatReview.vatReturn.box1, 200);
+});
+
 test("Xero posted journals backfill VAT assurance when source transaction lines are empty", async () => {
   const xero = {
     accountingApi: {
