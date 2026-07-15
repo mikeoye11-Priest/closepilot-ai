@@ -30,6 +30,7 @@ export async function GET(request: Request) {
   if (error || !data) return NextResponse.json({ error: error?.message || "Xero sync not found." }, { status: 404 });
 
   const summary = data.result_summary && typeof data.result_summary === "object" ? data.result_summary as Record<string, unknown> : {};
+  const statements = summary.statements && typeof summary.statements === "object" ? summary.statements as Record<string, unknown> : {};
   return NextResponse.json({
     syncId: data.id,
     status: data.status,
@@ -37,6 +38,7 @@ export async function GET(request: Request) {
     counts: summary.counts,
     warnings: summary.warnings,
     analysis: data.status === "completed" ? summary.analysis : undefined,
+    vatPeriod: statements.vatPeriodStart && statements.vatPeriodEnd ? { start: statements.vatPeriodStart, end: statements.vatPeriodEnd } : undefined,
     error: data.error_message,
     startedAt: data.started_at,
     completedAt: data.completed_at,
@@ -74,7 +76,13 @@ async function runXeroSync({ supabase, connection, syncId, sessionUserId, body, 
   try {
     await supabase.from("accounting_sync_runs").update({ status: "running", started_at: new Date().toISOString() }).eq("id", syncId);
     const xero = await authenticatedXeroClient(supabase, connection);
-    const sync = await fetchXeroSyncData(xero, connection.external_tenant_id, asOfDate);
+    // Optional explicit VAT return period (a chosen quarter). Only honoured when
+    // both bounds are valid dates; otherwise the sync defaults to the accounting
+    // period. Bounds are clamped so the end never precedes the start.
+    const vatStart = dateValue(body.vatPeriodStart);
+    const vatEnd = dateValue(body.vatPeriodEnd);
+    const vatPeriod = vatStart && vatEnd && vatStart <= vatEnd ? { start: vatStart, end: vatEnd } : undefined;
+    const sync = await fetchXeroSyncData(xero, connection.external_tenant_id, asOfDate, undefined, vatPeriod);
     const imported = sync.counts.trialBalance + sync.counts.profitLoss + sync.counts.balanceSheet + sync.counts.agedDebtors + sync.counts.agedCreditors + sync.counts.vatRows;
     // Only a total shutout is a failure; a partial sync completes with whatever
     // came through and surfaces which source(s) failed via warnings.
@@ -104,7 +112,7 @@ async function runXeroSync({ supabase, connection, syncId, sessionUserId, body, 
     const completedAt = new Date().toISOString();
     // Persist the statement line items (not just analysis metadata) so the
     // management-accounts pack can render P&L / balance sheet / aged / cash.
-    const statements = { asOfDate, periodStart: sync.periodStart, currency: company.currency, companyName: company.name, companyIndustry: company.industry, profitLoss: sync.profitLossRows, priorProfitLoss: sync.priorProfitLossRows, balanceSheet: sync.balanceSheetRows, agedDebtors: sync.agedDebtorRows, agedCreditors: sync.agedCreditorRows, bank: sync.bankReconRows, trialBalance: sync.trialBalanceRows };
+    const statements = { asOfDate, periodStart: sync.periodStart, vatPeriodStart: sync.vatPeriodStart, vatPeriodEnd: sync.vatPeriodEnd, currency: company.currency, companyName: company.name, companyIndustry: company.industry, profitLoss: sync.profitLossRows, priorProfitLoss: sync.priorProfitLossRows, balanceSheet: sync.balanceSheetRows, agedDebtors: sync.agedDebtorRows, agedCreditors: sync.agedCreditorRows, bank: sync.bankReconRows, trialBalance: sync.trialBalanceRows };
     await supabase.from("accounting_sync_runs").update({ status: "completed", records_imported: imported, result_summary: { counts: sync.counts, warnings: sync.warnings, statements, analysis }, completed_at: completedAt }).eq("id", syncId);
     await supabase.from("accounting_integrations").update({ last_synced_at: completedAt, updated_at: completedAt }).eq("id", connection.id);
     await supabase.from("audit_logs").insert({ id: crypto.randomUUID(), tenant_id: tenantId, user_id: sessionUserId, action: "xero_sync_completed", entity_type: "accounting_sync_run", entity_id: syncId });
