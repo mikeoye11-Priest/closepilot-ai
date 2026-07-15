@@ -1849,79 +1849,63 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
 
   useEffect(() => {
     if (presentationMode) return;
-    async function loadWorkspace() {
-      try {
-        const res = await fetch("/api/workspace");
-        const { workspace } = await res.json();
-        if (workspaceLoadCancelled.current) return;
-        const parsed: WorkspaceState | null = workspace ?? (userEmail ? null : (() => {
-          const local = window.localStorage.getItem(storageKey);
-          return local ? JSON.parse(local) : null;
-        })());
-        if (!parsed) {
-          if (userEmail) window.localStorage.removeItem(storageKey);
-          setActive("Onboarding");
-          return;
-        }
-        const selectedCompany = parsed.companies.find((item) => item.id === parsed.currentCompanyId) ?? parsed.companies[0];
-        if (!selectedCompany) return;
-        const snapshot = normaliseSnapshot(parsed.companySnapshots[selectedCompany.id]);
-        const companySnapshots = { ...parsed.companySnapshots, [selectedCompany.id]: snapshot };
-        setTenant(parsed.tenant);
-        setCompanies(parsed.companies);
-        setPortfolioClients(parsed.portfolioClients);
-        setCompanySnapshots(companySnapshots);
-        setCurrentCompany(selectedCompany);
-        setUploads(snapshot.uploads);
-        setValidationChecks(snapshot.validationChecks);
-        setImportProfiles(snapshot.importProfiles ?? []);
-        setFindings(snapshot.findings);
-        setFindingEvidence(snapshot.findingEvidence ?? []);
-        setFindingComments(snapshot.findingComments ?? []);
-        setFindingActivities(snapshot.findingActivities ?? []);
-        setCollectionCases(snapshot.collectionCases ?? []);
-        setPartnerSignOff(snapshot.partnerSignOff);
-        setRecommendations(snapshot.recommendations);
-        setVatReview(snapshot.vatReview);
-        const isDefault = selectedCompany.name === "Your Company";
+    const readLocalBackup = (): WorkspaceState | null => {
+      try { const local = window.localStorage.getItem(storageKey); return local ? JSON.parse(local) as WorkspaceState : null; }
+      catch { return null; }
+    };
+    const restoreWorkspace = (parsed: WorkspaceState) => {
+      const selectedCompany = parsed.companies.find((item) => item.id === parsed.currentCompanyId) ?? parsed.companies[0];
+      if (!selectedCompany) { setActive("Onboarding"); return; }
+      const snapshot = normaliseSnapshot(parsed.companySnapshots[selectedCompany.id]);
+      const companySnapshots = { ...parsed.companySnapshots, [selectedCompany.id]: snapshot };
+      setTenant(parsed.tenant);
+      setCompanies(parsed.companies);
+      setPortfolioClients(parsed.portfolioClients);
+      setCompanySnapshots(companySnapshots);
+      setCurrentCompany(selectedCompany);
+      setUploads(snapshot.uploads);
+      setValidationChecks(snapshot.validationChecks);
+      setImportProfiles(snapshot.importProfiles ?? []);
+      setFindings(snapshot.findings);
+      setFindingEvidence(snapshot.findingEvidence ?? []);
+      setFindingComments(snapshot.findingComments ?? []);
+      setFindingActivities(snapshot.findingActivities ?? []);
+      setCollectionCases(snapshot.collectionCases ?? []);
+      setPartnerSignOff(snapshot.partnerSignOff);
+      setRecommendations(snapshot.recommendations);
+      setVatReview(snapshot.vatReview);
+      const isDefault = selectedCompany.name === "Your Company";
       setUploadMessage(isDefault
         ? "Upload your finance pack to run a real deterministic review."
         : `${selectedCompany.name} workspace restored. Upload a new finance pack or continue the current review.`);
-        setActive("Partner Summary");
+      setActive("Partner Summary");
+    };
+    async function loadWorkspace() {
+      let serverReachable = true;
+      let serverWorkspace: WorkspaceState | null = null;
+      try {
+        const res = await fetch("/api/workspace");
+        if (res.ok) serverWorkspace = ((await res.json()).workspace ?? null) as WorkspaceState | null;
+        else serverReachable = false; // 401/500 etc. — not an authoritative answer
       } catch {
-        if (workspaceLoadCancelled.current) return;
-        if (userEmail) {
-          window.localStorage.removeItem(storageKey);
-          setActive("Onboarding");
-          return;
-        }
-        const local = window.localStorage.getItem(storageKey);
-        if (!local) { setActive("Onboarding"); return; }
-        try {
-          const parsed = JSON.parse(local) as WorkspaceState;
-          const selectedCompany = parsed.companies.find((item) => item.id === parsed.currentCompanyId) ?? parsed.companies[0];
-          if (!selectedCompany) { setActive("Onboarding"); return; }
-          const snapshot = normaliseSnapshot(parsed.companySnapshots[selectedCompany.id]);
-          const companySnapshots = { ...parsed.companySnapshots, [selectedCompany.id]: snapshot };
-          setTenant(parsed.tenant);
-          setCompanies(parsed.companies);
-          setPortfolioClients(parsed.portfolioClients);
-          setCompanySnapshots(companySnapshots);
-          setCurrentCompany(selectedCompany);
-          setUploads(snapshot.uploads);
-          setValidationChecks(snapshot.validationChecks);
-          setImportProfiles(snapshot.importProfiles ?? []);
-          setFindings(snapshot.findings);
-          setFindingEvidence(snapshot.findingEvidence ?? []);
-          setFindingComments(snapshot.findingComments ?? []);
-          setFindingActivities(snapshot.findingActivities ?? []);
-          setCollectionCases(snapshot.collectionCases ?? []);
-          setPartnerSignOff(snapshot.partnerSignOff);
-          setRecommendations(snapshot.recommendations);
-          setVatReview(snapshot.vatReview);
-          setActive("Partner Summary");
-        } catch { window.localStorage.removeItem(storageKey); setActive("Onboarding"); }
+        serverReachable = false; // network failure
       }
+      if (workspaceLoadCancelled.current) return;
+
+      // Server is the source of truth when reachable; otherwise fall back to the
+      // local backup and NEVER destroy it. A transient failure must not erase a
+      // real workspace or force a re-onboard that clobbers it on the next save.
+      const localBackup = readLocalBackup();
+      const parsed = serverWorkspace ?? (serverReachable ? (userEmail ? null : localBackup) : localBackup);
+
+      if (!parsed) {
+        // Only a reachable server with no workspace is authoritative empty for a
+        // signed-in user — the sole case where clearing the stale backup is safe.
+        if (serverReachable && userEmail) window.localStorage.removeItem(storageKey);
+        setActive("Onboarding");
+        return;
+      }
+      restoreWorkspace(parsed);
     }
     loadWorkspace();
   }, [presentationMode, userEmail]);
