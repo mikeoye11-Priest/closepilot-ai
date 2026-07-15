@@ -56,7 +56,8 @@ export function runVatEngine(files: ParsedFile[]): VatReviewResult {
   const previousVatReturn = explicitPriorReturn ?? (priorTransactions.length && !isEmptyVatReturn(priorComputed) ? priorComputed : undefined);
   const vatControl = extractVatControl(files);
   const hmrcPayment = extractHmrcPayment(vatFiles);
-  const reconciliationResults = reconcileVatReturn(vatReturn, vatControl, computed.boxContributions, transactions, hmrcPayment);
+  const plTurnover = extractProfitLossTurnover(files);
+  const reconciliationResults = reconcileVatReturn(vatReturn, vatControl, computed.boxContributions, transactions, hmrcPayment, plTurnover);
   const profile = inferVatAssuranceProfile(files, transactions, vatReturn);
   const findings = buildVatEngineFindings(vatReturn, transactions, reconciliationResults, profile);
   const assurance = runVatAssurance({
@@ -207,6 +208,28 @@ function buildEvidenceReviewed(files: ParsedFile[], transactions: VatTransaction
   if (transactions.some((transaction) => transaction.treatment === "import_vat")) evidence.add("PIVA/import VAT transaction evidence");
   if (files.some(isPriorPeriodVatFile)) evidence.add("Prior-period VAT comparison");
   return [...evidence];
+}
+
+// Total turnover from the P&L file (income sections only, excluding cost of
+// sales and subtotal rows), used to cross-check Box 6. Returns undefined when no
+// P&L is present or no income row is identifiable, so the check is skipped
+// rather than compared against zero.
+function extractProfitLossTurnover(files: ParsedFile[]): number | undefined {
+  const plFile = files.find((file) => file.upload.fileType === "profit_loss" && file.isParsed);
+  if (!plFile || !plFile.rows.length) return undefined;
+  const plAmountKeys = ["amount", "value", "net_amount", "balance", "total"];
+  let turnover = 0;
+  let matched = false;
+  for (const row of plFile.rows) {
+    const label = rowText(row).toLowerCase();
+    if (/cost of (sales|goods)/.test(label)) continue;
+    if (/^(total|gross profit|net profit|operating profit)/.test(label)) continue;
+    if (/income|revenue|turnover|\bsales\b|fees|trading/.test(label)) {
+      const amount = money(text(row, plAmountKeys));
+      if (amount) { turnover += Math.abs(amount); matched = true; }
+    }
+  }
+  return matched ? turnover : undefined;
 }
 
 function extractHmrcPayment(files: ParsedFile[]) {
