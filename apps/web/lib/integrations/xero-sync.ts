@@ -81,7 +81,19 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
   const paidOrAuthorised = (status: unknown) => { const s = String(status).toUpperCase(); return s === "AUTHORISED" || s === "PAID"; };
   const authorisedCreditNotes = creditNotes.filter((note) => paidOrAuthorised(note.status));
 
-  const invoiceRows = invoices.flatMap((invoice) => (invoice.lineItems ?? []).map((line, index) => vatRow({
+  // Scope VAT evidence to the accounting period under review (the same window the
+  // P&L/accounts use), so Box 6/7 reflect the period's sales/purchases rather than
+  // every invoice Xero holds. The fetches stay unfiltered because aged debtors/
+  // creditors need all outstanding invoices regardless of date; only the VAT-row
+  // derivation is scoped, by each transaction's tax point (its date). Undated rows
+  // are kept so no VAT evidence is silently dropped. Posted journals are already
+  // period-filtered at fetch time.
+  const withinVatPeriod = (value: unknown) => {
+    const date = xeroDateString(value);
+    return !date || (date >= periodStart && date <= asOfDate);
+  };
+
+  const invoiceRows = invoices.filter((invoice) => withinVatPeriod(invoice.date)).flatMap((invoice) => (invoice.lineItems ?? []).map((line, index) => vatRow({
     date: invoice.date,
     type: String(invoice.type).startsWith("ACCREC") ? "Sale" : "Purchase",
     party: invoice.contact?.name,
@@ -93,7 +105,7 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     accountCode: line.accountCode,
     reference: invoice.invoiceNumber || invoice.invoiceID || `invoice-${index + 1}`,
   })));
-  const bankRows = bankTransactions.flatMap((transaction) => (transaction.lineItems ?? []).map((line, index) => vatRow({
+  const bankRows = bankTransactions.filter((transaction) => withinVatPeriod(transaction.date)).flatMap((transaction) => (transaction.lineItems ?? []).map((line, index) => vatRow({
     date: transaction.date,
     type: String(transaction.type).startsWith("RECEIVE") ? "Sale" : "Purchase",
     party: transaction.contact?.name,
@@ -105,7 +117,7 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     accountCode: line.accountCode,
     reference: transaction.reference || transaction.bankTransactionID || `bank-${index + 1}`,
   })));
-  const manualJournalRows = manualJournals.flatMap((journal) => (journal.journalLines ?? []).filter((line) => number(line.taxAmount) !== 0 || /vat|tax/i.test(`${journal.narration} ${line.description ?? ""}`)).map((line, index) => vatRow({
+  const manualJournalRows = manualJournals.filter((journal) => withinVatPeriod(journal.date)).flatMap((journal) => (journal.journalLines ?? []).filter((line) => number(line.taxAmount) !== 0 || /vat|tax/i.test(`${journal.narration} ${line.description ?? ""}`)).map((line, index) => vatRow({
     date: journal.date,
     type: "Adjustment",
     party: "Manual Journal",
@@ -136,7 +148,7 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
   // output VAT, a purchase credit note reduces input VAT. Emit each line negated
   // (Xero returns credit-note amounts positive) with the same tax code, so the
   // VAT rows sum to the net position that reconciles to the VAT control account.
-  const creditNoteRows = authorisedCreditNotes.flatMap((note) => (note.lineItems ?? []).map((line, index) => vatRow({
+  const creditNoteRows = authorisedCreditNotes.filter((note) => withinVatPeriod(note.date)).flatMap((note) => (note.lineItems ?? []).map((line, index) => vatRow({
     date: note.date,
     type: String(note.type).startsWith("ACCREC") ? "Sale" : "Purchase",
     party: note.contact?.name,
