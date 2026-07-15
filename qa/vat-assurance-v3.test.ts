@@ -89,6 +89,44 @@ test("VAT-V3: Xero tax-inclusive lines (gross computed as net+vat) normalise, no
   assert.equal(result.vatReturn.box7, 1000); // true net, not the inclusive 1200
 });
 
+function plFile(rows: Record<string, string>[]) {
+  return {
+    upload: { id: "pl", tenantId: "tenant", companyId: "company", fileType: "profit_loss", fileName: "profit-loss.csv", uploadedAt: "2026-07-15T00:00:00.000Z" },
+    headers: Object.keys(rows[0] ?? {}),
+    rows,
+    isParsed: true,
+  } as never;
+}
+
+test("VAT-V3: Box 6 is reconciled against P&L turnover (agrees within tolerance)", () => {
+  const result = runVatEngine([
+    vatFile("vat.csv", [
+      { date: "2026-06-30", type: "Sale", customer: "A", description: "Sale", net_amount: "1000", vat_amount: "200", gross_amount: "1200", vat_code: "STD", reference: "S1" },
+    ]),
+    plFile([
+      { category: "Sales", description: "Consulting income", amount: "1000" },
+      { category: "Cost of Sales", description: "Materials", amount: "-300" },
+    ]),
+  ]);
+  const check = result.reconciliationResults.find((item) => item.name === "Box 6 agrees to P&L turnover");
+  assert.ok(check, "expected a Box 6 vs P&L turnover reconciliation");
+  assert.equal(check.status, "passed");
+});
+
+test("VAT-V3: Box 6 vs P&L turnover raises a warning on material divergence", () => {
+  const result = runVatEngine([
+    vatFile("vat.csv", [
+      { date: "2026-06-30", type: "Sale", customer: "A", description: "Sale", net_amount: "1000", vat_amount: "200", gross_amount: "1200", vat_code: "STD", reference: "S1" },
+    ]),
+    plFile([
+      { category: "Sales", description: "Consulting income", amount: "5000" },
+    ]),
+  ]);
+  const check = result.reconciliationResults.find((item) => item.name === "Box 6 agrees to P&L turnover");
+  assert.ok(check, "expected a Box 6 vs P&L turnover reconciliation");
+  assert.equal(check.status, "warning"); // divergence is a review flag, not a hard fail
+});
+
 test("VAT-V3 demo: reverse charge produces equal Box 1 and Box 4 entries", () => {
   const result = runVatEngine([vatFile("reverse-charge-vat.csv", [
     { date: "2026-06-30", type: "Purchase", supplier: "Google Ireland", supplier_country: "IE", description: "Reverse charge cloud services", net_amount: "1000", vat_amount: "0", gross_amount: "1000", vat_code: "RC", reference: "RC-1" },
