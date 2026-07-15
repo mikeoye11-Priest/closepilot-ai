@@ -10388,8 +10388,30 @@ type XeroSyncPollResult = {
   counts?: { trialBalance?: number; vatRows?: number };
   warnings?: string[];
   analysis?: AnalysisResult;
+  vatPeriod?: { start: string; end: string };
   error?: string;
 };
+
+const VAT_QUARTER_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// The most recent `count` calendar quarters (newest first) as selectable VAT
+// return periods. Used to scope the Xero sync to an exact HMRC quarter instead
+// of the default accounting-period window.
+function recentVatQuarters(count = 4): Array<{ value: string; label: string; start: string; end: string }> {
+  const now = new Date();
+  let year = now.getUTCFullYear();
+  let quarter = Math.floor(now.getUTCMonth() / 3);
+  const quarters: Array<{ value: string; label: string; start: string; end: string }> = [];
+  for (let i = 0; i < count; i += 1) {
+    const startMonth = quarter * 3;
+    const start = new Date(Date.UTC(year, startMonth, 1)).toISOString().slice(0, 10);
+    const end = new Date(Date.UTC(year, startMonth + 3, 0)).toISOString().slice(0, 10);
+    quarters.push({ value: `${start}_${end}`, label: `${VAT_QUARTER_MONTHS[startMonth]}–${VAT_QUARTER_MONTHS[startMonth + 2]} ${year}`, start, end });
+    quarter -= 1;
+    if (quarter < 0) { quarter = 3; year -= 1; }
+  }
+  return quarters;
+}
 
 async function pollXeroSync(syncId: string, onProgress: (status: XeroSyncPollResult["status"]) => void): Promise<XeroSyncPollResult> {
   const deadline = Date.now() + 5 * 60 * 1000;
@@ -10418,6 +10440,8 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
   const [integrations, setIntegrations] = useState<AccountingIntegrationState[]>([]);
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [integrationBusy, setIntegrationBusy] = useState(false);
+  const vatQuarters = useMemo(() => recentVatQuarters(), []);
+  const [vatPeriodChoice, setVatPeriodChoice] = useState("accounts");
 
   useEffect(() => {
     fetch(`/api/integrations?tenantId=${encodeURIComponent(tenant.id)}&companyId=${encodeURIComponent(company.id)}`)
@@ -10446,7 +10470,8 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
   const syncXero = async () => {
     setIntegrationBusy(true); setIntegrationMessage("Queueing Xero trial balance and VAT evidence…");
     try {
-      const response = await fetch("/api/integrations/xero/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId: tenant.id, tenantName: tenant.name, tenantType: tenant.type, tenantPlan: tenant.plan, companyId: company.id, companyName: company.name, companyIndustry: company.industry, currency: company.currency, country: company.country, asOfDate: new Date().toISOString().slice(0, 10) }) });
+      const chosenQuarter = vatPeriodChoice === "accounts" ? undefined : vatQuarters.find((quarter) => quarter.value === vatPeriodChoice);
+      const response = await fetch("/api/integrations/xero/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId: tenant.id, tenantName: tenant.name, tenantType: tenant.type, tenantPlan: tenant.plan, companyId: company.id, companyName: company.name, companyIndustry: company.industry, currency: company.currency, country: company.country, asOfDate: new Date().toISOString().slice(0, 10), ...(chosenQuarter ? { vatPeriodStart: chosenQuarter.start, vatPeriodEnd: chosenQuarter.end } : {}) }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Xero sync failed.");
       setIntegrationMessage("Xero sync is running in the background…");
@@ -10456,10 +10481,11 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
       await reloadIntegrations();
       const vatRows = completed.counts?.vatRows ?? 0;
       const warningText = completed.warnings?.length ? ` Warnings: ${completed.warnings.join("; ")}` : "";
+      const periodText = completed.vatPeriod ? ` VAT period ${completed.vatPeriod.start} to ${completed.vatPeriod.end}.` : "";
       const vatText = vatRows
         ? `${vatRows} VAT row(s).`
         : "0 VAT row(s). VAT Assurance needs Xero invoice/bill/bank/journal tax lines; reconnect Xero if transaction scopes were added recently, or upload a VAT evidence export.";
-      setIntegrationMessage(`Xero sync completed: ${completed.counts?.trialBalance ?? 0} trial-balance and ${vatText}${warningText}`);
+      setIntegrationMessage(`Xero sync completed: ${completed.counts?.trialBalance ?? 0} trial-balance and ${vatText}${periodText}${warningText}`);
     } catch (error) { setIntegrationMessage(error instanceof Error ? error.message : "Xero sync failed."); }
     finally { setIntegrationBusy(false); }
   };
@@ -10557,6 +10583,15 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
               </div>
               {integration.provider === "xero" && integration.organisations?.length ? (
                 <div className="mt-3 grid gap-2">
+                  {integration.connected && (
+                    <label className="flex flex-col gap-1 rounded-lg border border-line bg-white p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-xs font-bold uppercase text-muted">VAT return period</span>
+                      <select className="rounded-lg border border-line bg-white px-3 py-2 text-sm" value={vatPeriodChoice} disabled={integrationBusy} onChange={(event) => setVatPeriodChoice(event.target.value)}>
+                        <option value="accounts">Current accounts period (default)</option>
+                        {vatQuarters.map((quarter) => <option key={quarter.value} value={quarter.value}>{quarter.label}</option>)}
+                      </select>
+                    </label>
+                  )}
                   {integration.organisations.map((organisation) => (
                     <div key={organisation.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-white p-3 text-sm">
                       <div><strong>{organisation.name}</strong><p className="text-xs text-muted">{organisation.lastSyncedAt ? `Last synced ${new Date(organisation.lastSyncedAt).toLocaleString("en-GB")}` : "Not yet synced"}</p></div>

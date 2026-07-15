@@ -19,9 +19,13 @@ export type XeroSyncData = {
   warnings: string[];
   // The accounting-period start used (from the org's financial-year settings).
   periodStart: string;
+  // The effective VAT return period the VAT rows were scoped to (defaults to the
+  // accounting period when no explicit VAT quarter was chosen).
+  vatPeriodStart: string;
+  vatPeriodEnd: string;
 };
 
-export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, asOfDate: string, modifiedSince?: Date): Promise<XeroSyncData> {
+export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, asOfDate: string, modifiedSince?: Date, vatPeriod?: { start: string; end: string }): Promise<XeroSyncData> {
   const warnings: string[] = [];
   // Use the company's real accounting-period start from Xero's financial-year
   // settings (not an assumed 1 January), so P&L and tax cover the correct period
@@ -81,16 +85,18 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
   const paidOrAuthorised = (status: unknown) => { const s = String(status).toUpperCase(); return s === "AUTHORISED" || s === "PAID"; };
   const authorisedCreditNotes = creditNotes.filter((note) => paidOrAuthorised(note.status));
 
-  // Scope VAT evidence to the accounting period under review (the same window the
-  // P&L/accounts use), so Box 6/7 reflect the period's sales/purchases rather than
-  // every invoice Xero holds. The fetches stay unfiltered because aged debtors/
-  // creditors need all outstanding invoices regardless of date; only the VAT-row
-  // derivation is scoped, by each transaction's tax point (its date). Undated rows
-  // are kept so no VAT evidence is silently dropped. Posted journals are already
-  // period-filtered at fetch time.
+  // Scope VAT evidence to the VAT return period — an explicit VAT quarter when
+  // one was chosen, otherwise the accounting period under review (the window the
+  // P&L/accounts use) — so Box 6/7 reflect that period's sales/purchases rather
+  // than every invoice Xero holds. The fetches stay unfiltered because aged
+  // debtors/creditors need all outstanding invoices regardless of date; only the
+  // VAT-row derivation is scoped, by each transaction's tax point (its date).
+  // Undated rows are kept so no VAT evidence is silently dropped.
+  const vatPeriodStart = vatPeriod?.start || periodStart;
+  const vatPeriodEnd = vatPeriod?.end || asOfDate;
   const withinVatPeriod = (value: unknown) => {
     const date = xeroDateString(value);
-    return !date || (date >= periodStart && date <= asOfDate);
+    return !date || (date >= vatPeriodStart && date <= vatPeriodEnd);
   };
 
   const invoiceRows = invoices.filter((invoice) => withinVatPeriod(invoice.date)).flatMap((invoice) => (invoice.lineItems ?? []).map((line, index) => vatRow({
@@ -129,7 +135,7 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     accountCode: line.accountCode,
     reference: journal.manualJournalID || `journal-${index + 1}`,
   })));
-  const postedJournalRows = journals.flatMap((journal) => (journal.journalLines ?? [])
+  const postedJournalRows = journals.filter((journal) => withinVatPeriod(journal.journalDate)).flatMap((journal) => (journal.journalLines ?? [])
     .filter((line) => number(line.taxAmount) !== 0 || line.taxType)
     .map((line, index) => vatRow({
       date: journal.journalDate,
@@ -232,6 +238,8 @@ export async function fetchXeroSyncData(xero: XeroClient, xeroTenantId: string, 
     counts: { trialBalance: trialBalanceRows.length, profitLoss: profitLossRows.length, balanceSheet: balanceSheetRows.length, agedDebtors: agedDebtorRows.length, agedCreditors: agedCreditorRows.length, invoices: invoices.length, creditNotes: authorisedCreditNotes.length, bankTransactions: bankTransactions.length, manualJournals: manualJournals.length, journals: journals.length, bankAccounts: bankReconRows.length, vatRows: vatRows.length },
     warnings,
     periodStart,
+    vatPeriodStart,
+    vatPeriodEnd,
   };
 }
 
