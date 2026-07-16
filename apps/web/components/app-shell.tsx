@@ -7,6 +7,7 @@ import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompan
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
 import { findingStandardReference } from "@/lib/finding-standards";
+import { buildPilotMetrics, PILOT_HOURLY_RATE, type PilotMetrics } from "@/lib/pilot-metrics";
 import { analyseFinanceFiles, scopeAnalysisResult } from "@/lib/upload-analysis";
 import type { AnalysisResult, CashForecastPoint, ClientCompany, CollectionCase, CollectionStatus, Company, Evidence, EvidenceStatus, FinanceScoreBreakdown, Finding, FindingActivity, FindingComment, FindingEvidenceRow, FindingStatus, ImportMappingProfile, ManagerReviewStatus, PartnerSignOff, PartnerSignOffGateSnapshot, PartnerSignOffStatus, Recommendation, ReviewPackStatus, RiskLevel, Tenant, TenantType, Upload, ValidationCheck, ValidationStatus } from "@/lib/types";
 import type { VatReviewResult } from "@/lib/vat-engine/types";
@@ -20,7 +21,7 @@ const navGroups = [
   { label: "", items: ["Partner Summary"] },
   { label: "Review workflow", items: ["Findings", "Finance Review", "Audit Readiness", "Management Accounts", "Financial Accounts", "Full FRS 102 Accounts", "Review Pack"] },
   { label: "Intelligence", items: ["Change Intelligence", "Cash Intelligence", "VAT Assurance", "Controls & Fraud", "Collections Intelligence", "Close Review"] },
-  { label: "Workspace", items: ["Upload Finance Pack", "Compatibility", "Practice Portal", "Ask ClosePilot", "User Guide"] },
+  { label: "Workspace", items: ["Upload Finance Pack", "Compatibility", "Practice Portal", "Practice Metrics", "Ask ClosePilot", "User Guide"] },
   { label: "Admin", items: ["Assurance Engine", "Settings"], advanced: true },
 ] as const;
 
@@ -2881,6 +2882,11 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     }} setActive={setActive} />;
     if (active === "User Guide") return <UserGuide isPilotDemo={isPilotDemo} hasData={hasUploadedData} loadPilotDemo={loadPilotDemo} setActive={setActive} setPilotWalkthroughStep={setPilotWalkthroughStep} />;
     if (active === "Settings") return <SettingsPanel tenant={tenant} company={currentCompany} userEmail={userEmail} userName={userName} onIntegrationAnalysis={applyIntegrationAnalysis} setActive={setActive} presentationMode={presentationMode} />;
+    if (active === "Practice Metrics") {
+      const liveSnapshot: AnalysisResult = { uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, collectionCases, partnerSignOff, recommendations, vatReview };
+      const mergedSnapshots = Object.values({ ...companySnapshots, [currentCompany.id]: liveSnapshot });
+      return <PilotMetricsPanel snapshots={mergedSnapshots} tenantName={tenant.name} setActive={setActive} />;
+    }
     return <PracticePortal tenant={tenant} clients={portfolioClients} currentCompanyId={currentCompany.id} switchCompany={switchCompany} companySnapshots={companySnapshots} />;
   }, [active, assurance, assistantResult, cashAtRisk, collectionCases, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, integrationDiagnostics, isAnalysing, isPilotDemo, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, risk, score, tenant, timeSaved, uploadJob, uploadMessage, uploads, userName, validationBlockers, validationChecks, validationWarnings, vatReview]);
 
@@ -10891,6 +10897,94 @@ function RiskDot({ level }: { level: RiskLevel }) {
   const colors: Record<RiskLevel, string> = { low: "bg-emerald-500", medium: "bg-amber-400", high: "bg-red-500", critical: "bg-red-700" };
   const titles: Record<RiskLevel, string> = { low: "Low risk", medium: "Watch", high: "At risk", critical: "Critical" };
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${colors[level]}`} title={titles[level]} />;
+}
+
+function PilotMetricsPanel({ snapshots, tenantName, setActive }: { snapshots: AnalysisResult[]; tenantName: string; setActive: (v: string) => void }) {
+  const metrics: PilotMetrics = useMemo(() => buildPilotMetrics(snapshots), [snapshots]);
+  const [copied, setCopied] = useState(false);
+  const pct = (value?: number) => value === undefined ? "—" : `${value}%`;
+  const days = (value?: number) => value === undefined ? "—" : `${value} day${value === 1 ? "" : "s"}`;
+
+  const deckSummary = [
+    `ClosePilot pilot metrics — ${tenantName}`,
+    `Reviews completed: ${metrics.reviewsCompleted} across ${metrics.companiesTotal} client company/companies`,
+    `Reviewer hours saved: ${metrics.hoursSaved}h (~£${metrics.managerValue.toLocaleString("en-GB")} manager capacity)`,
+    `Findings surfaced: ${metrics.totalFindings} (${metrics.severity.critical} critical, ${metrics.severity.high} high)`,
+    metrics.evidenceTraceabilityPct !== undefined ? `Evidence traceability: ${metrics.evidenceTraceabilityPct}%` : null,
+    metrics.issuesSurfacedPreSignOffPct !== undefined ? `Issues surfaced before partner sign-off: ${metrics.issuesSurfacedPreSignOffPct}%` : null,
+    metrics.avgTurnaroundDays !== undefined ? `Average review turnaround: ${metrics.avgTurnaroundDays} days` : null,
+    `Open exposure across book: £${metrics.openExposure.toLocaleString("en-GB")}`,
+  ].filter(Boolean).join("\n");
+
+  const copyDeck = async () => {
+    try { await navigator.clipboard.writeText(deckSummary); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* clipboard unavailable */ }
+  };
+
+  const cards = [
+    { label: "Reviews completed", value: String(metrics.reviewsCompleted), detail: `of ${metrics.companiesTotal} client company/companies` },
+    { label: "Reviewer hours saved", value: `${metrics.hoursSaved}h`, detail: `~£${metrics.managerValue.toLocaleString("en-GB")} manager capacity` },
+    { label: "Evidence traceability", value: pct(metrics.evidenceTraceabilityPct), detail: "findings linked to source evidence" },
+    { label: "Issues before sign-off", value: pct(metrics.issuesSurfacedPreSignOffPct), detail: "surfaced before partner review" },
+    { label: "Avg turnaround", value: days(metrics.avgTurnaroundDays), detail: `${metrics.signedOffCount} signed-off review(s)` },
+    { label: "Open exposure", value: `£${metrics.openExposure.toLocaleString("en-GB")}`, detail: "across the book" },
+  ];
+
+  return (
+    <div className="grid gap-4">
+      <Panel title="Practice Metrics">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted">Live pilot metrics for {tenantName}, aggregated from every review in this workspace.</p>
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={copyDeck}>{copied ? "Copied ✓" : "Copy for deck"}</button>
+        </div>
+        {metrics.reviewsCompleted === 0 ? (
+          <div className="mt-4"><EmptyState title="No completed reviews yet" detail="Run a review (upload a finance pack or sync Xero) and the pilot metrics will populate here." /></div>
+        ) : (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {cards.map((card) => (
+              <article key={card.label} className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                <p className="text-xs font-bold uppercase text-muted">{card.label}</p>
+                <strong className="mt-2 block text-2xl font-black">{card.value}</strong>
+                <p className="mt-1 text-xs text-muted">{card.detail}</p>
+              </article>
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      {metrics.reviewsCompleted > 0 && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Panel title="Findings across the book">
+            <div className="grid gap-2 text-sm">
+              <SeverityLegend label="Critical" count={metrics.severity.critical} total={metrics.totalFindings} color="bg-red-500" />
+              <SeverityLegend label="High" count={metrics.severity.high} total={metrics.totalFindings} color="bg-orange-500" />
+              <SeverityLegend label="Medium" count={metrics.severity.medium} total={metrics.totalFindings} color="bg-amber-400" />
+              <SeverityLegend label="Low" count={metrics.severity.low} total={metrics.totalFindings} color="bg-blue-500" />
+            </div>
+          </Panel>
+          <Panel title="Recurring issue types">
+            {metrics.recurringIssues.length ? (
+              <div className="grid gap-2">
+                {metrics.recurringIssues.map((issue) => (
+                  <button key={issue.label} className="flex items-center justify-between rounded-lg border border-line bg-white px-3 py-2 text-left text-sm transition-colors hover:border-brand" onClick={() => setActive("Findings")}>
+                    <span className="font-semibold">{issue.label}</span>
+                    <span className="font-black text-muted">{issue.count}</span>
+                  </button>
+                ))}
+              </div>
+            ) : <p className="text-sm text-muted">No findings yet.</p>}
+          </Panel>
+        </div>
+      )}
+
+      <Panel title="How these are measured">
+        <ul className="grid list-disc gap-1.5 pl-5 text-sm text-muted">
+          <li>Aggregated from every review currently in this workspace. Hours saved use the review-effort model at £{PILOT_HOURLY_RATE}/hr manager rate.</li>
+          <li>Turnaround and pre-sign-off metrics use real event timestamps and show “—” until reviews reach partner sign-off.</li>
+          <li>Longitudinal trends across sessions (week-on-week, per reviewer, per firm benchmarking) need a persisted usage-events store — a follow-up requiring a database migration.</li>
+        </ul>
+      </Panel>
+    </div>
+  );
 }
 
 function PracticePortal({ tenant, clients, currentCompanyId, switchCompany, companySnapshots }: { tenant: Tenant; clients: ClientCompany[]; currentCompanyId: string; switchCompany: (companyId: string) => void; companySnapshots: Record<string, AnalysisResult> }) {
