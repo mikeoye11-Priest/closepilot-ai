@@ -2732,7 +2732,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
 
   const content = useMemo(() => {
     if (active === "Onboarding") return <OnboardingPanel tenant={tenant} company={currentCompany} onboardWorkspace={onboardWorkspace} loadPilotDemo={loadPilotDemo} />;
-    if (active === "Partner Summary" || active === "Dashboard") return <DashboardPanel score={score} risk={risk} assurance={assurance} findings={findings} partnerSignOff={partnerSignOff} openFindings={openFindings.length} cashAtRisk={cashAtRisk} financialExposure={financialExposure} timeSaved={timeSaved} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} validationWarnings={validationWarnings} validationBlockers={validationBlockers} validationChecks={validationChecks} recommendations={recommendations} clients={portfolioClients} uploads={uploads} companyName={currentCompany.name} setActive={setActive} />;
+    if (active === "Partner Summary" || active === "Dashboard") return <DashboardPanel score={score} risk={risk} assurance={assurance} findings={findings} partnerSignOff={partnerSignOff} openFindings={openFindings.length} cashAtRisk={cashAtRisk} financialExposure={financialExposure} timeSaved={timeSaved} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} validationWarnings={validationWarnings} validationBlockers={validationBlockers} validationChecks={validationChecks} recommendations={recommendations} clients={portfolioClients} uploads={uploads} companyName={currentCompany.name} scoreDrivers={scorecard.drivers} activities={findingActivities} setActive={setActive} />;
     if (active === "Finance Review") {
       return (
         <>
@@ -3342,9 +3342,9 @@ function defaultReviewReason(status: FindingStatus) {
 }
 
 function DashboardPanel({
-  score, risk, assurance, findings, partnerSignOff, openFindings, cashAtRisk, financialExposure, timeSaved, timeSavedHours, timeSavedValue, validationWarnings, validationBlockers, validationChecks, recommendations, clients, uploads, companyName, setActive
+  score, risk, assurance, findings, partnerSignOff, openFindings, cashAtRisk, financialExposure, timeSaved, timeSavedHours, timeSavedValue, validationWarnings, validationBlockers, validationChecks, recommendations, clients, uploads, companyName, scoreDrivers, activities, setActive
 }: {
-  score: number; risk: RiskLevel; assurance: AssuranceMetrics; findings: Finding[]; partnerSignOff?: PartnerSignOff; openFindings: number; cashAtRisk: number; financialExposure: number; timeSaved: number; timeSavedHours: string; timeSavedValue: number; validationWarnings: number; validationBlockers: number; validationChecks: ValidationCheck[]; recommendations: Recommendation[]; clients: ClientCompany[]; uploads: Upload[]; companyName: string; setActive: (v: string) => void;
+  score: number; risk: RiskLevel; assurance: AssuranceMetrics; findings: Finding[]; partnerSignOff?: PartnerSignOff; openFindings: number; cashAtRisk: number; financialExposure: number; timeSaved: number; timeSavedHours: string; timeSavedValue: number; validationWarnings: number; validationBlockers: number; validationChecks: ValidationCheck[]; recommendations: Recommendation[]; clients: ClientCompany[]; uploads: Upload[]; companyName: string; scoreDrivers: ScoreDriver[]; activities: FindingActivity[]; setActive: (v: string) => void;
 }) {
   const [showExposure, setShowExposure] = useState(false);
   const highRisk = clients.filter((c) => c.risk === "high" || c.risk === "critical").length;
@@ -3380,6 +3380,8 @@ function DashboardPanel({
       uploads={uploads}
       companyName={companyName}
       cashAtRisk={cashAtRisk}
+      scoreDrivers={scoreDrivers}
+      activities={activities}
       setActive={setActive}
     />
   );
@@ -3537,6 +3539,50 @@ function DashboardPanel({
   );
 }
 
+// Build a real, timestamped activity timeline from the review's own events —
+// the finance-pack import, the review run, high-risk detection, per-finding
+// review/resolution actions (with their own timestamps) and partner sign-off —
+// newest first. Replaces the previous synthetic "everything happened Today" list.
+function buildActivityTimeline(uploads: Upload[], findings: Finding[], activities: FindingActivity[], partnerSignOff?: PartnerSignOff): Array<{ at: number; title: string; detail: string; tone: RiskLevel }> {
+  const events: Array<{ at: number; title: string; detail: string; tone: RiskLevel }> = [];
+  const createdTimestamps = activities.filter((item) => item.action === "created").map((item) => Date.parse(item.timestamp)).filter((value) => Number.isFinite(value));
+  const uploadTs = uploads[0]?.uploadedAt ? Date.parse(uploads[0].uploadedAt) : NaN;
+  const base = createdTimestamps.length ? Math.min(...createdTimestamps) : Number.isFinite(uploadTs) ? uploadTs : Date.now();
+
+  if (uploads.length) events.push({ at: base - 120000, title: "Finance pack imported", detail: `${uploads.length} source file(s)`, tone: "low" });
+  if (findings.length) {
+    events.push({ at: base, title: "Review completed", detail: `${findings.length} finding(s) generated`, tone: "medium" });
+    const highRisk = findings.filter((finding) => finding.severity === "critical" || finding.severity === "high").length;
+    if (highRisk) events.push({ at: base + 60000, title: `${highRisk} high-risk finding(s) flagged`, detail: "Prioritised for partner review", tone: "critical" });
+  }
+  const actionLabels: Partial<Record<FindingActivity["action"], string>> = {
+    reviewed: "Finding reviewed", resolved: "Finding resolved", approved: "Finding approved", accepted_risk: "Risk accepted",
+    false_positive: "Marked false positive", closed: "Finding closed", assigned: "Finding assigned",
+    evidence_requested: "Evidence requested", evidence_uploaded: "Evidence uploaded", evidence_accepted: "Evidence accepted",
+    manager_approved: "Manager approved", manager_returned: "Returned by manager", manager_escalated: "Escalated to partner",
+  };
+  activities.filter((item) => item.action !== "created" && actionLabels[item.action]).forEach((item) => {
+    const at = Date.parse(item.timestamp);
+    if (Number.isFinite(at)) events.push({ at, title: actionLabels[item.action]!, detail: item.details ?? "", tone: "low" });
+  });
+  if (partnerSignOff?.signedAt) {
+    const at = Date.parse(partnerSignOff.signedAt);
+    if (Number.isFinite(at)) events.push({ at, title: "Partner pack signed off", detail: `Locked by ${partnerSignOff.signedBy}`, tone: "low" });
+  }
+  return events.sort((a, b) => b.at - a.at).slice(0, 7);
+}
+
+function formatTimelineTime(at: number): string {
+  const date = new Date(at);
+  const now = new Date();
+  const time = date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  if (date.toDateString() === now.toDateString()) return `Today · ${time}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return `Yesterday · ${time}`;
+  return `${date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} · ${time}`;
+}
+
 // AI Review Summary: the "what did we find / why does it matter / what next"
 // card at the top of Partner Summary. The figures are deterministic (grounded in
 // the real findings and exposure); the optional narrative is AI-drafted over
@@ -3670,10 +3716,14 @@ function OperationalOverviewDashboard({
   uploads,
   companyName,
   cashAtRisk,
+  scoreDrivers,
+  activities,
   setActive,
 }: {
   companyName: string;
   cashAtRisk: number;
+  scoreDrivers: ScoreDriver[];
+  activities: FindingActivity[];
   score: number;
   risk: RiskLevel;
   assurance: AssuranceMetrics;
@@ -3726,16 +3776,11 @@ function OperationalOverviewDashboard({
   ];
   const readinessAction = missingEvidenceItems.length ? "Upload missing evidence" : openHighFindings ? "Resolve high-risk findings" : validationBlockers ? "Clear validation blockers" : "Prepare sign-off";
   const forecastReadiness = readinessForecast(findings, validationChecks, uploads);
-  const activity = [
-    uploads[0] ? { tone: "low" as RiskLevel, title: "Files uploaded", detail: uploads[0].fileName } : null,
-    findings[0] ? { tone: "medium" as RiskLevel, title: "Review completed", detail: `${findings.length} finding(s) generated` } : null,
-    findings.find((item) => item.severity === "critical") ? { tone: "critical" as RiskLevel, title: "New critical finding", detail: findings.find((item) => item.severity === "critical")?.title ?? "" } : null,
-    findings.find((item) => item.status === "resolved") ? { tone: "low" as RiskLevel, title: "Finding resolved", detail: findings.find((item) => item.status === "resolved")?.title ?? "" } : null,
-  ].filter((item): item is { tone: RiskLevel; title: string; detail: string } => Boolean(item));
 
   const summaryExposure = exposureBreakdown(findings, cashAtRisk, financialExposure);
   const summaryEvidence = evidenceProfile(findings);
   const missingEvidenceLabels = missingEvidenceItems.map((item) => item.label);
+  const timeline = buildActivityTimeline(uploads, findings, activities, partnerSignOff);
 
   return (
     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
@@ -3760,7 +3805,7 @@ function OperationalOverviewDashboard({
         <section>
           <div className="mb-3"><p className="text-xs font-bold uppercase text-muted">Partner Summary</p><h2 className="mt-1 text-xl font-black">One consistent review, whoever prepared the accounts</h2><p className="mt-1 text-sm text-muted">Prepared accounts in. Evidence-backed partner decision out.</p></div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <OverviewMetricCard title="Review Quality" value={uploads.length ? score : 0} suffix="/100" tone={risk} badge={uploads.length ? "Review complete" : "Awaiting upload"} />
+            <OverviewMetricCard title="Partner Assurance Score" value={uploads.length ? score : 0} suffix="/100" tone={risk} badge={uploads.length ? "Review complete" : "Awaiting upload"} />
             <OverviewMetricCard title="Audit Readiness" value={uploads.length ? assurance.closeReadiness : 0} suffix="/100" tone={assurance.closeReadiness >= 80 ? "low" : assurance.closeReadiness >= 65 ? "medium" : "high"} badge={assurance.closeReadiness >= 80 ? "Good" : "Fair"} />
             <article className="rounded-lg border border-line bg-white p-5 shadow-panel"><p className="text-sm font-bold text-muted">Estimated Time Saved</p><strong className="mt-4 block text-3xl font-black text-emerald-700">{timeSavedHours}h</strong><p className="mt-4 text-sm font-black text-emerald-700">£{timeSavedValue.toLocaleString("en-GB")} manager value</p><p className="mt-4 text-sm text-muted">This review cycle</p></article>
             <article className="rounded-lg border border-line bg-white p-5 shadow-panel">
@@ -3770,6 +3815,19 @@ function OperationalOverviewDashboard({
               <p className="mt-4 text-sm text-muted">{openFindings} open finding(s)</p>
             </article>
           </div>
+          {uploads.length > 0 && scoreDrivers.length > 0 && (
+            <div className="mt-3 rounded-lg border border-line bg-white p-4 shadow-panel">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase text-muted">Why this score</p>
+                <button className="text-sm font-bold text-brand" onClick={() => setActive("Assurance Engine")}>Full breakdown</button>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {[...scoreDrivers].sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact)).slice(0, 4).map((driver, index) => (
+                  <ScoreDriverRow key={`${driver.factor}_${index}`} driver={driver} />
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Primary review journey">
@@ -3926,18 +3984,21 @@ function OperationalOverviewDashboard({
 
       <aside className="grid min-w-0 content-start gap-4">
         <OverviewCard title="Recent Activity" action={<button className="text-sm font-bold text-brand" onClick={() => setActive("Findings")}>View all</button>}>
-          <div className="grid gap-4">
-            {activity.length ? activity.map((item) => (
-              <div key={`${item.title}_${item.detail}`} className="flex gap-3">
-                <span className={`mt-1 h-8 w-8 shrink-0 rounded-full ${item.tone === "low" ? "bg-emerald-500" : item.tone === "critical" ? "bg-orange-500" : "bg-blue-600"}`} />
-                <div>
-                  <p className="font-bold">{item.title}</p>
-                  <p className="text-sm text-muted">{item.detail}</p>
-                  <p className="mt-1 text-xs text-muted">Today</p>
-                </div>
-              </div>
-            )) : <p className="text-sm text-muted">No activity yet.</p>}
-          </div>
+          {timeline.length ? (
+            <ol className="relative grid gap-4">
+              {timeline.map((item, index) => (
+                <li key={`${item.title}_${index}`} className="relative grid grid-cols-[16px_1fr] gap-3">
+                  {index !== timeline.length - 1 && <span className="absolute left-[7px] top-4 -bottom-4 w-px bg-line" aria-hidden />}
+                  <span className={`z-10 mt-1 h-3.5 w-3.5 rounded-full ring-4 ring-white ${item.tone === "critical" ? "bg-orange-500" : item.tone === "medium" ? "bg-blue-600" : "bg-emerald-500"}`} />
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-muted">{formatTimelineTime(item.at)}</p>
+                    <p className="font-bold">{item.title}</p>
+                    {item.detail && <p className="truncate text-sm text-muted">{item.detail}</p>}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : <p className="text-sm text-muted">No activity yet.</p>}
         </OverviewCard>
         <OverviewCard title="Quick Actions">
           <div className="grid grid-cols-2 gap-2">
