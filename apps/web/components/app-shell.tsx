@@ -2732,7 +2732,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
 
   const content = useMemo(() => {
     if (active === "Onboarding") return <OnboardingPanel tenant={tenant} company={currentCompany} onboardWorkspace={onboardWorkspace} loadPilotDemo={loadPilotDemo} />;
-    if (active === "Partner Summary" || active === "Dashboard") return <DashboardPanel score={score} risk={risk} assurance={assurance} findings={findings} partnerSignOff={partnerSignOff} openFindings={openFindings.length} cashAtRisk={cashAtRisk} financialExposure={financialExposure} timeSaved={timeSaved} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} validationWarnings={validationWarnings} validationBlockers={validationBlockers} validationChecks={validationChecks} recommendations={recommendations} clients={portfolioClients} uploads={uploads} setActive={setActive} />;
+    if (active === "Partner Summary" || active === "Dashboard") return <DashboardPanel score={score} risk={risk} assurance={assurance} findings={findings} partnerSignOff={partnerSignOff} openFindings={openFindings.length} cashAtRisk={cashAtRisk} financialExposure={financialExposure} timeSaved={timeSaved} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} validationWarnings={validationWarnings} validationBlockers={validationBlockers} validationChecks={validationChecks} recommendations={recommendations} clients={portfolioClients} uploads={uploads} companyName={currentCompany.name} setActive={setActive} />;
     if (active === "Finance Review") {
       return (
         <>
@@ -3342,9 +3342,9 @@ function defaultReviewReason(status: FindingStatus) {
 }
 
 function DashboardPanel({
-  score, risk, assurance, findings, partnerSignOff, openFindings, cashAtRisk, financialExposure, timeSaved, timeSavedHours, timeSavedValue, validationWarnings, validationBlockers, validationChecks, recommendations, clients, uploads, setActive
+  score, risk, assurance, findings, partnerSignOff, openFindings, cashAtRisk, financialExposure, timeSaved, timeSavedHours, timeSavedValue, validationWarnings, validationBlockers, validationChecks, recommendations, clients, uploads, companyName, setActive
 }: {
-  score: number; risk: RiskLevel; assurance: AssuranceMetrics; findings: Finding[]; partnerSignOff?: PartnerSignOff; openFindings: number; cashAtRisk: number; financialExposure: number; timeSaved: number; timeSavedHours: string; timeSavedValue: number; validationWarnings: number; validationBlockers: number; validationChecks: ValidationCheck[]; recommendations: Recommendation[]; clients: ClientCompany[]; uploads: Upload[]; setActive: (v: string) => void;
+  score: number; risk: RiskLevel; assurance: AssuranceMetrics; findings: Finding[]; partnerSignOff?: PartnerSignOff; openFindings: number; cashAtRisk: number; financialExposure: number; timeSaved: number; timeSavedHours: string; timeSavedValue: number; validationWarnings: number; validationBlockers: number; validationChecks: ValidationCheck[]; recommendations: Recommendation[]; clients: ClientCompany[]; uploads: Upload[]; companyName: string; setActive: (v: string) => void;
 }) {
   const [showExposure, setShowExposure] = useState(false);
   const highRisk = clients.filter((c) => c.risk === "high" || c.risk === "critical").length;
@@ -3378,6 +3378,8 @@ function DashboardPanel({
       validationChecks={validationChecks}
       recommendations={recommendations}
       uploads={uploads}
+      companyName={companyName}
+      cashAtRisk={cashAtRisk}
       setActive={setActive}
     />
   );
@@ -3535,6 +3537,122 @@ function DashboardPanel({
   );
 }
 
+// AI Review Summary: the "what did we find / why does it matter / what next"
+// card at the top of Partner Summary. The figures are deterministic (grounded in
+// the real findings and exposure); the optional narrative is AI-drafted over
+// those figures and clearly labelled for review. The confidence badge is derived
+// from evidence strength, never from the model — an assurance product must not
+// present a fabricated confidence number.
+function AiPartnerSummaryCard({ companyName, score, risk, findings, recommendations, cashAtRisk, financialExposure, exposure, evidence, validationBlockers, missingEvidence, partnerSignOff, setActive }: {
+  companyName: string;
+  score: number;
+  risk: RiskLevel;
+  findings: Finding[];
+  recommendations: Recommendation[];
+  cashAtRisk: number;
+  financialExposure: number;
+  exposure: ExposureBreakdown;
+  evidence: EvidenceProfile;
+  validationBlockers: number;
+  missingEvidence: string[];
+  partnerSignOff?: PartnerSignOff;
+  setActive: (value: string) => void;
+}) {
+  const [narrative, setNarrative] = useState("");
+  const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "done" | "unavailable" | "error">("idle");
+  const [aiError, setAiError] = useState("");
+
+  const total = findings.length;
+  const highOrCritical = findings.filter((finding) => finding.severity === "critical" || finding.severity === "high").length;
+  const medium = findings.filter((finding) => finding.severity === "medium").length;
+  const low = findings.filter((finding) => finding.severity === "low").length;
+  const openHigh = findings.filter((finding) => isOpenFinding(finding) && (finding.severity === "critical" || finding.severity === "high"));
+  const topFinding = [...openHigh].sort((a, b) => (b.amount ?? b.riskScore ?? 0) - (a.amount ?? a.riskScore ?? 0))[0];
+  // Grounded confidence: how much of the review is evidence-traced. Not the model.
+  const evidenceTraced = total ? Math.round((evidence.evidenceLinked / total) * 100) : 0;
+
+  const exposureParts = [
+    { label: "VAT", value: exposure.vatRisk },
+    { label: "Cash / AR", value: exposure.cashRisk },
+    { label: "Close / AP", value: exposure.closeRisk },
+    { label: "Controls", value: exposure.controlRisk },
+  ].filter((part) => part.value > 0).sort((a, b) => b.value - a.value);
+
+  const doNext = validationBlockers
+    ? `Clear ${validationBlockers} validation blocker${validationBlockers > 1 ? "s" : ""} before sign-off.`
+    : missingEvidence.length
+      ? `Upload missing evidence: ${missingEvidence.slice(0, 3).join(", ")}${missingEvidence.length > 3 ? "…" : ""}.`
+      : topFinding
+        ? `${topFinding.recommendation || `Review "${topFinding.title}"`}`
+        : partnerSignOff
+          ? "Review complete — partner sign-off recorded."
+          : "Resolve open findings, then prepare partner sign-off.";
+
+  const generate = async () => {
+    setAiStatus("loading"); setAiError("");
+    try {
+      const response = await fetch("/api/commentary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyName, score, risk, findings, recommendations, cashAtRisk, financialExposure, period: "the current review" }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setAiStatus(/gemini/i.test(String(data.error ?? "")) ? "unavailable" : "error");
+        setAiError(String(data.error ?? "AI narrative could not be generated."));
+        return;
+      }
+      setNarrative(String(data.commentary ?? ""));
+      setAiStatus("done");
+    } catch (error) {
+      setAiStatus("error");
+      setAiError(error instanceof Error ? error.message : "AI narrative could not be generated.");
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-brand/30 bg-gradient-to-br from-brand/5 to-cyan/5 p-5 shadow-panel">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-black uppercase tracking-wide text-brand">AI Review Summary</p>
+        <span className="rounded-full border border-brand/30 bg-white/70 px-2.5 py-1 text-[11px] font-bold text-brand">Grounded in {total} rule finding{total === 1 ? "" : "s"} · {evidenceTraced}% evidence-traced</span>
+      </div>
+      <p className="mt-3 text-lg font-black leading-snug">
+        ClosePilot found {total} issue{total === 1 ? "" : "s"}{total ? `: ${highOrCritical} high, ${medium} medium, ${low} low` : ""}.
+      </p>
+      {financialExposure > 0 && (
+        <p className="mt-1 text-sm text-muted">
+          Estimated exposure <strong className="text-red-600">£{financialExposure.toLocaleString("en-GB")}</strong>
+          {exposureParts.length ? ` — ${exposureParts.map((part) => `${part.label} £${Math.round(part.value).toLocaleString("en-GB")}`).join(", ")}` : ""}.
+        </p>
+      )}
+      <div className="mt-3 rounded-lg border border-brand/20 bg-white/70 p-3">
+        <p className="text-[11px] font-bold uppercase text-muted">Do next</p>
+        <p className="mt-1 text-sm font-semibold">{doNext}</p>
+      </div>
+
+      {aiStatus === "done" && narrative && (
+        <div className="mt-3 rounded-lg border border-line bg-white p-3">
+          <p className="text-[11px] font-bold uppercase text-amber-700">AI-drafted narrative — review before issuing</p>
+          <div className="mt-1 space-y-2 text-sm">
+            {narrative.split(/\n\n+/).filter(Boolean).map((paragraph, index) => <p key={index}>{paragraph.trim()}</p>)}
+          </div>
+        </div>
+      )}
+      {aiStatus === "unavailable" && <p className="mt-3 text-xs text-muted">AI narrative is unavailable (no AI key configured). The grounded summary above is fully deterministic.</p>}
+      {aiStatus === "error" && <p className="mt-3 text-xs text-red-600">{aiError}</p>}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {aiStatus !== "done" && (
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white disabled:opacity-60" disabled={aiStatus === "loading" || total === 0} onClick={generate}>
+            {aiStatus === "loading" ? "Drafting…" : "Draft AI narrative"}
+          </button>
+        )}
+        <button className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-black" onClick={() => setActive("Findings")}>Review findings</button>
+      </div>
+    </section>
+  );
+}
+
 function OperationalOverviewDashboard({
   score,
   risk,
@@ -3550,8 +3668,12 @@ function OperationalOverviewDashboard({
   validationChecks,
   recommendations,
   uploads,
+  companyName,
+  cashAtRisk,
   setActive,
 }: {
+  companyName: string;
+  cashAtRisk: number;
   score: number;
   risk: RiskLevel;
   assurance: AssuranceMetrics;
@@ -3611,9 +3733,30 @@ function OperationalOverviewDashboard({
     findings.find((item) => item.status === "resolved") ? { tone: "low" as RiskLevel, title: "Finding resolved", detail: findings.find((item) => item.status === "resolved")?.title ?? "" } : null,
   ].filter((item): item is { tone: RiskLevel; title: string; detail: string } => Boolean(item));
 
+  const summaryExposure = exposureBreakdown(findings, cashAtRisk, financialExposure);
+  const summaryEvidence = evidenceProfile(findings);
+  const missingEvidenceLabels = missingEvidenceItems.map((item) => item.label);
+
   return (
     <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
       <div className="grid min-w-0 gap-4">
+        {uploads.length > 0 && (
+          <AiPartnerSummaryCard
+            companyName={companyName}
+            score={score}
+            risk={risk}
+            findings={findings}
+            recommendations={recommendations}
+            cashAtRisk={cashAtRisk}
+            financialExposure={financialExposure}
+            exposure={summaryExposure}
+            evidence={summaryEvidence}
+            validationBlockers={validationBlockers}
+            missingEvidence={missingEvidenceLabels}
+            partnerSignOff={partnerSignOff}
+            setActive={setActive}
+          />
+        )}
         <section>
           <div className="mb-3"><p className="text-xs font-bold uppercase text-muted">Partner Summary</p><h2 className="mt-1 text-xl font-black">One consistent review, whoever prepared the accounts</h2><p className="mt-1 text-sm text-muted">Prepared accounts in. Evidence-backed partner decision out.</p></div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
