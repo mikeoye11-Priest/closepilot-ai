@@ -5,6 +5,7 @@ import { ALL_RULES } from "./rules/index";
 import { runStatisticalAnalysis, convertStatisticalFindings } from "./statistical-detection";
 import { runReconciliationEngine } from "./reconciliation-engine";
 import { runVatEngine } from "./vat-engine";
+import { buildInventoryReview } from "./inventory-engine";
 import {
   normaliseFinanceRows,
   type Creditor,
@@ -81,6 +82,7 @@ const fileTypeLabels: Record<Upload["fileType"], string> = {
   aged_debtors: "Aged Debtors", aged_creditors: "Aged Creditors", vat_report: "VAT Report",
   bank_reconciliation: "Bank Reconciliation", cashflow_forecast: "Cashflow Forecast",
   payroll_summary: "Payroll Summary", fixed_asset_register: "Fixed Asset Register",
+  inventory_report: "Inventory & WIP",
 };
 
 const CORE_RULE_FILE_TYPES: Upload["fileType"][] = ["trial_balance", "profit_loss", "balance_sheet", "aged_debtors", "aged_creditors", "vat_report"];
@@ -121,14 +123,45 @@ export function analyseParsedFiles(parsed: ParsedFile[], options: { savedProfile
   // Deduplicate by category+severity+file to avoid noise
   const allFindings = prioritiseReviewFindings(deduplicateFindings([...reconciliation.findings, ...codeFindings, ...ruleFindings, ...statFindingsConverted]));
 
+  const inventoryReview = buildInventoryReviewFromFiles(canonicalParsed);
+
   return {
     uploads: canonicalParsed.map((f) => f.upload),
     validationChecks,
     findings: allFindings,
     importProfiles: buildImportProfiles(canonicalParsed),
     recommendations: buildRecommendations(allFindings),
-    vatReview
+    vatReview,
+    inventoryReview,
   };
+}
+
+// Run the inventory engine over any uploaded stock/WIP report, grounding turnover
+// in the P&L cost of sales and reconciling to the ledger stock/WIP balance when
+// those files are present in the same pack.
+function buildInventoryReviewFromFiles(files: ParsedFile[]) {
+  const inventoryFiles = files.filter((f) => f.upload.fileType === "inventory_report" && f.isParsed);
+  if (!inventoryFiles.length) return undefined;
+  const rows = inventoryFiles.flatMap((f) => f.rows);
+  return buildInventoryReview(rows, { cogs: extractCogsForInventory(files), ledgerStockValue: extractLedgerStockValue(files) });
+}
+
+function extractCogsForInventory(files: ParsedFile[]): number | undefined {
+  const pl = files.find((f) => f.upload.fileType === "profit_loss" && f.isParsed);
+  if (!pl) return undefined;
+  const cogs = pl.rows
+    .filter((r) => /cost of (sales|goods)|\bcogs\b|direct cost/i.test(`${val(r, ["category"])} ${val(r, DESC_KEYS)}`))
+    .reduce((sum, r) => sum + Math.abs(amnt(r, ["amount", "value", "net_amount"])), 0);
+  return cogs > 0 ? cogs : undefined;
+}
+
+function extractLedgerStockValue(files: ParsedFile[]): number | undefined {
+  const ledger = files.find((f) => f.upload.fileType === "trial_balance" && f.isParsed) ?? files.find((f) => f.upload.fileType === "balance_sheet" && f.isParsed);
+  if (!ledger) return undefined;
+  const rows = ledger.rows.filter((r) => /stock|inventor|work in progress|\bwip\b|finished goods|raw material/i.test(`${val(r, ACCOUNT_NAME_KEYS)} ${rowText(r)}`));
+  if (!rows.length) return undefined;
+  const total = rows.reduce((sum, r) => sum + Math.abs(amnt(r, BALANCE_KEYS)), 0);
+  return total > 0 ? total : undefined;
 }
 
 const IMPORT_ENGINE_FILE_TYPES: ImportFileType[] = ["trial_balance", "aged_debtors", "aged_creditors", "vat_report"];
@@ -277,7 +310,8 @@ export function scopeAnalysisResult(result: AnalysisResult, scopeTenant: Tenant,
     findings: result.findings.map((f) => ({ ...f, tenantId: scopeTenant.id, companyId: scopeCompany.id })),
     importProfiles: result.importProfiles?.map((profile) => ({ ...profile, tenantId: scopeTenant.id, companyId: scopeCompany.id })),
     recommendations: result.recommendations.map((r) => ({ ...r, tenantId: scopeTenant.id, companyId: scopeCompany.id })),
-    vatReview: result.vatReview
+    vatReview: result.vatReview,
+    inventoryReview: result.inventoryReview,
   };
 }
 
@@ -331,6 +365,7 @@ export function inferFileType(fileName: string): Upload["fileType"] {
   if (n.includes("cashflow_forecast") || n.includes("cash-flow") || n.includes("cashflow") || n.includes("cash flow")) return "cashflow_forecast";
   if (n.includes("payroll")) return "payroll_summary";
   if (n.includes("fixed_asset") || n.includes("fixed-asset") || n.includes("asset_register") || n.includes("asset register")) return "fixed_asset_register";
+  if (n.includes("inventory") || n.includes("stock") || n.includes("wip") || n.includes("work_in_progress") || n.includes("work-in-progress") || n.includes("work in progress")) return "inventory_report";
   if (n.includes("vat") || n.includes("tax_detail") || n.includes("tax_report")) return "vat_report";
   if (n.includes("p&l") || n.includes("profit") || n.includes("loss") || n.includes("income") || n.includes("pnl") || n.includes("profit_loss")) return "profit_loss";
   if (n.includes("balance_sheet") || n.includes("balance-sheet") || n.includes("bs_") || n.includes("balancesheet") || n.includes("balance sheet")) return "balance_sheet";

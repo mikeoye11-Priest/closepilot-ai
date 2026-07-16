@@ -54,7 +54,8 @@ export type Upload = {
     | "bank_reconciliation"
     | "cashflow_forecast"
     | "payroll_summary"
-    | "fixed_asset_register";
+    | "fixed_asset_register"
+    | "inventory_report";
   fileName: string;
   originalFileName?: string;
   uploadedAt: string;
@@ -377,4 +378,5 @@ export type AnalysisResult = {
   partnerSignOff?: PartnerSignOff;
   recommendations: Recommendation[];
   vatReview?: import("./vat-engine/types").VatReviewResult;
+  inventoryReview?: import("./inventory-engine").InventoryReviewResult;
 };

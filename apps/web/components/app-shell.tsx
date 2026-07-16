@@ -8,6 +8,7 @@ import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, 
 import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
 import { findingStandardReference } from "@/lib/finding-standards";
 import { buildPilotMetrics, PILOT_HOURLY_RATE, type PilotMetrics } from "@/lib/pilot-metrics";
+import type { InventoryReviewResult } from "@/lib/inventory-engine";
 import { analyseFinanceFiles, scopeAnalysisResult } from "@/lib/upload-analysis";
 import type { AnalysisResult, CashForecastPoint, ClientCompany, CollectionCase, CollectionStatus, Company, Evidence, EvidenceStatus, FinanceScoreBreakdown, Finding, FindingActivity, FindingComment, FindingEvidenceRow, FindingStatus, ImportMappingProfile, ManagerReviewStatus, PartnerSignOff, PartnerSignOffGateSnapshot, PartnerSignOffStatus, Recommendation, ReviewPackStatus, RiskLevel, Tenant, TenantType, Upload, ValidationCheck, ValidationStatus } from "@/lib/types";
 import type { VatReviewResult } from "@/lib/vat-engine/types";
@@ -19,7 +20,7 @@ import { ManagementAccountsPanel } from "@/components/management-accounts-panel"
 
 const navGroups = [
   { label: "", items: ["Partner Summary"] },
-  { label: "Review workflow", items: ["Findings", "Finance Review", "Audit Readiness", "Management Accounts", "Financial Accounts", "Full FRS 102 Accounts", "Review Pack"] },
+  { label: "Review workflow", items: ["Findings", "Finance Review", "Audit Readiness", "Management Accounts", "Financial Accounts", "Full FRS 102 Accounts", "Inventory & WIP", "Review Pack"] },
   { label: "Intelligence", items: ["Change Intelligence", "Cash Intelligence", "VAT Assurance", "Controls & Fraud", "Collections Intelligence", "Close Review"] },
   { label: "Workspace", items: ["Upload Finance Pack", "Compatibility", "Practice Portal", "Practice Metrics", "Ask ClosePilot", "User Guide"] },
   { label: "Admin", items: ["Assurance Engine", "Settings"], advanced: true },
@@ -84,6 +85,7 @@ const uploadTypeLabels: Record<Upload["fileType"], string> = {
   cashflow_forecast: "Cashflow Forecast",
   payroll_summary: "Payroll Summary",
   fixed_asset_register: "Fixed Asset Register",
+  inventory_report: "Inventory & WIP",
 };
 
 const coreUploadTypes: Upload["fileType"][] = ["trial_balance", "profit_loss", "balance_sheet", "aged_debtors", "aged_creditors", "vat_report"];
@@ -293,6 +295,7 @@ function normaliseSnapshot(snapshot?: AnalysisResult, options: { preserveStaleVa
     partnerSignOff: snapshot.partnerSignOff,
     recommendations: (snapshot.recommendations ?? []).map((recommendation) => reviewLocked ? { ...recommendation, completed: true } : recommendation),
     vatReview: unusableVatReview && !options.preserveStaleVatReview ? undefined : snapshot.vatReview,
+    inventoryReview: snapshot.inventoryReview,
   };
 }
 
@@ -1924,7 +1927,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       portfolioClients,
       companySnapshots: {
         ...companySnapshots,
-        [currentCompany.id]: { uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, collectionCases, partnerSignOff, recommendations, vatReview }
+        [currentCompany.id]: { uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, collectionCases, partnerSignOff, recommendations, vatReview, inventoryReview: companySnapshots[currentCompany.id]?.inventoryReview }
       }
     };
     window.localStorage.setItem(storageKey, JSON.stringify(workspace));
@@ -2882,6 +2885,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     }} setActive={setActive} />;
     if (active === "User Guide") return <UserGuide isPilotDemo={isPilotDemo} hasData={hasUploadedData} loadPilotDemo={loadPilotDemo} setActive={setActive} setPilotWalkthroughStep={setPilotWalkthroughStep} />;
     if (active === "Settings") return <SettingsPanel tenant={tenant} company={currentCompany} userEmail={userEmail} userName={userName} onIntegrationAnalysis={applyIntegrationAnalysis} setActive={setActive} presentationMode={presentationMode} />;
+    if (active === "Inventory & WIP") return <InventoryPanel review={companySnapshots[currentCompany.id]?.inventoryReview} uploads={uploads} companyName={currentCompany.name} setActive={setActive} />;
     if (active === "Practice Metrics") {
       const liveSnapshot: AnalysisResult = { uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, collectionCases, partnerSignOff, recommendations, vatReview };
       const mergedSnapshots = Object.values({ ...companySnapshots, [currentCompany.id]: liveSnapshot });
@@ -10897,6 +10901,131 @@ function RiskDot({ level }: { level: RiskLevel }) {
   const colors: Record<RiskLevel, string> = { low: "bg-emerald-500", medium: "bg-amber-400", high: "bg-red-500", critical: "bg-red-700" };
   const titles: Record<RiskLevel, string> = { low: "Low risk", medium: "Watch", high: "At risk", critical: "Critical" };
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${colors[level]}`} title={titles[level]} />;
+}
+
+function InventoryPanel({ review, uploads, companyName, setActive }: { review?: InventoryReviewResult; uploads: Upload[]; companyName: string; setActive: (v: string) => void }) {
+  const hasInventoryUpload = uploads.some((upload) => upload.fileType === "inventory_report");
+  const gbp = (value: number) => `£${Math.round(value).toLocaleString("en-GB")}`;
+
+  if (!review || review.source === "empty") {
+    return (
+      <Panel title="Inventory & WIP">
+        <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
+          <div className="rounded-lg border border-dashed border-line bg-slate-50 p-6">
+            <p className="text-xs font-bold uppercase text-muted">Stock &amp; WIP review</p>
+            <h2 className="mt-2 text-2xl font-black">Upload a stock or WIP report.</h2>
+            <p className="mt-2 text-sm text-muted">ClosePilot values inventory, ages it, flags slow-moving, obsolete and negative stock, checks net realisable value (FRS 102 §13), computes stock days from your P&amp;L and reconciles the total to the ledger stock/WIP balance.</p>
+            <button className="mt-4 rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => setActive("Upload Finance Pack")}>Upload stock report</button>
+          </div>
+          <div className="grid content-start gap-3">
+            <div className="rounded-lg border border-line bg-white p-4">
+              <p className="text-xs font-bold uppercase text-muted">Best columns to include</p>
+              <p className="mt-2 text-sm text-muted">Item/SKU, description, category (mark WIP lines), quantity, unit cost, value, and — where available — last-movement date and selling price / NRV. Any CSV export from your stock or MRP system works; ClosePilot maps the columns automatically.</p>
+            </div>
+            {hasInventoryUpload && <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">A stock file is present but produced no valued lines — check it includes quantity and unit cost or value columns.</div>}
+          </div>
+        </div>
+      </Panel>
+    );
+  }
+
+  const ageingTotal = Math.abs(review.ageing.current) + Math.abs(review.ageing.days90) + Math.abs(review.ageing.days180) + Math.abs(review.ageing.days365) + Math.abs(review.ageing.unknown);
+  const ageingRows = [
+    { label: "≤ 3 months / current", value: review.ageing.current, tone: "bg-emerald-500" },
+    { label: "3–6 months", value: review.ageing.days90, tone: "bg-amber-400" },
+    { label: "6–12 months (slow-moving)", value: review.ageing.days180, tone: "bg-orange-500" },
+    { label: "> 12 months (obsolete)", value: review.ageing.days365, tone: "bg-red-500" },
+    { label: "No movement date", value: review.ageing.unknown, tone: "bg-slate-300" },
+  ];
+  const cards = [
+    { label: "Total inventory value", value: gbp(review.totalValue), detail: `${review.lineCount} line(s)` },
+    { label: "Work in progress", value: gbp(review.wipValue), detail: review.wipValue ? "included in total" : "none flagged" },
+    { label: "Stock days", value: review.stockDays !== undefined ? String(review.stockDays) : "—", detail: review.turnover !== undefined ? `${review.turnover}x turnover` : "add a P&L for turnover" },
+    { label: "Slow-moving + obsolete", value: gbp(review.slowMovingValue + review.obsoleteValue), detail: review.hasMovementDates ? `${gbp(review.obsoleteValue)} obsolete` : "add movement dates" },
+    { label: "NRV write-down", value: gbp(review.nrvWriteDown), detail: review.hasNrv ? "FRS 102 §13" : "add selling price / NRV" },
+    { label: "Ledger difference", value: review.ledgerDifference !== undefined ? gbp(review.ledgerDifference) : "—", detail: review.ledgerValue !== undefined ? `vs ledger ${gbp(review.ledgerValue)}` : "add TB/BS to reconcile" },
+  ];
+
+  return (
+    <div className="grid gap-4">
+      <Panel title={`Inventory & WIP — ${companyName}`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted">Stock as at {review.asOfDate}. Valuation, ageing and provisioning review for management.</p>
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => window.print()}>Print / Save PDF</button>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {cards.map((card) => (
+            <article key={card.label} className="rounded-lg border border-line bg-white p-4 shadow-panel">
+              <p className="text-xs font-bold uppercase text-muted">{card.label}</p>
+              <strong className="mt-2 block text-2xl font-black">{card.value}</strong>
+              <p className="mt-1 text-xs text-muted">{card.detail}</p>
+            </article>
+          ))}
+        </div>
+      </Panel>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Panel title="Stock ageing (by last movement)">
+          {review.hasMovementDates ? (
+            <div className="grid gap-2">
+              {ageingRows.map((row) => (
+                <div key={row.label}>
+                  <div className="flex justify-between text-sm"><span>{row.label}</span><span className="font-bold">{gbp(row.value)}</span></div>
+                  <div className="mt-1 h-2 rounded-full bg-slate-100"><div className={`h-2 rounded-full ${row.tone}`} style={{ width: `${ageingTotal ? Math.max(2, Math.round((Math.abs(row.value) / ageingTotal) * 100)) : 0}%` }} /></div>
+                </div>
+              ))}
+            </div>
+          ) : <EmptyState title="No movement dates" detail="Include a last-movement / last-sold date column to age stock and flag slow-moving and obsolete lines." />}
+        </Panel>
+        <Panel title="Value by category">
+          <div className="grid gap-2">
+            {review.byCategory.slice(0, 6).map((category) => (
+              <div key={category.category} className="flex items-center justify-between rounded-lg border border-line bg-white px-3 py-2 text-sm">
+                <span className="font-semibold">{category.category} <span className="text-xs text-muted">· {category.lines} line(s)</span></span>
+                <span className="font-black">{gbp(category.value)}</span>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+
+      {review.findings.length > 0 && (
+        <Panel title="Review findings">
+          <div className="grid gap-2">
+            {review.findings.map((finding) => (
+              <div key={finding.id} className="rounded-lg border border-line bg-white p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Pill level={finding.severity}>{finding.severity}</Pill>
+                  <strong className="text-sm">{finding.title}</strong>
+                  {finding.standard && <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-bold text-brand">{finding.standard}</span>}
+                </div>
+                <p className="mt-1 text-sm text-muted">{finding.detail}</p>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      <Panel title="Top items by value">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[560px] text-left text-sm">
+            <thead className="text-xs uppercase text-muted"><tr><th className="border-b border-line p-2">Item</th><th className="border-b border-line p-2">Category</th><th className="border-b border-line p-2">Qty</th><th className="border-b border-line p-2">Value</th><th className="border-b border-line p-2">Days since movement</th></tr></thead>
+            <tbody>
+              {review.topItems.map((item, index) => (
+                <tr key={`${item.item}_${index}`} className="border-b border-line last:border-0">
+                  <td className="p-2 font-semibold">{item.item}</td>
+                  <td className="p-2 text-muted">{item.category}</td>
+                  <td className="p-2">{item.qty.toLocaleString("en-GB")}</td>
+                  <td className="p-2 font-bold">{gbp(item.value)}</td>
+                  <td className="p-2">{item.daysSinceMovement !== undefined ? `${item.daysSinceMovement}d` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </div>
+  );
 }
 
 function PilotMetricsPanel({ snapshots, tenantName, setActive }: { snapshots: AnalysisResult[]; tenantName: string; setActive: (v: string) => void }) {
