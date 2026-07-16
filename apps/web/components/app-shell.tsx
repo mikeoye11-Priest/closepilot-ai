@@ -6,6 +6,7 @@ import { evidenceGroundedAnswer, type GroundedAnswerSections } from "@/lib/ask-c
 import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompany, pilotTenant, tenant as seededTenant } from "@/lib/data";
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
+import { findingStandardReference } from "@/lib/finding-standards";
 import { analyseFinanceFiles, scopeAnalysisResult } from "@/lib/upload-analysis";
 import type { AnalysisResult, CashForecastPoint, ClientCompany, CollectionCase, CollectionStatus, Company, Evidence, EvidenceStatus, FinanceScoreBreakdown, Finding, FindingActivity, FindingComment, FindingEvidenceRow, FindingStatus, ImportMappingProfile, ManagerReviewStatus, PartnerSignOff, PartnerSignOffGateSnapshot, PartnerSignOffStatus, Recommendation, ReviewPackStatus, RiskLevel, Tenant, TenantType, Upload, ValidationCheck, ValidationStatus } from "@/lib/types";
 import type { VatReviewResult } from "@/lib/vat-engine/types";
@@ -7266,6 +7267,22 @@ function SignOffCheck({ label, passed, warning = false, detail }: { label: strin
 function FindingCard({ finding, setActive, updateFindingStatus, expanded = false }: { finding: Finding; setActive: (v: string) => void; updateFindingStatus?: (id: string, status: FindingStatus, reason?: string) => void; expanded?: boolean }) {
   const [open, setOpen] = useState(expanded);
   const [reviewReason, setReviewReason] = useState("");
+  const standard = findingStandardReference(finding);
+  const [aiExplanation, setAiExplanation] = useState("");
+  const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "done" | "unavailable" | "error">("idle");
+  const explainFinding = async () => {
+    setAiStatus("loading");
+    try {
+      const response = await fetch("/api/finding-explanation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: finding.title, description: finding.description, severity: finding.severity, category: finding.category, expectedImpact: finding.expectedImpact, recommendation: finding.recommendation, standard: standard?.label, evidence: finding.evidence?.calculation }),
+      });
+      const data = await response.json();
+      if (!response.ok) { setAiStatus(/gemini/i.test(String(data.error ?? "")) ? "unavailable" : "error"); return; }
+      setAiExplanation(String(data.explanation ?? "")); setAiStatus("done");
+    } catch { setAiStatus("error"); }
+  };
   const statusCfg = STATUS_CONFIG[finding.status] ?? STATUS_CONFIG.open;
   const confidencePct = findingDetectionConfidence(finding);
   const evidenceStrengthPct = findingEvidenceStrengthScore(finding);
@@ -7306,6 +7323,32 @@ function FindingCard({ finding, setActive, updateFindingStatus, expanded = false
       {/* Expanded: evidence + HITL buttons */}
       {open && (
         <div className="border-t border-line px-4 pb-4 pt-3">
+          {/* So what — why this matters and what to do */}
+          <div className="mb-3 rounded-lg border border-brand/20 bg-brand/5 p-4">
+            <p className="mb-2 text-xs font-bold uppercase text-brand">So what</p>
+            <div className="grid gap-2 text-sm sm:grid-cols-2">
+              <div><span className="text-xs font-bold text-muted">Financial impact</span><p className="font-semibold">{finding.expectedImpact || (finding.amount ? `£${finding.amount.toLocaleString("en-GB")}` : "Not quantified")}</p></div>
+              <div><span className="text-xs font-bold text-muted">Risk level</span><p className="font-semibold capitalize">{finding.severity}{finding.evidenceStrength ? ` · ${finding.evidenceStrength}` : ""}</p></div>
+              <div className="sm:col-span-2"><span className="text-xs font-bold text-muted">Why it matters</span><p>{finding.description}</p></div>
+              <div className="sm:col-span-2"><span className="text-xs font-bold text-muted">Suggested fix</span><p>{finding.recommendation || "Review the exception, assign an owner and document resolution or accepted risk before sign-off."}</p></div>
+              {standard && (
+                <div className="sm:col-span-2"><span className="text-xs font-bold text-muted">Relevant standard</span><p><strong>{standard.label}</strong> — {standard.detail}</p></div>
+              )}
+            </div>
+            {aiStatus === "done" && aiExplanation && (
+              <div className="mt-3 rounded-lg border border-line bg-white p-3">
+                <p className="text-[11px] font-bold uppercase text-amber-700">AI explanation — review before relying on it</p>
+                <p className="mt-1 text-sm">{aiExplanation}</p>
+              </div>
+            )}
+            {aiStatus === "unavailable" && <p className="mt-2 text-xs text-muted">AI explanation unavailable (no AI key configured). The grounded summary above is deterministic.</p>}
+            {aiStatus === "error" && <p className="mt-2 text-xs text-red-600">AI explanation could not be generated.</p>}
+            {aiStatus !== "done" && (
+              <button className="mt-3 rounded-lg border border-brand/40 bg-white px-3 py-1.5 text-xs font-black text-brand disabled:opacity-60" disabled={aiStatus === "loading"} onClick={explainFinding}>
+                {aiStatus === "loading" ? "Explaining…" : "Explain with AI"}
+              </button>
+            )}
+          </div>
           {/* Evidence panel */}
           <div className="rounded-lg bg-slate-50 p-4">
             <p className="mb-2 text-xs font-bold uppercase text-muted">Evidence</p>
