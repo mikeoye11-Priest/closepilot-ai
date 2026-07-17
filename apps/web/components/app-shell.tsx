@@ -9,6 +9,7 @@ import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
 import { findingStandardReference } from "@/lib/finding-standards";
 import { buildPilotMetrics, PILOT_HOURLY_RATE, type PilotMetrics } from "@/lib/pilot-metrics";
 import type { InventoryReviewResult } from "@/lib/inventory-engine";
+import { shouldGenerateSnapshot, inventoryFingerprint, latestSnapshotFor, type ReportSchedule, type ScheduledReport, type ReportCadence } from "@/lib/scheduled-reports";
 import { analyseFinanceFiles, scopeAnalysisResult } from "@/lib/upload-analysis";
 import type { AnalysisResult, CashForecastPoint, ClientCompany, CollectionCase, CollectionStatus, Company, Evidence, EvidenceStatus, FinanceScoreBreakdown, Finding, FindingActivity, FindingComment, FindingEvidenceRow, FindingStatus, ImportMappingProfile, ManagerReviewStatus, PartnerSignOff, PartnerSignOffGateSnapshot, PartnerSignOffStatus, Recommendation, ReviewPackStatus, RiskLevel, Tenant, TenantType, Upload, ValidationCheck, ValidationStatus } from "@/lib/types";
 import type { VatReviewResult } from "@/lib/vat-engine/types";
@@ -22,7 +23,7 @@ const navGroups = [
   { label: "", items: ["Partner Summary"] },
   { label: "Review workflow", items: ["Findings", "Finance Review", "Audit Readiness", "Management Accounts", "Financial Accounts", "Full FRS 102 Accounts", "Inventory & WIP", "Review Pack"] },
   { label: "Intelligence", items: ["Change Intelligence", "Cash Intelligence", "VAT Assurance", "Controls & Fraud", "Collections Intelligence", "Close Review"] },
-  { label: "Workspace", items: ["Upload Finance Pack", "Compatibility", "Practice Portal", "Practice Metrics", "Ask ClosePilot", "User Guide"] },
+  { label: "Workspace", items: ["Upload Finance Pack", "Compatibility", "Practice Portal", "Practice Metrics", "Scheduled Reports", "Ask ClosePilot", "User Guide"] },
   { label: "Admin", items: ["Assurance Engine", "Settings"], advanced: true },
 ] as const;
 
@@ -96,6 +97,8 @@ type WorkspaceState = {
   currentCompanyId: string;
   portfolioClients: ClientCompany[];
   companySnapshots: Record<string, AnalysisResult>;
+  reportSchedules?: ReportSchedule[];
+  scheduledReports?: ScheduledReport[];
 };
 
 type UploadJobState = {
@@ -1712,6 +1715,8 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const [companies, setCompanies] = useState<Company[]>(presentationMode ? [pilotCompany] : [seededCompany]);
   const [portfolioClients, setPortfolioClients] = useState<ClientCompany[]>(presentationMode ? [pilotClient] : []);
   const [companySnapshots, setCompanySnapshots] = useState<Record<string, AnalysisResult>>(presentationMode && initialPilotSnapshot ? { [pilotCompany.id]: initialPilotSnapshot } : {});
+  const [reportSchedules, setReportSchedules] = useState<ReportSchedule[]>([]);
+  const [scheduledReports, setScheduledReports] = useState<ScheduledReport[]>([]);
   const [findings, setFindings] = useState<Finding[]>(initialPilotSnapshot?.findings ?? []);
   const [recommendations, setRecommendations] = useState<Recommendation[]>(initialPilotSnapshot?.recommendations ?? []);
   const [uploads, setUploads] = useState<Upload[]>(initialPilotSnapshot?.uploads ?? []);
@@ -1867,6 +1872,8 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setCompanies(parsed.companies);
       setPortfolioClients(parsed.portfolioClients);
       setCompanySnapshots(companySnapshots);
+      setReportSchedules(parsed.reportSchedules ?? []);
+      setScheduledReports(parsed.scheduledReports ?? []);
       setCurrentCompany(selectedCompany);
       setUploads(snapshot.uploads);
       setValidationChecks(snapshot.validationChecks);
@@ -1928,7 +1935,9 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       companySnapshots: {
         ...companySnapshots,
         [currentCompany.id]: { uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, collectionCases, partnerSignOff, recommendations, vatReview, inventoryReview: companySnapshots[currentCompany.id]?.inventoryReview }
-      }
+      },
+      reportSchedules,
+      scheduledReports,
     };
     window.localStorage.setItem(storageKey, JSON.stringify(workspace));
     fetch("/api/workspace", {
@@ -1936,7 +1945,35 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(workspace)
     }).catch(() => {});
-  }, [collectionCases, companies, companySnapshots, currentCompany.id, findingActivities, findingComments, findingEvidence, findings, importProfiles, partnerSignOff, portfolioClients, presentationMode, recommendations, tenant, uploads, validationChecks, vatReview]);
+  }, [collectionCases, companies, companySnapshots, currentCompany.id, findingActivities, findingComments, findingEvidence, findings, importProfiles, partnerSignOff, portfolioClients, presentationMode, recommendations, reportSchedules, scheduledReports, tenant, uploads, validationChecks, vatReview]);
+
+  // In-app scheduled digests: when a company's inventory review satisfies its
+  // schedule (cadence elapsed and data changed since the last snapshot), freeze a
+  // point-in-time report into the inbox. Runs on data/company/schedule changes;
+  // no cron or email — management reads the periodic report inside the app.
+  useEffect(() => {
+    if (presentationMode || !reportSchedules.length) return;
+    const now = new Date();
+    const additions: ScheduledReport[] = [];
+    for (const schedule of reportSchedules) {
+      if (schedule.report !== "inventory") continue;
+      const review = companySnapshots[schedule.companyId]?.inventoryReview;
+      if (!review || review.source === "empty") continue;
+      const last = latestSnapshotFor(scheduledReports, schedule.companyId, "inventory");
+      const fingerprint = inventoryFingerprint(review);
+      if (!shouldGenerateSnapshot(schedule, last, fingerprint, now)) continue;
+      const company = companies.find((item) => item.id === schedule.companyId);
+      additions.push({ id: crypto.randomUUID(), companyId: schedule.companyId, companyName: company?.name ?? "Company", report: "inventory", cadence: schedule.cadence, generatedAt: now.toISOString(), asOfDate: review.asOfDate, fingerprint, review });
+    }
+    if (additions.length) setScheduledReports((items) => [...additions, ...items].slice(0, 60));
+  }, [companies, companySnapshots, presentationMode, reportSchedules, scheduledReports]);
+
+  const setInventorySchedule = (companyId: string, cadence: ReportCadence | "off") => {
+    setReportSchedules((items) => {
+      const others = items.filter((schedule) => !(schedule.companyId === companyId && schedule.report === "inventory"));
+      return cadence === "off" ? others : [...others, { id: crypto.randomUUID(), companyId, report: "inventory", cadence, enabled: true }];
+    });
+  };
 
   const completeRecommendation = (recommendation: Recommendation) => {
     if (reviewLocked) return;
@@ -2885,14 +2922,15 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     }} setActive={setActive} />;
     if (active === "User Guide") return <UserGuide isPilotDemo={isPilotDemo} hasData={hasUploadedData} loadPilotDemo={loadPilotDemo} setActive={setActive} setPilotWalkthroughStep={setPilotWalkthroughStep} />;
     if (active === "Settings") return <SettingsPanel tenant={tenant} company={currentCompany} userEmail={userEmail} userName={userName} onIntegrationAnalysis={applyIntegrationAnalysis} setActive={setActive} presentationMode={presentationMode} />;
-    if (active === "Inventory & WIP") return <InventoryPanel review={companySnapshots[currentCompany.id]?.inventoryReview} uploads={uploads} companyName={currentCompany.name} setActive={setActive} />;
+    if (active === "Inventory & WIP") return <InventoryPanel review={companySnapshots[currentCompany.id]?.inventoryReview} uploads={uploads} companyName={currentCompany.name} setActive={setActive} scheduleCadence={reportSchedules.find((schedule) => schedule.companyId === currentCompany.id && schedule.report === "inventory")?.cadence} onScheduleChange={(cadence) => setInventorySchedule(currentCompany.id, cadence)} />;
+    if (active === "Scheduled Reports") return <ScheduledReportsPanel reports={scheduledReports} setActive={setActive} />;
     if (active === "Practice Metrics") {
       const liveSnapshot: AnalysisResult = { uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, collectionCases, partnerSignOff, recommendations, vatReview };
       const mergedSnapshots = Object.values({ ...companySnapshots, [currentCompany.id]: liveSnapshot });
       return <PilotMetricsPanel snapshots={mergedSnapshots} tenantName={tenant.name} setActive={setActive} />;
     }
     return <PracticePortal tenant={tenant} clients={portfolioClients} currentCompanyId={currentCompany.id} switchCompany={switchCompany} companySnapshots={companySnapshots} />;
-  }, [active, assurance, assistantResult, cashAtRisk, collectionCases, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, integrationDiagnostics, isAnalysing, isPilotDemo, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, risk, score, tenant, timeSaved, uploadJob, uploadMessage, uploads, userName, validationBlockers, validationChecks, validationWarnings, vatReview]);
+  }, [active, assurance, assistantResult, cashAtRisk, collectionCases, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, integrationDiagnostics, isAnalysing, isPilotDemo, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, reportSchedules, scheduledReports, risk, score, tenant, timeSaved, uploadJob, uploadMessage, uploads, userName, validationBlockers, validationChecks, validationWarnings, vatReview]);
 
   return (
     <div className="min-h-screen bg-page text-ink lg:grid lg:grid-cols-[280px_1fr]">
@@ -10903,7 +10941,7 @@ function RiskDot({ level }: { level: RiskLevel }) {
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${colors[level]}`} title={titles[level]} />;
 }
 
-function InventoryPanel({ review, uploads, companyName, setActive }: { review?: InventoryReviewResult; uploads: Upload[]; companyName: string; setActive: (v: string) => void }) {
+function InventoryPanel({ review, uploads, companyName, setActive, scheduleCadence, onScheduleChange }: { review?: InventoryReviewResult; uploads: Upload[]; companyName: string; setActive: (v: string) => void; scheduleCadence?: ReportCadence; onScheduleChange: (cadence: ReportCadence | "off") => void }) {
   const hasInventoryUpload = uploads.some((upload) => upload.fileType === "inventory_report");
   const gbp = (value: number) => `£${Math.round(value).toLocaleString("en-GB")}`;
 
@@ -10951,8 +10989,21 @@ function InventoryPanel({ review, uploads, companyName, setActive }: { review?: 
       <Panel title={`Inventory & WIP — ${companyName}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted">Stock as at {review.asOfDate}. Valuation, ageing and provisioning review for management.</p>
-          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => window.print()}>Print / Save PDF</button>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-xs font-bold uppercase text-muted">Schedule</span>
+              <select className="rounded-lg border border-line bg-white px-3 py-2 text-sm" value={scheduleCadence ?? "off"} onChange={(event) => onScheduleChange(event.target.value as ReportCadence | "off")}>
+                <option value="off">Not scheduled</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </label>
+            <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => window.print()}>Print / Save PDF</button>
+          </div>
         </div>
+        {scheduleCadence && (
+          <p className="mt-2 text-xs text-muted">A frozen {scheduleCadence} report is filed to <button className="font-bold text-brand" onClick={() => setActive("Scheduled Reports")}>Scheduled Reports</button> whenever the stock data changes — no email, viewed in-app.</p>
+        )}
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {cards.map((card) => (
             <article key={card.label} className="rounded-lg border border-line bg-white p-4 shadow-panel">
@@ -11025,6 +11076,90 @@ function InventoryPanel({ review, uploads, companyName, setActive }: { review?: 
         </div>
       </Panel>
     </div>
+  );
+}
+
+function ScheduledReportsPanel({ reports, setActive }: { reports: ScheduledReport[]; setActive: (v: string) => void }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const gbp = (value: number) => `£${Math.round(value).toLocaleString("en-GB")}`;
+  const selected = reports.find((report) => report.id === selectedId);
+
+  if (selected) {
+    const review = selected.review;
+    const cards: Array<[string, string]> = [
+      ["Total inventory value", gbp(review.totalValue)],
+      ["Work in progress", gbp(review.wipValue)],
+      ["Slow-moving + obsolete", gbp(review.slowMovingValue + review.obsoleteValue)],
+      ["NRV write-down", gbp(review.nrvWriteDown)],
+      ["Stock days", review.stockDays !== undefined ? String(review.stockDays) : "—"],
+      ["Ledger difference", review.ledgerDifference !== undefined ? gbp(review.ledgerDifference) : "—"],
+    ];
+    return (
+      <div className="grid gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <button className="text-sm font-bold text-brand" onClick={() => setSelectedId(null)}>← All scheduled reports</button>
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => window.print()}>Print / Save PDF</button>
+        </div>
+        <Panel title={`Inventory report — ${selected.companyName}`}>
+          <p className="text-sm text-muted">{selected.cadence.charAt(0).toUpperCase() + selected.cadence.slice(1)} management report · generated {new Date(selected.generatedAt).toLocaleString("en-GB")} · stock as at {selected.asOfDate}</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {cards.map(([label, value]) => (
+              <article key={label} className="rounded-lg border border-line bg-white p-4 shadow-panel">
+                <p className="text-xs font-bold uppercase text-muted">{label}</p>
+                <strong className="mt-2 block text-2xl font-black">{value}</strong>
+              </article>
+            ))}
+          </div>
+        </Panel>
+        {review.findings.length > 0 && (
+          <Panel title="Findings">
+            <div className="grid gap-2">
+              {review.findings.map((finding) => (
+                <div key={finding.id} className="rounded-lg border border-line bg-white p-3">
+                  <div className="flex flex-wrap items-center gap-2"><Pill level={finding.severity}>{finding.severity}</Pill><strong className="text-sm">{finding.title}</strong>{finding.standard && <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-bold text-brand">{finding.standard}</span>}</div>
+                  <p className="mt-1 text-sm text-muted">{finding.detail}</p>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        )}
+        <Panel title="Top items by value">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[480px] text-left text-sm">
+              <thead className="text-xs uppercase text-muted"><tr><th className="border-b border-line p-2">Item</th><th className="border-b border-line p-2">Category</th><th className="border-b border-line p-2">Value</th></tr></thead>
+              <tbody>{review.topItems.map((item, index) => (<tr key={`${item.item}_${index}`} className="border-b border-line last:border-0"><td className="p-2 font-semibold">{item.item}</td><td className="p-2 text-muted">{item.category}</td><td className="p-2 font-bold">{gbp(item.value)}</td></tr>))}</tbody>
+            </table>
+          </div>
+        </Panel>
+      </div>
+    );
+  }
+
+  return (
+    <Panel title="Scheduled Reports">
+      <p className="text-sm text-muted">In-app periodic management reports. A frozen report is filed here on its schedule when the underlying data changes — no email, viewed in the app.</p>
+      {reports.length === 0 ? (
+        <div className="mt-4 grid gap-3">
+          <EmptyState title="No scheduled reports yet" detail="Turn on a weekly or monthly schedule on the Inventory & WIP page. A frozen report is filed here each period when the stock data changes." />
+          <button className="justify-self-start rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => setActive("Inventory & WIP")}>Go to Inventory & WIP</button>
+        </div>
+      ) : (
+        <div className="mt-4 grid gap-2">
+          {reports.map((report) => (
+            <button key={report.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-white p-4 text-left transition-colors hover:border-brand" onClick={() => setSelectedId(report.id)}>
+              <div>
+                <strong>{report.companyName} — Inventory report</strong>
+                <p className="text-xs text-muted">{report.cadence} · {new Date(report.generatedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })} · stock as at {report.asOfDate}</p>
+              </div>
+              <div className="text-right">
+                <strong className="block">{gbp(report.review.totalValue)}</strong>
+                <span className="text-xs text-muted">{report.review.findings.length} finding(s)</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </Panel>
   );
 }
 
