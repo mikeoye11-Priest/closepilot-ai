@@ -29,8 +29,9 @@
     "test:standards": "node --import tsx --test qa/finding-standards.test.ts",
     "test:pilot-metrics": "node --import tsx --test qa/pilot-metrics.test.ts",
     "test:inventory": "node --import tsx --test qa/inventory-engine.test.ts",
+    "test:scheduled-reports": "node --import tsx --test qa/scheduled-reports.test.ts",
     "test:ui": "CLOSEPILOT_QA_URL=${CLOSEPILOT_QA_URL:-http://localhost:3010} playwright test qa/button-smoke.spec.ts qa/pilot-walkthrough.spec.ts qa/visual-regression.spec.ts --browser=chromium --reporter=line",
-    "verify": "npm run test && npm run test:rules && npm run test:finance-regression && npm run test:ai-explanations && npm run test:upload-capacity && npm run test:worker && npm run test:accounts && npm run test:vat && npm run test:standards && npm run test:pilot-metrics && npm run test:inventory && npm run test:upload && npm run test:ui",
+    "verify": "npm run test && npm run test:rules && npm run test:finance-regression && npm run test:ai-explanations && npm run test:upload-capacity && npm run test:worker && npm run test:accounts && npm run test:vat && npm run test:standards && npm run test:pilot-metrics && npm run test:inventory && npm run test:scheduled-reports && npm run test:upload && npm run test:ui",
     "test:ui:install": "playwright install chromium",
     "check:launch": "node scripts/check-launch-readiness.mjs",
     "db:migrate": "node scripts/migrate.mjs"
