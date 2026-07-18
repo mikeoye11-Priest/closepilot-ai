@@ -51,6 +51,20 @@ export async function GET(request: Request) {
     return new NextResponse(buffer as ArrayBuffer, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="${filename}"` } });
   }
 
+  if (format === "ct600" || format === "ct600-doc") {
+    const companyNumber = url.searchParams.get("companyNumber") ?? "";
+    const utr = url.searchParams.get("utr") ?? "";
+    const { buildCT600, renderCt600Html } = await import("@/lib/ct600");
+    const ct600 = buildCT600(pack, { companyNumber, utr });
+    const isWord = format === "ct600-doc";
+    const html = renderCt600Html(ct600, { autoPrint, word: isWord });
+    if (isWord) {
+      const filename = `${slug(pack.meta.companyName)}-ct600-draft-${statements.asOfDate}.doc`;
+      return new NextResponse(html, { headers: { "Content-Type": "application/msword", "Content-Disposition": `attachment; filename="${filename}"` } });
+    }
+    return new NextResponse(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+  }
+
   if (format === "ixbrl" || format === "xbrl") {
     const companyNumber = url.searchParams.get("companyNumber") ?? "";
     const filename = `${slug(pack.meta.companyName)}-accounts-${statements.asOfDate}.html`;
