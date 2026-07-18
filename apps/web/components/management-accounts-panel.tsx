@@ -26,7 +26,8 @@ const CONFIG: Record<Variant, { eyebrow: string; title: string; route: string; e
       "Statement of Financial Position + Income Statement (with prior-year comparatives)",
       "Directors' report and accounting policies (FRS 102 Section 1A)",
       "Notes to the financial statements",
-      "Corporation tax computation (marginal relief, period-pro-rated)",
+      "Corporation tax computation (capital allowances, marginal relief, period-pro-rated)",
+      "Draft CT600 corporation tax return (principal boxes + supporting computation)",
       "Directors' approval and small-company audit-exemption statement",
     ],
   },
@@ -41,6 +42,7 @@ const CONFIG: Record<Variant, { eyebrow: string; title: string; route: string; e
       "Statement of Changes in Equity and Statement of Cash Flows (indirect)",
       "Strategic report and directors' report",
       "Fuller notes (employees, directors' remuneration, related parties) + tax computation",
+      "Corporation tax computation (capital allowances, marginal relief) + draft CT600",
       "Subject to audit — no small-company exemption",
     ],
   },
@@ -100,6 +102,7 @@ export function ManagementAccountsPanel({ tenantId, companyId, companyName, vari
             <FormatCard title="Word (.doc)" sub="Editable in Microsoft Word" onClick={() => download("&format=doc")} />
             <FormatCard title="Excel (.xlsx)" sub="Formatted · live formulas" onClick={() => download("&format=xlsx")} />
             <FormatCard title="Preview" sub="View in the browser" onClick={() => open("")} />
+            {(variant === "statutory" || variant === "full") && <FormatCard title="CT600 (draft)" sub="Corporation tax return" tone="amber" onClick={() => open("&format=ct600")} />}
             {(variant === "statutory" || variant === "full") && <FormatCard title="iXBRL (draft)" sub="For Companies House filing" tone="amber" onClick={() => download("&format=ixbrl")} />}
           </div>
 

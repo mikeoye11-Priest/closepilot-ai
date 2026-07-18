@@ -20,16 +20,37 @@ const sum = (lines: Line[], key: "amount" | "prior" = "amount") => lines.reduce(
 
 // UK corporation tax with marginal relief (post-April 2023). Limits are
 // pro-rated for periods shorter than 12 months; associated companies are assumed
-// to be nil (a draft estimate the preparer confirms).
+// to be nil (a draft estimate the preparer confirms). `grossTax` is the charge
+// before marginal relief (CT600 box 430) and `marginalRelief` the relief (box
+// 435) — both exposed so the CT600 draft can show the calculation in full.
 function corporationTax(taxableProfits: number, periodDays: number) {
-  if (taxableProfits <= 0) return { rate: "—", band: "No taxable profit in the period", tax: 0 };
+  if (taxableProfits <= 0) return { rate: "—", band: "No taxable profit in the period", tax: 0, grossTax: 0, marginalRelief: 0 };
   const fraction = Math.min(1, periodDays / 365);
   const lower = 50_000 * fraction;
   const upper = 250_000 * fraction;
-  if (taxableProfits <= lower) return { rate: "19%", band: "Small profits rate", tax: taxableProfits * 0.19 };
-  if (taxableProfits >= upper) return { rate: "25%", band: "Main rate", tax: taxableProfits * 0.25 };
+  if (taxableProfits <= lower) { const tax = taxableProfits * 0.19; return { rate: "19%", band: "Small profits rate", tax, grossTax: tax, marginalRelief: 0 }; }
+  if (taxableProfits >= upper) { const tax = taxableProfits * 0.25; return { rate: "25%", band: "Main rate", tax, grossTax: tax, marginalRelief: 0 }; }
   const marginalRelief = (upper - taxableProfits) * (3 / 200);
-  return { rate: "25% less marginal relief", band: "Marginal relief applies", tax: taxableProfits * 0.25 - marginalRelief };
+  return { rate: "25% less marginal relief", band: "Marginal relief applies", tax: taxableProfits * 0.25 - marginalRelief, grossTax: taxableProfits * 0.25, marginalRelief };
+}
+
+// Estimated capital allowances (DRAFT). Qualifying additions in the period are
+// estimated from the movement in tangible fixed assets — additions ≈ change in
+// net book value + depreciation charged (disposals are not separable from the
+// ledger, so this is a net-additions estimate). The Annual Investment Allowance
+// gives 100% relief on qualifying plant & machinery up to £1,000,000 a year
+// (pro-rated for short periods); most SMEs' additions fall within it. Any balance
+// above the AIA cap attracts an 18% main-pool writing-down allowance. This
+// EXCLUDES writing-down allowances on any brought-forward pool (the tax
+// written-down value is not held in the ledger) and assumes every addition
+// qualifies for AIA — the preparer confirms before filing.
+function capitalAllowances(additions: number, periodDays: number) {
+  const fraction = Math.min(1, periodDays / 365);
+  const qualifying = Math.max(0, additions);
+  const aiaCap = 1_000_000 * fraction;
+  const aia = Math.min(qualifying, aiaCap);
+  const wda = Math.max(0, qualifying - aia) * 0.18 * fraction;
+  return { additions: qualifying, aiaCap, aia, wda, total: aia + wda };
 }
 
 export function buildStatutoryAccounts(statements: SyncStatements, opts: { full?: boolean } = {}) {
@@ -78,10 +99,15 @@ export function buildStatutoryAccounts(statements: SyncStatements, opts: { full?
   const periodStart = statements.periodStart ?? `${ma.meta.asOfDate.slice(0, 4)}-01-01`;
   const periodDays = Math.max(1, Math.round((Date.parse(ma.meta.asOfDate) - Date.parse(periodStart)) / 86_400_000) + 1);
   const depreciation = flat(pl.expenses).filter((l) => /depreciat|amortis/i.test(l.name)).reduce((total, l) => total + Math.abs(l.amount), 0);
+  // Estimated qualifying additions from the fixed-asset movement (needs a prior
+  // period to compute); without comparatives we can't estimate additions, so no
+  // capital allowances are claimed.
+  const additions = prior.hasComparatives ? Math.max(0, (bs.totalFixed - bs.priorFixed) + depreciation) : 0;
+  const ca = capitalAllowances(additions, periodDays);
   const profitBeforeTax = pl.netProfit;
-  const taxableProfits = Math.max(0, profitBeforeTax + depreciation);
+  const taxableProfits = Math.max(0, profitBeforeTax + depreciation - ca.total);
   const ct = corporationTax(taxableProfits, periodDays);
-  const taxComputation = { profitBeforeTax, depreciation, taxableProfits, periodDays, rate: ct.rate, band: ct.band, tax: ct.tax };
+  const taxComputation = { profitBeforeTax, depreciation, capitalAllowances: ca, taxableProfits, periodDays, rate: ct.rate, band: ct.band, tax: ct.tax, grossTax: ct.grossTax, marginalRelief: ct.marginalRelief };
   const directorsReport = { principalActivity: (statements.companyIndustry ?? "").trim() || null };
 
   // Full FRS 102 extras (rendered only when opts.full). Both derive from the
@@ -261,10 +287,15 @@ export function renderStatutoryAccountsHtml(pack: ReturnType<typeof buildStatuto
   <table>
     ${row("Profit before taxation", tc.profitBeforeTax, null)}
     ${row("Add: depreciation charged in the accounts", tc.depreciation, null, "indent")}
+    ${tc.capitalAllowances.total > 0 ? row("Less: capital allowances", -tc.capitalAllowances.total, null, "indent") : ""}
     ${row("Taxable total profits", tc.taxableProfits, null, "sub strong")}
+    ${tc.marginalRelief > 0 ? row("Corporation tax at 25%", tc.grossTax, null, "indent") : ""}
+    ${tc.marginalRelief > 0 ? row("Less: marginal relief", -tc.marginalRelief, null, "indent") : ""}
     ${row(`Corporation tax (${esc(tc.rate)})`, tc.tax, null, "total")}
   </table>
-  <p class="note" style="color:var(--muted);font-size:11px;margin-top:8px">${esc(tc.band)}. Estimated over a ${tc.periodDays}-day period. This estimate does not include capital allowances, other disallowable expenses (e.g. entertaining) or adjustments requiring the fixed-asset roll-forward, and assumes no associated companies — review before finalising. The liability is not yet provided in these financial statements; a corporation tax provision should be posted before the accounts are approved.</p>
+  <p class="note" style="color:var(--muted);font-size:11px;margin-top:8px">${esc(tc.band)}. Estimated over a ${tc.periodDays}-day period. ${tc.capitalAllowances.total > 0
+    ? `Capital allowances of ${money(tc.capitalAllowances.total)} reflect the Annual Investment Allowance on estimated qualifying additions of ${money(tc.capitalAllowances.additions)}${tc.capitalAllowances.wda > 0 ? `, plus an 18% writing-down allowance on the balance above the AIA cap` : ``}; they assume every addition qualifies for AIA and exclude writing-down allowances on any brought-forward pool (the tax written-down value is not held in the ledger).`
+    : `No capital allowances have been claimed — ${hasComparatives ? "no qualifying fixed-asset additions were identified in the period" : "a prior period is needed to estimate additions"}.`} The estimate excludes other disallowable expenses (e.g. entertaining) and assumes no associated companies — review before finalising. The liability is not yet provided in these financial statements; a corporation tax provision should be posted before the accounts are approved.</p>
 
   <div class="approval">
     <strong>Approval</strong>
