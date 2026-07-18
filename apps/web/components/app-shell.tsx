@@ -17,6 +17,7 @@ import { VAT_ENGINE_VERSION } from "@/lib/vat-engine";
 import { approveVatFiling, reopenVatFiling } from "@/lib/vat-engine/sign-off";
 import type { AccountingIntegrationState } from "@/lib/integrations/types";
 import { decideUploadMode, formatUploadBytes } from "@/lib/upload-capacity";
+import { recentVatPeriods, VAT_PERIOD_COUNTS, type VatFrequency } from "@/lib/vat-periods";
 import { ManagementAccountsPanel } from "@/components/management-accounts-panel";
 
 const navGroups = [
@@ -10687,27 +10688,6 @@ type XeroSyncPollResult = {
   error?: string;
 };
 
-const VAT_QUARTER_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-// The most recent `count` calendar quarters (newest first) as selectable VAT
-// return periods. Used to scope the Xero sync to an exact HMRC quarter instead
-// of the default accounting-period window.
-function recentVatQuarters(count = 4): Array<{ value: string; label: string; start: string; end: string }> {
-  const now = new Date();
-  let year = now.getUTCFullYear();
-  let quarter = Math.floor(now.getUTCMonth() / 3);
-  const quarters: Array<{ value: string; label: string; start: string; end: string }> = [];
-  for (let i = 0; i < count; i += 1) {
-    const startMonth = quarter * 3;
-    const start = new Date(Date.UTC(year, startMonth, 1)).toISOString().slice(0, 10);
-    const end = new Date(Date.UTC(year, startMonth + 3, 0)).toISOString().slice(0, 10);
-    quarters.push({ value: `${start}_${end}`, label: `${VAT_QUARTER_MONTHS[startMonth]}–${VAT_QUARTER_MONTHS[startMonth + 2]} ${year}`, start, end });
-    quarter -= 1;
-    if (quarter < 0) { quarter = 3; year -= 1; }
-  }
-  return quarters;
-}
-
 async function pollXeroSync(syncId: string, onProgress: (status: XeroSyncPollResult["status"]) => void): Promise<XeroSyncPollResult> {
   const deadline = Date.now() + 5 * 60 * 1000;
   while (Date.now() < deadline) {
@@ -10735,8 +10715,13 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
   const [integrations, setIntegrations] = useState<AccountingIntegrationState[]>([]);
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [integrationBusy, setIntegrationBusy] = useState(false);
-  const vatQuarters = useMemo(() => recentVatQuarters(), []);
-  const [vatPeriodChoice, setVatPeriodChoice] = useState("accounts");
+  const [vatFrequency, setVatFrequency] = useState<"accounts" | VatFrequency>("accounts");
+  const [vatPeriodValue, setVatPeriodValue] = useState("");
+  const vatPeriods = useMemo(() => (vatFrequency === "accounts" ? [] : recentVatPeriods(vatFrequency, VAT_PERIOD_COUNTS[vatFrequency])), [vatFrequency]);
+  const changeVatFrequency = (next: "accounts" | VatFrequency) => {
+    setVatFrequency(next);
+    setVatPeriodValue(next === "accounts" ? "" : recentVatPeriods(next, VAT_PERIOD_COUNTS[next])[0]?.value ?? "");
+  };
 
   useEffect(() => {
     fetch(`/api/integrations?tenantId=${encodeURIComponent(tenant.id)}&companyId=${encodeURIComponent(company.id)}`)
@@ -10765,8 +10750,8 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
   const syncXero = async () => {
     setIntegrationBusy(true); setIntegrationMessage("Queueing Xero trial balance and VAT evidence…");
     try {
-      const chosenQuarter = vatPeriodChoice === "accounts" ? undefined : vatQuarters.find((quarter) => quarter.value === vatPeriodChoice);
-      const response = await fetch("/api/integrations/xero/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId: tenant.id, tenantName: tenant.name, tenantType: tenant.type, tenantPlan: tenant.plan, companyId: company.id, companyName: company.name, companyIndustry: company.industry, currency: company.currency, country: company.country, asOfDate: new Date().toISOString().slice(0, 10), ...(chosenQuarter ? { vatPeriodStart: chosenQuarter.start, vatPeriodEnd: chosenQuarter.end } : {}) }) });
+      const chosenPeriod = vatFrequency === "accounts" ? undefined : vatPeriods.find((period) => period.value === vatPeriodValue);
+      const response = await fetch("/api/integrations/xero/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId: tenant.id, tenantName: tenant.name, tenantType: tenant.type, tenantPlan: tenant.plan, companyId: company.id, companyName: company.name, companyIndustry: company.industry, currency: company.currency, country: company.country, asOfDate: new Date().toISOString().slice(0, 10), ...(chosenPeriod ? { vatPeriodStart: chosenPeriod.start, vatPeriodEnd: chosenPeriod.end } : {}) }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Xero sync failed.");
       setIntegrationMessage("Xero sync is running in the background…");
@@ -10879,13 +10864,24 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
               {integration.provider === "xero" && integration.organisations?.length ? (
                 <div className="mt-3 grid gap-2">
                   {integration.connected && (
-                    <label className="flex flex-col gap-1 rounded-lg border border-line bg-white p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                    <div className="rounded-lg border border-line bg-white p-3 text-sm">
                       <span className="text-xs font-bold uppercase text-muted">VAT return period</span>
-                      <select className="rounded-lg border border-line bg-white px-3 py-2 text-sm" value={vatPeriodChoice} disabled={integrationBusy} onChange={(event) => setVatPeriodChoice(event.target.value)}>
-                        <option value="accounts">Current accounts period (default)</option>
-                        {vatQuarters.map((quarter) => <option key={quarter.value} value={quarter.value}>{quarter.label}</option>)}
-                      </select>
-                    </label>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        <select className="rounded-lg border border-line bg-white px-3 py-2 text-sm" value={vatFrequency} disabled={integrationBusy} onChange={(event) => changeVatFrequency(event.target.value as "accounts" | VatFrequency)}>
+                          <option value="accounts">Accounts period (default)</option>
+                          <option value="monthly">Monthly</option>
+                          <option value="bimonthly">Bi-monthly</option>
+                          <option value="quarterly">Quarterly</option>
+                          <option value="annual">Annual</option>
+                        </select>
+                        <select className="rounded-lg border border-line bg-white px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-muted" value={vatPeriodValue} disabled={integrationBusy || vatFrequency === "accounts"} onChange={(event) => setVatPeriodValue(event.target.value)}>
+                          {vatFrequency === "accounts"
+                            ? <option value="">Whole accounts period</option>
+                            : vatPeriods.map((period) => <option key={period.value} value={period.value}>{period.label}</option>)}
+                        </select>
+                      </div>
+                      <p className="mt-2 text-xs text-muted">{vatFrequency === "accounts" ? "VAT evidence is scoped to the current accounting period." : "Scopes the sync's VAT evidence to the selected return period. Confirm the exact dates if the company is on a non-calendar VAT stagger."}</p>
+                    </div>
                   )}
                   {integration.organisations.map((organisation) => (
                     <div key={organisation.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-white p-3 text-sm">
