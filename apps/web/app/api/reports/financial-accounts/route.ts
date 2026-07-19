@@ -2,11 +2,10 @@ import { requireApiSession } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase-server";
 import { buildStatutoryAccounts, renderStatutoryAccountsHtml } from "@/lib/statutory-accounts";
 import { renderIxbrl } from "@/lib/ixbrl";
-import type { SyncStatements } from "@/lib/management-accounts";
+import { loadReportStatements, withReportingPeriod } from "@/lib/report-statements";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function htmlPage(body: string, status = 200) {
   return new NextResponse(`<!doctype html><meta charset="utf-8"><title>Financial Statements</title><body style="font-family:system-ui;max-width:640px;margin:80px auto;padding:0 24px;color:#0f172a"><h1 style="font-size:20px">Financial statements</h1><p style="color:#475569">${body}</p></body>`, { status, headers: { "Content-Type": "text/html; charset=utf-8" } });
@@ -26,20 +25,9 @@ export async function GET(request: Request) {
   const autoPrint = url.searchParams.get("print") === "1";
 
   const supabase = await createClient();
-  let query = supabase.from("accounting_sync_runs").select("id,result_summary").order("started_at", { ascending: false }).limit(1);
-  if (UUID_RE.test(syncId)) query = query.eq("id", syncId);
-  else {
-    query = query.eq("status", "completed");
-    if (tenantId) query = query.eq("tenant_id", tenantId);
-    if (companyId) query = query.eq("company_id", companyId);
-  }
-
-  const { data, error } = await query;
-  const run = data?.[0] as { result_summary?: { statements?: SyncStatements } } | undefined;
-  if (error || !run) return htmlPage("No completed Xero sync was found for this company. Run a sync first, then reopen the financial statements.", 404);
-
-  const statements = run.result_summary?.statements;
-  if (!statements?.profitLoss) return htmlPage("This review predates accounts-production support. Run a fresh Xero sync (Settings → Sync now), then reopen this page.", 409);
+  const loaded = await loadReportStatements(supabase, { userId: session.userId, syncId, tenantId, companyId });
+  if (!loaded) return htmlPage("No accounts data found for this company. Run a Xero sync (Settings → Sync now) or upload a trial balance, P&L and balance sheet, then reopen this page.", 404);
+  const statements = withReportingPeriod(loaded.statements, url.searchParams.get("asOfDate"));
 
   const full = url.searchParams.get("basis") === "full";
   const pack = buildStatutoryAccounts(statements, { full });

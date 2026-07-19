@@ -56,3 +56,10 @@ export function recentVatPeriods(frequency: VatFrequency, count = VAT_PERIOD_COU
   }
   return periods;
 }
+
+// Neutral aliases — the same calendar-period generator scopes the accounts
+// reporting period (not only VAT). Behaviourally identical to recentVatPeriods.
+export type ReportFrequency = VatFrequency;
+export type ReportPeriod = VatPeriod;
+export const PERIOD_COUNTS = VAT_PERIOD_COUNTS;
+export const recentPeriods = recentVatPeriods;

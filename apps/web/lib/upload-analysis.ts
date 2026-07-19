@@ -6,6 +6,7 @@ import { runStatisticalAnalysis, convertStatisticalFindings } from "./statistica
 import { runReconciliationEngine } from "./reconciliation-engine";
 import { runVatEngine } from "./vat-engine";
 import { buildInventoryReview } from "./inventory-engine";
+import { buildStatementsFromUploads } from "./upload-statements";
 import {
   normaliseFinanceRows,
   type Creditor,
@@ -88,12 +89,14 @@ const fileTypeLabels: Record<Upload["fileType"], string> = {
 const CORE_RULE_FILE_TYPES: Upload["fileType"][] = ["trial_balance", "profit_loss", "balance_sheet", "aged_debtors", "aged_creditors", "vat_report"];
 const STATISTICAL_FILE_TYPES: Upload["fileType"][] = ["aged_debtors", "aged_creditors", "vat_report"];
 
-export async function analyseFinanceFiles(files: File[], options: { savedProfiles?: ImportMappingProfile[] } = {}): Promise<AnalysisResult> {
+type AnalyseOptions = { savedProfiles?: ImportMappingProfile[]; reportingPeriod?: { asOfDate?: string; periodStart?: string } };
+
+export async function analyseFinanceFiles(files: File[], options: AnalyseOptions = {}): Promise<AnalysisResult> {
   const parsed = await Promise.all(files.map(parseFinanceFile));
   return analyseParsedFiles(parsed, options);
 }
 
-export function analyseParsedFiles(parsed: ParsedFile[], options: { savedProfiles?: ImportMappingProfile[] } = {}): AnalysisResult {
+export function analyseParsedFiles(parsed: ParsedFile[], options: AnalyseOptions = {}): AnalysisResult {
   const canonicalParsed = parsed.map((file) => attachCanonicalImport(file, options.savedProfiles));
   const ruleReadyParsed = canonicalParsed.filter(isRuleReadyFile);
   const vatReview = runVatEngine(ruleReadyParsed);
@@ -124,6 +127,10 @@ export function analyseParsedFiles(parsed: ParsedFile[], options: { savedProfile
   const allFindings = prioritiseReviewFindings(deduplicateFindings([...reconciliation.findings, ...codeFindings, ...ruleFindings, ...statFindingsConverted]));
 
   const inventoryReview = buildInventoryReviewFromFiles(canonicalParsed);
+  // Accounts-production statements from uploaded TB/P&L/BS documents, so the
+  // Management/Financial/CT600 packs work without a Xero sync. Undefined when the
+  // pack has no P&L, balance sheet or trial balance to build from.
+  const statements = buildStatementsFromUploads(canonicalParsed, options.reportingPeriod);
 
   return {
     uploads: canonicalParsed.map((f) => f.upload),
@@ -133,6 +140,7 @@ export function analyseParsedFiles(parsed: ParsedFile[], options: { savedProfile
     recommendations: buildRecommendations(allFindings),
     vatReview,
     inventoryReview,
+    statements,
   };
 }
 
@@ -312,6 +320,9 @@ export function scopeAnalysisResult(result: AnalysisResult, scopeTenant: Tenant,
     recommendations: result.recommendations.map((r) => ({ ...r, tenantId: scopeTenant.id, companyId: scopeCompany.id })),
     vatReview: result.vatReview,
     inventoryReview: result.inventoryReview,
+    statements: result.statements
+      ? { ...result.statements, companyName: scopeCompany.name, companyIndustry: scopeCompany.industry, currency: scopeCompany.currency }
+      : undefined,
   };
 }
 
