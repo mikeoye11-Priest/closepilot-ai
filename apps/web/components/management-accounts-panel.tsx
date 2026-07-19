@@ -1,6 +1,11 @@
 "use client";
 
+import { useMemo, useState } from "react";
+import { recentPeriods, PERIOD_COUNTS, type ReportFrequency } from "@/lib/vat-periods";
+
 type Variant = "management" | "statutory" | "full";
+
+const PERIOD_FREQUENCIES: ReportFrequency[] = ["monthly", "quarterly", "annual"];
 
 const CONFIG: Record<Variant, { eyebrow: string; title: string; route: string; extra?: string; blurb: string; contents: string[] }> = {
   management: {
@@ -66,12 +71,25 @@ function FormatCard({ title, sub, onClick, tone = "default" }: { title: string; 
 export function ManagementAccountsPanel({ tenantId, companyId, companyName, variant = "management" }: { tenantId: string; companyId: string; companyName: string; variant?: Variant }) {
   const config = CONFIG[variant];
   const base = `${config.route}?${new URLSearchParams({ tenantId, companyId }).toString()}${config.extra ?? ""}`;
-  const open = (extra = "") => window.open(`${base}${extra}`, "_blank", "noopener,noreferrer");
+
+  // Reporting-period override — sets the accounts' "as at" date (year-to-date
+  // basis). "auto" uses the period from the latest sync / uploaded documents.
+  const [periodFrequency, setPeriodFrequency] = useState<"auto" | ReportFrequency>("auto");
+  const [periodValue, setPeriodValue] = useState("");
+  const periods = useMemo(() => (periodFrequency === "auto" ? [] : recentPeriods(periodFrequency, PERIOD_COUNTS[periodFrequency])), [periodFrequency]);
+  const chosenEnd = periodFrequency === "auto" ? "" : periods.find((period) => period.value === periodValue)?.end ?? periods[0]?.end ?? "";
+  const periodExtra = chosenEnd ? `&asOfDate=${chosenEnd}` : "";
+
+  const open = (extra = "") => window.open(`${base}${periodExtra}${extra}`, "_blank", "noopener,noreferrer");
   const download = (extra: string) => {
     const anchor = document.createElement("a");
-    anchor.href = `${base}${extra}`;
+    anchor.href = `${base}${periodExtra}${extra}`;
     anchor.rel = "noopener";
     anchor.click();
+  };
+  const changePeriodFrequency = (next: "auto" | ReportFrequency) => {
+    setPeriodFrequency(next);
+    setPeriodValue(next === "auto" ? "" : recentPeriods(next, PERIOD_COUNTS[next])[0]?.value ?? "");
   };
 
   return (
@@ -94,6 +112,20 @@ export function ManagementAccountsPanel({ tenantId, companyId, companyName, vari
                 <span>{item}</span>
               </div>
             ))}
+          </div>
+
+          <p className="mt-6 text-xs font-bold uppercase tracking-wider text-slate-500">Reporting period</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <select className="rounded-lg border border-line bg-white px-3 py-2 text-sm" value={periodFrequency} onChange={(event) => changePeriodFrequency(event.target.value as "auto" | ReportFrequency)}>
+              <option value="auto">Auto (from data)</option>
+              {PERIOD_FREQUENCIES.map((frequency) => <option key={frequency} value={frequency}>{frequency[0].toUpperCase() + frequency.slice(1)}</option>)}
+            </select>
+            <select className="rounded-lg border border-line bg-white px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-400" value={periodValue} disabled={periodFrequency === "auto"} onChange={(event) => setPeriodValue(event.target.value)}>
+              {periodFrequency === "auto"
+                ? <option value="">As synced / uploaded</option>
+                : periods.map((period) => <option key={period.value} value={period.value}>{period.label}</option>)}
+            </select>
+            <span className="text-xs text-slate-500">Year-to-date to the chosen period end.</span>
           </div>
 
           <p className="mt-6 text-xs font-bold uppercase tracking-wider text-slate-500">Download or view</p>

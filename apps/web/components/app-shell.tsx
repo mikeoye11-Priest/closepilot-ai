@@ -17,7 +17,7 @@ import { VAT_ENGINE_VERSION } from "@/lib/vat-engine";
 import { approveVatFiling, reopenVatFiling } from "@/lib/vat-engine/sign-off";
 import type { AccountingIntegrationState } from "@/lib/integrations/types";
 import { decideUploadMode, formatUploadBytes } from "@/lib/upload-capacity";
-import { recentVatPeriods, VAT_PERIOD_COUNTS, type VatFrequency } from "@/lib/vat-periods";
+import { recentVatPeriods, recentPeriods, VAT_PERIOD_COUNTS, PERIOD_COUNTS, type VatFrequency, type ReportFrequency } from "@/lib/vat-periods";
 import { ManagementAccountsPanel } from "@/components/management-accounts-panel";
 
 const navGroups = [
@@ -300,6 +300,7 @@ function normaliseSnapshot(snapshot?: AnalysisResult, options: { preserveStaleVa
     recommendations: (snapshot.recommendations ?? []).map((recommendation) => reviewLocked ? { ...recommendation, completed: true } : recommendation),
     vatReview: unusableVatReview && !options.preserveStaleVatReview ? undefined : snapshot.vatReview,
     inventoryReview: snapshot.inventoryReview,
+    statements: snapshot.statements,
   };
 }
 
@@ -1935,7 +1936,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       portfolioClients,
       companySnapshots: {
         ...companySnapshots,
-        [currentCompany.id]: { uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, collectionCases, partnerSignOff, recommendations, vatReview, inventoryReview: companySnapshots[currentCompany.id]?.inventoryReview }
+        [currentCompany.id]: { uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, collectionCases, partnerSignOff, recommendations, vatReview, inventoryReview: companySnapshots[currentCompany.id]?.inventoryReview, statements: companySnapshots[currentCompany.id]?.statements }
       },
       reportSchedules,
       scheduledReports,
@@ -10723,6 +10724,18 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
     setVatPeriodValue(next === "accounts" ? "" : recentVatPeriods(next, VAT_PERIOD_COUNTS[next])[0]?.value ?? "");
   };
 
+  // Accounts reporting period — scopes the sync's "as at" date (period end) for
+  // the management/financial accounts. Year-to-date basis: the P&L runs from the
+  // financial-year start (derived server-side) to this end. "current" = today.
+  const ACCOUNTS_FREQUENCIES: ReportFrequency[] = ["monthly", "quarterly", "annual"];
+  const [accountsFrequency, setAccountsFrequency] = useState<"current" | ReportFrequency>("current");
+  const [accountsPeriodValue, setAccountsPeriodValue] = useState("");
+  const accountsPeriods = useMemo(() => (accountsFrequency === "current" ? [] : recentPeriods(accountsFrequency, PERIOD_COUNTS[accountsFrequency])), [accountsFrequency]);
+  const changeAccountsFrequency = (next: "current" | ReportFrequency) => {
+    setAccountsFrequency(next);
+    setAccountsPeriodValue(next === "current" ? "" : recentPeriods(next, PERIOD_COUNTS[next])[0]?.value ?? "");
+  };
+
   useEffect(() => {
     fetch(`/api/integrations?tenantId=${encodeURIComponent(tenant.id)}&companyId=${encodeURIComponent(company.id)}`)
       .then((response) => response.json())
@@ -10751,7 +10764,9 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
     setIntegrationBusy(true); setIntegrationMessage("Queueing Xero trial balance and VAT evidence…");
     try {
       const chosenPeriod = vatFrequency === "accounts" ? undefined : vatPeriods.find((period) => period.value === vatPeriodValue);
-      const response = await fetch("/api/integrations/xero/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId: tenant.id, tenantName: tenant.name, tenantType: tenant.type, tenantPlan: tenant.plan, companyId: company.id, companyName: company.name, companyIndustry: company.industry, currency: company.currency, country: company.country, asOfDate: new Date().toISOString().slice(0, 10), ...(chosenPeriod ? { vatPeriodStart: chosenPeriod.start, vatPeriodEnd: chosenPeriod.end } : {}) }) });
+      const chosenAccountsPeriod = accountsFrequency === "current" ? undefined : accountsPeriods.find((period) => period.value === accountsPeriodValue);
+      const asOfDate = chosenAccountsPeriod?.end ?? new Date().toISOString().slice(0, 10);
+      const response = await fetch("/api/integrations/xero/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId: tenant.id, tenantName: tenant.name, tenantType: tenant.type, tenantPlan: tenant.plan, companyId: company.id, companyName: company.name, companyIndustry: company.industry, currency: company.currency, country: company.country, asOfDate, ...(chosenPeriod ? { vatPeriodStart: chosenPeriod.start, vatPeriodEnd: chosenPeriod.end } : {}) }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Xero sync failed.");
       setIntegrationMessage("Xero sync is running in the background…");
@@ -10881,6 +10896,23 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
                         </select>
                       </div>
                       <p className="mt-2 text-xs text-muted">{vatFrequency === "accounts" ? "VAT evidence is scoped to the current accounting period." : "Scopes the sync's VAT evidence to the selected return period. Confirm the exact dates if the company is on a non-calendar VAT stagger."}</p>
+                    </div>
+                  )}
+                  {integration.connected && (
+                    <div className="rounded-lg border border-line bg-white p-3 text-sm">
+                      <span className="text-xs font-bold uppercase text-muted">Accounts reporting period</span>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        <select className="rounded-lg border border-line bg-white px-3 py-2 text-sm" value={accountsFrequency} disabled={integrationBusy} onChange={(event) => changeAccountsFrequency(event.target.value as "current" | ReportFrequency)}>
+                          <option value="current">Current (to today)</option>
+                          {ACCOUNTS_FREQUENCIES.map((frequency) => <option key={frequency} value={frequency}>{frequency[0].toUpperCase() + frequency.slice(1)}</option>)}
+                        </select>
+                        <select className="rounded-lg border border-line bg-white px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-muted" value={accountsPeriodValue} disabled={integrationBusy || accountsFrequency === "current"} onChange={(event) => setAccountsPeriodValue(event.target.value)}>
+                          {accountsFrequency === "current"
+                            ? <option value="">Up to today</option>
+                            : accountsPeriods.map((period) => <option key={period.value} value={period.value}>{period.label}</option>)}
+                        </select>
+                      </div>
+                      <p className="mt-2 text-xs text-muted">{accountsFrequency === "current" ? "Management & financial accounts are produced to today's date." : "Sets the accounts “as at” date; the P&L runs year-to-date to that period end. Calendar-aligned — confirm the year-end if the financial year isn't December."}</p>
                     </div>
                   )}
                   {integration.organisations.map((organisation) => (

@@ -379,4 +379,8 @@ export type AnalysisResult = {
   recommendations: Recommendation[];
   vatReview?: import("./vat-engine/types").VatReviewResult;
   inventoryReview?: import("./inventory-engine").InventoryReviewResult;
+  // Accounts-production statements assembled from uploaded TB/P&L/BS documents,
+  // so uploads can produce the same management/financial/CT600 packs as a Xero
+  // sync. Carried through the workspace snapshot like inventoryReview.
+  statements?: import("./management-accounts").SyncStatements;
 };
