@@ -1926,6 +1926,12 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
 
   useEffect(() => {
     if (presentationMode) return;
+    // The in-app pilot demo (loaded via loadPilotDemo, not the /demo route) is
+    // ephemeral: it must NEVER be written to the user's single user_workspaces
+    // row. Without this guard, loading the demo persisted it over a real
+    // onboarded practice — so switching back restored the demo and the real
+    // practice was gone.
+    if (tenant.id === pilotTenant.id) return;
     // Don't persist default empty state — only save once real data exists
     const hasRealData = tenant.name !== "Your Firm" || uploads.length > 0 || findings.length > 0;
     if (!hasRealData) return;
