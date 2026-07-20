@@ -1712,6 +1712,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const workspaceLoadCancelled = useRef(false);
   const initialPilotSnapshot = presentationMode ? normaliseSnapshot(pilotAnalysisResult, { preserveStaleVatReview: true }) : undefined;
   const [active, setActive] = useState(presentationMode ? "Partner Summary" : "Onboarding");
+  const [onboardIntent, setOnboardIntent] = useState<"new" | "add-client">("new");
   const [tenant, setTenant] = useState<Tenant>(presentationMode ? pilotTenant : seededTenant);
   const [currentCompany, setCurrentCompany] = useState<Company>(presentationMode ? pilotCompany : seededCompany);
   const [companies, setCompanies] = useState<Company[]>(presentationMode ? [pilotCompany] : [seededCompany]);
@@ -2708,11 +2709,13 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     setUploadMessage(`Live Xero sync completed for ${currentCompany.name}: ${scoped.uploads.length} evidence source(s), ${xeroVatRows} VAT row(s), ${scoped.findings.length} finding(s).`);
     setActive("VAT Assurance");
   };
-  const onboardWorkspace = (nextTenant: Tenant, nextCompany: Company) => {
+  const clientFor = (company: Company): ClientCompany => ({ id: company.id, name: company.name, system: company.accountingSystem, score: 0, risk: "medium", openFindings: 0, closeStatus: "Awaiting upload" });
+
+  // Point the live review state at a freshly-added company (no data yet) and jump
+  // to its upload step. Shared by createWorkspace and addClient.
+  const beginCompanyReview = (nextCompany: Company) => {
     workspaceLoadCancelled.current = true;
-    setTenant(nextTenant);
     setCurrentCompany(nextCompany);
-    setCompanies((items) => [nextCompany, ...items.filter((item) => item.id !== nextCompany.id)].map((item) => ({ ...item, tenantId: nextTenant.id })));
     setUploads([]);
     setValidationChecks([]);
     setFindings([]);
@@ -2724,13 +2727,33 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     setRecommendations([]);
     setImportProfiles([]);
     setVatReview(undefined);
-    setCompanySnapshots((items) => ({ ...items, [nextCompany.id]: emptySnapshot() }));
     setUploadMessage(`${nextCompany.name} is ready. Upload a finance pack to create the first evidence-linked review.`);
-    setPortfolioClients((items) => {
-      const client: ClientCompany = { id: nextCompany.id, name: nextCompany.name, system: nextCompany.accountingSystem, score: 0, risk: "medium", openFindings: 0, closeStatus: "Awaiting upload" };
-      return [client, ...items.filter((item) => item.id !== nextCompany.id)];
-    });
     setActive("Upload Finance Pack");
+  };
+
+  // Create a brand-new workspace (a new practice, or a direct single company).
+  // Starts CLEAN — it does not carry over the previous workspace's companies. As
+  // storage is one-workspace-per-user, this replaces any existing one, so confirm
+  // before discarding a real practice's clients.
+  const createWorkspace = (nextTenant: Tenant, nextCompany: Company) => {
+    const replacingReal = !isPilotDemo && tenant.name !== "Your Firm" && companies.length > 0;
+    if (replacingReal && !window.confirm(`This starts a brand-new workspace and leaves “${tenant.name}”. Its clients will no longer be shown here. Continue?`)) return;
+    const scopedCompany: Company = { ...nextCompany, tenantId: nextTenant.id };
+    setTenant(nextTenant);
+    setCompanies([scopedCompany]);
+    setCompanySnapshots({ [scopedCompany.id]: emptySnapshot() });
+    setPortfolioClients([clientFor(scopedCompany)]);
+    beginCompanyReview(scopedCompany);
+  };
+
+  // Add another client company under the CURRENT practice tenant — reuses
+  // tenant.id and preserves the existing companies and their reviews.
+  const addClient = (nextCompany: Company) => {
+    const scopedCompany: Company = { ...nextCompany, tenantId: tenant.id };
+    setCompanies((items) => [scopedCompany, ...items.filter((item) => item.id !== scopedCompany.id)]);
+    setCompanySnapshots((items) => ({ ...items, [scopedCompany.id]: emptySnapshot() }));
+    setPortfolioClients((items) => [clientFor(scopedCompany), ...items.filter((item) => item.id !== scopedCompany.id)]);
+    beginCompanyReview(scopedCompany);
   };
 
   const loadPilotDemo = () => {
@@ -2781,7 +2804,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   };
 
   const content = useMemo(() => {
-    if (active === "Onboarding") return <OnboardingPanel tenant={tenant} company={currentCompany} onboardWorkspace={onboardWorkspace} loadPilotDemo={loadPilotDemo} />;
+    if (active === "Onboarding") return <OnboardingPanel key={onboardIntent} intent={onboardIntent} tenant={tenant} createWorkspace={createWorkspace} addClient={addClient} loadPilotDemo={loadPilotDemo} />;
     if (active === "Partner Summary" || active === "Dashboard") return <DashboardPanel score={score} risk={risk} assurance={assurance} findings={findings} partnerSignOff={partnerSignOff} openFindings={openFindings.length} cashAtRisk={cashAtRisk} financialExposure={financialExposure} timeSaved={timeSaved} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} validationWarnings={validationWarnings} validationBlockers={validationBlockers} validationChecks={validationChecks} recommendations={recommendations} clients={portfolioClients} uploads={uploads} companyName={currentCompany.name} scoreDrivers={scorecard.drivers} activities={findingActivities} setActive={setActive} />;
     if (active === "Finance Review") {
       return (
@@ -2938,7 +2961,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       return <PilotMetricsPanel snapshots={mergedSnapshots} tenantName={tenant.name} setActive={setActive} />;
     }
     return <PracticePortal tenant={tenant} clients={portfolioClients} currentCompanyId={currentCompany.id} switchCompany={switchCompany} companySnapshots={companySnapshots} />;
-  }, [active, assurance, assistantResult, cashAtRisk, collectionCases, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, integrationDiagnostics, isAnalysing, isPilotDemo, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, reportSchedules, scheduledReports, risk, score, tenant, timeSaved, uploadJob, uploadMessage, uploads, userName, validationBlockers, validationChecks, validationWarnings, vatReview]);
+  }, [active, assurance, assistantResult, cashAtRisk, collectionCases, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, integrationDiagnostics, isAnalysing, isPilotDemo, onboardIntent, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, reportSchedules, scheduledReports, risk, score, tenant, timeSaved, uploadJob, uploadMessage, uploads, userName, validationBlockers, validationChecks, validationWarnings, vatReview]);
 
   return (
     <div className="min-h-screen bg-page text-ink lg:grid lg:grid-cols-[280px_1fr]">
@@ -3017,13 +3040,16 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
                   <select className="h-10 min-w-0 rounded-lg border border-line bg-white px-3 text-sm font-bold shadow-sm" value={currentCompany.id} onChange={(event) => switchCompany(event.target.value)}>
                     {companies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
+                  {!isPilotDemo && tenant.type === "accounting_practice" && tenant.name !== "Your Firm" && (
+                    <button className="h-10 rounded-lg border border-brand bg-brand/5 px-4 text-sm font-bold text-brand shadow-sm transition-colors hover:bg-brand/10" onClick={() => { setOnboardIntent("add-client"); setActive("Onboarding"); }}>+ Add client</button>
+                  )}
                   <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("User Guide")}>Guide</button>
                   {isPilotDemo && (
                     <button className="h-10 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-sm font-bold text-emerald-800 shadow-sm transition-colors hover:bg-emerald-100" onClick={() => {
                       if (confirm("Reload the original Brightlane demo? This replaces any changes made in the synthetic demo workspace.")) loadPilotDemo();
                     }}>Reload Demo</button>
                   )}
-                  <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Onboarding")}>Onboard</button>
+                  <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => { setOnboardIntent("new"); setActive("Onboarding"); }}>Onboard</button>
                 </>
               )}
               <button className="h-10 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700" onClick={() => setShowExport(true)}>Export Review</button>
@@ -3164,33 +3190,78 @@ function UserGuide({ isPilotDemo, hasData, loadPilotDemo, setActive, setPilotWal
   );
 }
 
-function OnboardingPanel({ tenant, company, onboardWorkspace, loadPilotDemo }: { tenant: Tenant; company: Company; onboardWorkspace: (tenant: Tenant, company: Company) => void; loadPilotDemo: () => void }) {
+function OnboardingPanel({ intent, tenant, createWorkspace, addClient, loadPilotDemo }: { intent: "new" | "add-client"; tenant: Tenant; createWorkspace: (tenant: Tenant, company: Company) => void; addClient: (company: Company) => void; loadPilotDemo: () => void }) {
+  const isAddClient = intent === "add-client";
   const [mode, setMode] = useState<TenantType>("accounting_practice");
-  const [firmName, setFirmName] = useState(tenant.type === "accounting_practice" && tenant.name !== "Your Firm" ? tenant.name : "");
-  const [companyName, setCompanyName] = useState(company.name !== "Your Company" ? company.name : "");
-  const [industry, setIndustry] = useState(company.industry);
-  const [accountingSystem, setAccountingSystem] = useState(company.accountingSystem);
-  const [country, setCountry] = useState(company.country);
-  const [currency, setCurrency] = useState(company.currency);
+  // Start blank — never seed from the currently-loaded (possibly demo) workspace.
+  const [firmName, setFirmName] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [accountingSystem, setAccountingSystem] = useState("Xero");
+  const [country, setCountry] = useState("United Kingdom");
+  const [currency, setCurrency] = useState("GBP");
 
   const submit = () => {
+    const company = companyName.trim();
+    if (!company) return;
+    if (isAddClient) {
+      // Reuse the current practice tenant — a new client under the same firm.
+      addClient({ id: crypto.randomUUID(), tenantId: tenant.id, name: company, industry, accountingSystem, currency, country });
+      return;
+    }
+    if (mode === "accounting_practice" && !firmName.trim()) return;
     const nextTenant: Tenant = {
       id: crypto.randomUUID(),
-      name: mode === "accounting_practice" ? firmName : companyName,
+      name: mode === "accounting_practice" ? firmName.trim() : company,
       type: mode,
-      plan: mode === "accounting_practice" ? "practice" : "growth"
+      plan: mode === "accounting_practice" ? "practice" : "growth",
     };
-    const nextCompany: Company = {
-      id: crypto.randomUUID(),
-      tenantId: nextTenant.id,
-      name: companyName,
-      industry,
-      accountingSystem,
-      currency,
-      country
-    };
-    onboardWorkspace(nextTenant, nextCompany);
+    createWorkspace(nextTenant, { id: crypto.randomUUID(), tenantId: nextTenant.id, name: company, industry, accountingSystem, currency, country });
   };
+
+  const companyNameLabel = isAddClient ? "Client company name" : mode === "accounting_practice" ? "First client company" : "Company name";
+  const detailFields = (
+    <>
+      <label className="grid gap-2">
+        <span className="text-sm font-bold text-muted">{companyNameLabel}</span>
+        <input className="h-11 rounded-lg border border-line px-3" value={companyName} onChange={(event) => setCompanyName(event.target.value)} />
+      </label>
+      <label className="grid gap-2">
+        <span className="text-sm font-bold text-muted">Industry</span>
+        <input className="h-11 rounded-lg border border-line px-3" value={industry} onChange={(event) => setIndustry(event.target.value)} />
+      </label>
+      <label className="grid gap-2">
+        <span className="text-sm font-bold text-muted">Accounts production or bookkeeping source</span>
+        <select className="h-11 rounded-lg border border-line px-3" value={accountingSystem} onChange={(event) => setAccountingSystem(event.target.value)}>
+          {["IRIS Accounts Production", "CCH Accounts Production", "Digita Accounts Production", "Xero", "Sage", "QuickBooks", "Business Central", "Excel / CSV", "Other"].map((system) => <option key={system}>{system}</option>)}
+        </select>
+      </label>
+      <label className="grid gap-2">
+        <span className="text-sm font-bold text-muted">Country</span>
+        <input className="h-11 rounded-lg border border-line px-3" value={country} onChange={(event) => setCountry(event.target.value)} />
+      </label>
+      <label className="grid gap-2">
+        <span className="text-sm font-bold text-muted">Currency</span>
+        <select className="h-11 rounded-lg border border-line px-3" value={currency} onChange={(event) => setCurrency(event.target.value)}>
+          {["GBP", "EUR", "USD", "NGN", "GHS", "KES", "ZAR"].map((item) => <option key={item}>{item}</option>)}
+        </select>
+      </label>
+    </>
+  );
+
+  if (isAddClient) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <Panel title={`Add a client to ${tenant.name}`}>
+          <p className="text-sm text-muted">Create another client company under your practice. Your existing clients and their reviews are unaffected.</p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {detailFields}
+          </div>
+          <button className="mt-5 rounded-lg bg-brand px-5 py-3 font-bold text-white disabled:opacity-50" disabled={!companyName.trim()} onClick={submit}>Add client</button>
+        </Panel>
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
@@ -3223,36 +3294,13 @@ function OnboardingPanel({ tenant, company, onboardWorkspace, loadPilotDemo }: {
               <input className="h-11 rounded-lg border border-line px-3" value={firmName} onChange={(event) => setFirmName(event.target.value)} />
             </label>
           )}
-          <label className="grid gap-2">
-            <span className="text-sm font-bold text-muted">{mode === "accounting_practice" ? "First client company" : "Company name"}</span>
-            <input className="h-11 rounded-lg border border-line px-3" value={companyName} onChange={(event) => setCompanyName(event.target.value)} />
-          </label>
-          <label className="grid gap-2">
-            <span className="text-sm font-bold text-muted">Industry</span>
-            <input className="h-11 rounded-lg border border-line px-3" value={industry} onChange={(event) => setIndustry(event.target.value)} />
-          </label>
-          <label className="grid gap-2">
-            <span className="text-sm font-bold text-muted">Accounts production or bookkeeping source</span>
-            <select className="h-11 rounded-lg border border-line px-3" value={accountingSystem} onChange={(event) => setAccountingSystem(event.target.value)}>
-              {["IRIS Accounts Production", "CCH Accounts Production", "Digita Accounts Production", "Xero", "Sage", "QuickBooks", "Business Central", "Excel / CSV", "Other"].map((system) => <option key={system}>{system}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-2">
-            <span className="text-sm font-bold text-muted">Country</span>
-            <input className="h-11 rounded-lg border border-line px-3" value={country} onChange={(event) => setCountry(event.target.value)} />
-          </label>
-          <label className="grid gap-2">
-            <span className="text-sm font-bold text-muted">Currency</span>
-            <select className="h-11 rounded-lg border border-line px-3" value={currency} onChange={(event) => setCurrency(event.target.value)}>
-              {["GBP", "EUR", "USD", "NGN", "GHS", "KES", "ZAR"].map((item) => <option key={item}>{item}</option>)}
-            </select>
-          </label>
+          {detailFields}
         </div>
         <div className="mt-5 rounded-lg border border-line bg-slate-50 p-4">
           <p className="text-xs font-bold uppercase text-muted">Isolation model</p>
           <p className="mt-2 text-sm text-muted">All uploads, validation checks, findings, recommendations, AI conversations and reports are written with both tenant and company scope. Practice users only see companies granted through user-company access.</p>
         </div>
-        <button className="mt-5 rounded-lg bg-brand px-5 py-3 font-bold text-white" onClick={submit}>Create Workspace</button>
+        <button className="mt-5 rounded-lg bg-brand px-5 py-3 font-bold text-white disabled:opacity-50" disabled={!companyName.trim() || (mode === "accounting_practice" && !firmName.trim())} onClick={submit}>Create Workspace</button>
       </Panel>
     </div>
   );
