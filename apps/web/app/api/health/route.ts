@@ -21,6 +21,7 @@ export async function GET() {
     errorTracking: Boolean(process.env.SENTRY_DSN),
     rateLimiting: Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN),
     xero: Boolean(process.env.XERO_CLIENT_ID && process.env.XERO_CLIENT_SECRET && process.env.XERO_REDIRECT_URI && process.env.INTEGRATION_ENCRYPTION_KEY),
+    quickbooks: Boolean(process.env.QUICKBOOKS_CLIENT_ID && process.env.QUICKBOOKS_CLIENT_SECRET && process.env.QUICKBOOKS_REDIRECT_URI && process.env.INTEGRATION_ENCRYPTION_KEY),
   };
 
   const ready = Object.values(checks).every(Boolean);
@@ -32,10 +33,15 @@ export async function GET() {
     capabilities,
     deployment: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local",
     environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "unknown",
+    // Which QuickBooks host the sync targets (sandbox vs production), so setup
+    // can be confirmed without signing in. Only meaningful when quickbooks config
+    // is present.
+    quickbooksEnvironment: capabilities.quickbooks ? (process.env.QUICKBOOKS_ENVIRONMENT ?? "sandbox") : undefined,
     // Retained for backward compatibility with existing uptime monitors.
     optional: {
       aiCommentary: capabilities.aiCommentary,
       xero: capabilities.xero,
+      quickbooks: capabilities.quickbooks,
     },
   }, { status: ready ? 200 : 503 });
 }
