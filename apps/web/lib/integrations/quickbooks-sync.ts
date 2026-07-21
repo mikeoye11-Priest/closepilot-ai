@@ -21,60 +21,86 @@ type QboTxn = {
 };
 
 // ── Report tree walking ──────────────────────────────────────────────────────
-// Call onData for each leaf Data row, tagged with its nearest enclosing section
-// title (QBO reports nest accounts under typed sections: Income, Bank, etc.).
-function walkReport(rows: QboRow[] | undefined, section: string, onData: (section: string, cols: QboColData[]) => void) {
+// Postable-account leaves of a sectioned report (P&L, balance sheet). Keeps the
+// type:"Data" filter so subtotal/summary rows are excluded, and threads the full
+// ancestor section path so a leaf can be classified by any level of the tree.
+function walkDataRows(rows: QboRow[] | undefined, path: string[], onData: (path: string[], cols: QboColData[]) => void) {
   for (const row of rows ?? []) {
     if (row.type === "Data" && row.ColData) {
-      onData(section, row.ColData);
+      onData(path, row.ColData);
     } else if (row.Rows?.Row?.length) {
-      const title = row.Header?.ColData?.[0]?.value?.trim() || section;
-      walkReport(row.Rows.Row, title, onData);
+      const title = row.Header?.ColData?.[0]?.value?.trim();
+      walkDataRows(row.Rows.Row, title ? [...path, title] : path, onData);
     }
+  }
+}
+// Every leaf row (ColData with no children), regardless of `type` — for flat
+// reports (trial balance, aged summaries) whose rows aren't tagged type:"Data".
+function walkAllLeaves(rows: QboRow[] | undefined, onLeaf: (cols: QboColData[]) => void) {
+  for (const row of rows ?? []) {
+    if (row.Rows?.Row?.length) walkAllLeaves(row.Rows.Row, onLeaf);
+    else if (row.ColData?.length) onLeaf(row.ColData);
   }
 }
 const lastMoney = (cols: QboColData[]) => numberFrom(cols[cols.length - 1]?.value);
 
 // P&L → {category, description, amount}. Sign by classification (income +, cost
-// of sales / expenses −) so buildProfitAndLoss computes gross/net profit correctly.
+// of sales / expenses −). The TOP-level section (Income / Cost of Goods Sold /
+// Expenses) is the category, so buildProfitAndLoss classifies it correctly.
 export function flattenQboProfitAndLoss(report: QboReport): Row[] {
   const out: Row[] = [];
-  walkReport(report.Rows?.Row, "", (section, cols) => {
+  walkDataRows(report.Rows?.Row, [], (path, cols) => {
     const name = cols[0]?.value?.trim();
     if (!name) return;
     const amount = lastMoney(cols);
     if (amount === 0) return;
-    const category = section || "Income";
+    const category = path[0] || "Income";
     const isIncome = /income|revenue|turnover|sales/i.test(category) && !/cost of (sales|goods)/i.test(category);
     out.push({ category, description: name, amount: String(isIncome ? Math.abs(amount) : -Math.abs(amount)), prior_amount: "0" });
   });
   return out;
 }
 
-// Balance sheet → {category, item, amount}. QBO presents assets/liabilities/
-// equity as positive within their sections and includes current-year Net Income
-// in equity, so the sheet balances as-is. Section title classifies the line
-// (classifyBalance in management-accounts.ts).
+// Balance sheet → {category, item, amount}. QBO nests accounts under sub-type
+// groups (e.g. "Truck", "Credit Cards") whose names alone don't classify, so we
+// classify from the full ancestor path and emit a controlled section name — so
+// the engine buckets each line correctly (fixed vs current asset, liability,
+// equity). QBO includes current-year Net Income in equity, so it balances as-is.
+const BS_SECTION = { fixed: "Fixed assets", current: "Current assets", liability: "Creditors: amounts falling due within one year", equity: "Capital and reserves" } as const;
+function classifyQboBalanceSheet(path: string[]): keyof typeof BS_SECTION {
+  // Drop the top super-sections: "LIABILITIES AND EQUITY" contains the word
+  // EQUITY, which would otherwise flag every liability under it as equity.
+  const text = path.filter((title) => !/^(assets|liabilities\s*(and|&)?\s*equity)$/i.test(title.trim())).join(" ");
+  if (/equity|capital|reserve|retained|earnings/i.test(text)) return "equity";
+  if (/liabilit|creditor|payable|loan|borrowing|accrual|overdraft|provision|credit\s*card|deferred|\btax\b/i.test(text)) return "liability";
+  if (/fixed|non-?current|intangible|tangible|property|plant|equipment|machinery|motor|vehicle|truck|building|furniture|fixtures?|fittings?/i.test(text)) return "fixed";
+  return "current";
+}
 export function flattenQboBalanceSheet(report: QboReport): Row[] {
   const out: Row[] = [];
-  walkReport(report.Rows?.Row, "", (section, cols) => {
+  walkDataRows(report.Rows?.Row, [], (path, cols) => {
     const name = cols[0]?.value?.trim();
     if (!name) return;
     const amount = lastMoney(cols);
     if (amount === 0) return;
-    out.push({ category: section || "Assets", item: name, amount: String(amount), prior_amount: "0" });
+    out.push({ category: BS_SECTION[classifyQboBalanceSheet(path)], item: name, amount: String(amount), prior_amount: "0" });
   });
   return out;
 }
 
-// Trial balance → {account_code, account_name, debit, credit, balance}.
+// Trial balance → {account_code, account_name, debit, credit, balance}. Flat
+// report whose rows aren't tagged type:"Data", so take every leaf; map the
+// debit/credit columns by title; skip the total row.
 export function flattenQboTrialBalance(report: QboReport): Row[] {
+  const columns = report.Columns?.Column ?? [];
+  const debitIndex = columns.findIndex((column) => /debit/i.test(column.ColTitle ?? ""));
+  const creditIndex = columns.findIndex((column) => /credit/i.test(column.ColTitle ?? ""));
   const out: Row[] = [];
-  walkReport(report.Rows?.Row, "", (_section, cols) => {
+  walkAllLeaves(report.Rows?.Row, (cols) => {
     const name = cols[0]?.value?.trim();
-    if (!name) return;
-    const debit = numberFrom(cols[1]?.value);
-    const credit = numberFrom(cols[2]?.value);
+    if (!name || /^total\b/i.test(name)) return;
+    const debit = numberFrom(cols[debitIndex >= 0 ? debitIndex : 1]?.value);
+    const credit = numberFrom(cols[creditIndex >= 0 ? creditIndex : 2]?.value);
     if (debit === 0 && credit === 0) return;
     out.push({ account_code: cols[0]?.id ?? "", account_name: name, debit: String(debit), credit: String(credit), balance: String(debit - credit) });
   });
@@ -83,7 +109,8 @@ export function flattenQboTrialBalance(report: QboReport): Row[] {
 
 // Aged receivables/payables summary → one row per non-zero aging bucket, with a
 // representative days_overdue so the aging engine buckets them (Current→0,
-// 1-30→15, 31-60→45, 61-90→75, 91+→100).
+// 1-30→15, 31-60→45, 61-90→75, 91+→100). Takes every leaf (aged rows aren't
+// reliably tagged type:"Data").
 function bucketDays(title: string): number | null {
   const t = title.toLowerCase();
   if (/^total/.test(t) || !t) return null;
@@ -97,7 +124,7 @@ function bucketDays(title: string): number | null {
 export function flattenQboAged(report: QboReport, nameKey: "customer_name" | "supplier_name"): Row[] {
   const columns = report.Columns?.Column ?? [];
   const out: Row[] = [];
-  walkReport(report.Rows?.Row, "", (_section, cols) => {
+  walkAllLeaves(report.Rows?.Row, (cols) => {
     const name = cols[0]?.value?.trim();
     if (!name || /^total/i.test(name)) return;
     columns.forEach((column, index) => {
@@ -182,7 +209,14 @@ export async function fetchQuickBooksSyncData(
   const [profitLossRows, balanceSheetRows, trialBalanceRows, agedDebtorRows, agedCreditorRows] = await runWithConcurrency<Row[]>(5, [
     () => safe("profit & loss", [], async () => flattenQboProfitAndLoss(await report("ProfitAndLoss", `start_date=${periodStart}&end_date=${asOfDate}&`))),
     () => safe("balance sheet", [], async () => flattenQboBalanceSheet(await report("BalanceSheet", `end_date=${asOfDate}&`))),
-    () => safe("trial balance", [], async () => flattenQboTrialBalance(await report("TrialBalance", `start_date=${periodStart}&end_date=${asOfDate}&`))),
+    () => safe("trial balance", [], async () => {
+      const raw = await report("TrialBalance", `start_date=${periodStart}&end_date=${asOfDate}&`);
+      const rows = flattenQboTrialBalance(raw);
+      if (rows.length === 0 && (raw.Rows?.Row?.length ?? 0) > 0) {
+        warnings.push(`trial balance diagnostic: 0 parsed from ${raw.Rows?.Row?.length} raw rows; columns=[${(raw.Columns?.Column ?? []).map((c) => c.ColTitle ?? c.ColType ?? "?").join("|")}]; firstRowKeys=[${Object.keys(raw.Rows?.Row?.[0] ?? {}).join(",")}]`);
+      }
+      return rows;
+    }),
     () => safe("aged debtors", [], async () => flattenQboAged(await report("AgedReceivables", `report_date=${asOfDate}&`), "customer_name")),
     () => safe("aged creditors", [], async () => flattenQboAged(await report("AgedPayables", `report_date=${asOfDate}&`), "supplier_name")),
   ]);
