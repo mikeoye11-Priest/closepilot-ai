@@ -89,6 +89,48 @@ test("Aged flattener emits one row per non-zero bucket with representative days_
   assert.ok(rows.every((r) => r.customer_name === "Acme Ltd"));
 });
 
+test("BS classifies fixed-asset and credit-card SUB-GROUPS from the account hierarchy", () => {
+  // Mirrors real QBO nesting: accounts sit under sub-type groups ("Truck",
+  // "Credit Cards") whose names don't classify on their own.
+  const bsNested = {
+    Columns: { Column: [{ ColType: "Account" }, { ColType: "Money", ColTitle: "Total" }] },
+    Rows: { Row: [
+      section("ASSETS", [
+        section("Current Assets", [section("Bank Accounts", [data("Checking", "1000")])]),
+        section("Fixed Assets", [section("Truck", [data("Original Cost", "13495")])]),
+      ]),
+      section("LIABILITIES AND EQUITY", [
+        section("Liabilities", [section("Current Liabilities", [section("Credit Cards", [data("Mastercard", "157.72")])])]),
+        section("Equity", [data("Owner Equity", "14337.28")]),
+      ]),
+    ] },
+  };
+  const bs = flattenQboBalanceSheet(bsNested as never);
+  assert.equal(bs.find((r) => r.item === "Original Cost")?.category, "Fixed assets", "truck sub-group → fixed asset");
+  assert.equal(bs.find((r) => r.item === "Mastercard")?.category, "Creditors: amounts falling due within one year", "credit card → liability, not asset");
+  assert.equal(bs.find((r) => r.item === "Checking")?.category, "Current assets");
+  const statements = { asOfDate: "2026-12-31", periodStart: "2026-01-01", currency: "GBP", companyName: "QBO", profitLoss: [], balanceSheet: bs, agedDebtors: [], agedCreditors: [], bank: [], trialBalance: [] };
+  const ma = buildManagementAccounts(statements as never);
+  assert.equal(ma.bs.totalFixed, 13495);
+  assert.equal(ma.bs.totalLiabilities, 157.72);
+  assert.ok(Math.abs(ma.bs.netAssets - ma.bs.totalEquity) <= 1, "balances once the credit card is a liability");
+});
+
+test("Trial balance parses rows that lack type:'Data' and skips the total row", () => {
+  const tbNoType = {
+    Columns: { Column: [{ ColType: "Account" }, { ColTitle: "Debit", ColType: "Money" }, { ColTitle: "Credit", ColType: "Money" }] },
+    Rows: { Row: [
+      { ColData: [{ value: "Checking", id: "1" }, { value: "1000" }, { value: "" }] },      // no `type` field
+      { ColData: [{ value: "Sales", id: "2" }, { value: "" }, { value: "1000" }] },
+      { type: "Data", ColData: [{ value: "TOTAL" }, { value: "1000" }, { value: "1000" }] }, // must be skipped
+    ] },
+  };
+  const tb = flattenQboTrialBalance(tbNoType as never);
+  assert.equal(tb.length, 2, "two accounts, total skipped");
+  assert.equal(tb.find((r) => r.account_name === "Checking")?.balance, "1000");
+  assert.equal(tb.find((r) => r.account_name === "Sales")?.balance, "-1000");
+});
+
 test("VAT rows: sales positive, purchases positive, credits negated; net = total − tax", () => {
   const invoice = txnVatRow({ TotalAmt: 1200, TxnTaxDetail: { TotalTax: 200 }, CustomerRef: { name: "Acme" }, TxnDate: "2026-03-10" }, { name: "Invoice", type: "Sale", negate: false });
   assert.deepEqual({ net: invoice!.net_amount, vat: invoice!.vat_amount, gross: invoice!.gross_amount, type: invoice!.type }, { net: "1000", vat: "200", gross: "1200", type: "Sale" });
