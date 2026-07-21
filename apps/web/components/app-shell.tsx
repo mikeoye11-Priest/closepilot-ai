@@ -10743,18 +10743,18 @@ type XeroSyncPollResult = {
   error?: string;
 };
 
-async function pollXeroSync(syncId: string, onProgress: (status: XeroSyncPollResult["status"]) => void): Promise<XeroSyncPollResult> {
+async function pollSync(provider: "xero" | "quickbooks", syncId: string, onProgress: (status: XeroSyncPollResult["status"]) => void): Promise<XeroSyncPollResult> {
   const deadline = Date.now() + 5 * 60 * 1000;
   while (Date.now() < deadline) {
-    const response = await fetch(`/api/integrations/xero/sync?syncId=${encodeURIComponent(syncId)}`, { cache: "no-store" });
+    const response = await fetch(`/api/integrations/${provider}/sync?syncId=${encodeURIComponent(syncId)}`, { cache: "no-store" });
     const result = await response.json() as XeroSyncPollResult;
-    if (!response.ok) throw new Error(result.error || "Could not read Xero sync progress.");
+    if (!response.ok) throw new Error(result.error || "Could not read sync progress.");
     if (result.status === "completed") return result;
-    if (result.status === "failed") throw new Error(result.error || "Xero sync failed.");
+    if (result.status === "failed") throw new Error(result.error || "Sync failed.");
     onProgress(result.status);
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
-  throw new Error("Xero sync is still running. You can leave this page and check again shortly.");
+  throw new Error("The sync is still running. You can leave this page and check again shortly.");
 }
 
 function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnalysis, setActive, presentationMode }: { tenant: Tenant; company: Company; userEmail: string; userName: string; onIntegrationAnalysis: (result: AnalysisResult, warnings?: string[]) => void; setActive: (value: string) => void; presentationMode: boolean }) {
@@ -10814,18 +10814,19 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
     finally { setIntegrationBusy(false); }
   };
 
-  const syncXero = async () => {
-    setIntegrationBusy(true); setIntegrationMessage("Queueing Xero trial balance and VAT evidence…");
+  const syncProvider = async (provider: "xero" | "quickbooks") => {
+    const label = provider === "quickbooks" ? "QuickBooks" : "Xero";
+    setIntegrationBusy(true); setIntegrationMessage(`Queueing ${label} trial balance and VAT evidence…`);
     try {
       const chosenPeriod = vatFrequency === "accounts" ? undefined : vatPeriods.find((period) => period.value === vatPeriodValue);
       const chosenAccountsPeriod = accountsFrequency === "current" ? undefined : accountsPeriods.find((period) => period.value === accountsPeriodValue);
       const asOfDate = chosenAccountsPeriod?.end ?? new Date().toISOString().slice(0, 10);
-      const response = await fetch("/api/integrations/xero/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId: tenant.id, tenantName: tenant.name, tenantType: tenant.type, tenantPlan: tenant.plan, companyId: company.id, companyName: company.name, companyIndustry: company.industry, currency: company.currency, country: company.country, asOfDate, ...(chosenPeriod ? { vatPeriodStart: chosenPeriod.start, vatPeriodEnd: chosenPeriod.end } : {}) }) });
+      const response = await fetch(`/api/integrations/${provider}/sync`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId: tenant.id, tenantName: tenant.name, tenantType: tenant.type, tenantPlan: tenant.plan, companyId: company.id, companyName: company.name, companyIndustry: company.industry, currency: company.currency, country: company.country, asOfDate, ...(chosenPeriod ? { vatPeriodStart: chosenPeriod.start, vatPeriodEnd: chosenPeriod.end } : {}) }) });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Xero sync failed.");
-      setIntegrationMessage("Xero sync is running in the background…");
-      const completed = await pollXeroSync(result.syncId, (status) => setIntegrationMessage(status === "queued" ? "Xero sync queued…" : "Syncing Xero pages and running assurance checks…"));
-      if (!completed.analysis) throw new Error("Xero sync completed without an analysis result.");
+      if (!response.ok) throw new Error(result.error || `${label} sync failed.`);
+      setIntegrationMessage(`${label} sync is running in the background…`);
+      const completed = await pollSync(provider, result.syncId, (status) => setIntegrationMessage(status === "queued" ? `${label} sync queued…` : `Syncing ${label} data and running assurance checks…`));
+      if (!completed.analysis) throw new Error(`${label} sync completed without an analysis result.`);
       onIntegrationAnalysis(completed.analysis, completed.warnings ?? []);
       await reloadIntegrations();
       const vatRows = completed.counts?.vatRows ?? 0;
@@ -10833,20 +10834,21 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
       const periodText = completed.vatPeriod ? ` VAT period ${completed.vatPeriod.start} to ${completed.vatPeriod.end}.` : "";
       const vatText = vatRows
         ? `${vatRows} VAT row(s).`
-        : "0 VAT row(s). VAT Assurance needs Xero invoice/bill/bank/journal tax lines; reconnect Xero if transaction scopes were added recently, or upload a VAT evidence export.";
-      setIntegrationMessage(`Xero sync completed: ${completed.counts?.trialBalance ?? 0} trial-balance and ${vatText}${periodText}${warningText}`);
-    } catch (error) { setIntegrationMessage(error instanceof Error ? error.message : "Xero sync failed."); }
+        : `0 VAT row(s). VAT Assurance needs ${label} tax-coded sales/purchases in the period, or upload a VAT evidence export.`;
+      setIntegrationMessage(`${label} sync completed: ${completed.counts?.trialBalance ?? 0} trial-balance and ${vatText}${periodText}${warningText}`);
+    } catch (error) { setIntegrationMessage(error instanceof Error ? error.message : `${label} sync failed.`); }
     finally { setIntegrationBusy(false); }
   };
 
-  const disconnectXero = async (integrationId: string) => {
+  const disconnectProvider = async (provider: "xero" | "quickbooks", integrationId: string) => {
+    const label = provider === "quickbooks" ? "QuickBooks" : "Xero";
     setIntegrationBusy(true); setIntegrationMessage("");
     try {
-      const response = await fetch("/api/integrations/xero/disconnect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ integrationId }) });
+      const response = await fetch(`/api/integrations/${provider}/disconnect`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ integrationId }) });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Xero disconnect failed.");
-      await reloadIntegrations(); setIntegrationMessage("Xero disconnected.");
-    } catch (error) { setIntegrationMessage(error instanceof Error ? error.message : "Xero disconnect failed."); }
+      if (!response.ok) throw new Error(result.error || `${label} disconnect failed.`);
+      await reloadIntegrations(); setIntegrationMessage(`${label} disconnected.`);
+    } catch (error) { setIntegrationMessage(error instanceof Error ? error.message : `${label} disconnect failed.`); }
     finally { setIntegrationBusy(false); }
   };
 
@@ -10930,7 +10932,7 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
                 </div>
                 <Pill level={integration.status === "connected" ? "low" : integration.status === "ready_to_connect" || integration.status === "tenant_selection_required" ? "medium" : "high"}>{integration.status.replaceAll("_", " ")}</Pill>
               </div>
-              {integration.provider === "xero" && integration.organisations?.length ? (
+              {integration.organisations?.length ? (
                 <div className="mt-3 grid gap-2">
                   {integration.connected && (
                     <div className="rounded-lg border border-line bg-white p-3 text-sm">
@@ -10973,8 +10975,8 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
                     <div key={organisation.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-white p-3 text-sm">
                       <div><strong>{organisation.name}</strong><p className="text-xs text-muted">{organisation.lastSyncedAt ? `Last synced ${new Date(organisation.lastSyncedAt).toLocaleString("en-GB")}` : "Not yet synced"}</p></div>
                       <div className="flex gap-2">
-                        {!organisation.selected && <button className="rounded-lg border border-line px-3 py-2 text-xs font-black" disabled={integrationBusy} onClick={() => selectXeroOrganisation(organisation.id)}>Select</button>}
-                        {organisation.selected && <><button className="rounded-lg bg-brand px-3 py-2 text-xs font-black text-white" disabled={integrationBusy} onClick={syncXero}>Sync now</button><button className="rounded-lg border border-red-200 px-3 py-2 text-xs font-black text-red-700" disabled={integrationBusy} onClick={() => disconnectXero(organisation.id)}>Disconnect</button></>}
+                        {integration.provider === "xero" && !organisation.selected && <button className="rounded-lg border border-line px-3 py-2 text-xs font-black" disabled={integrationBusy} onClick={() => selectXeroOrganisation(organisation.id)}>Select</button>}
+                        {organisation.selected && <><button className="rounded-lg bg-brand px-3 py-2 text-xs font-black text-white" disabled={integrationBusy} onClick={() => syncProvider(integration.provider)}>Sync now</button><button className="rounded-lg border border-red-200 px-3 py-2 text-xs font-black text-red-700" disabled={integrationBusy} onClick={() => disconnectProvider(integration.provider, organisation.id)}>Disconnect</button></>}
                       </div>
                     </div>
                   ))}

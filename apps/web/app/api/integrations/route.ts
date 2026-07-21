@@ -15,12 +15,13 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const tenantId = url.searchParams.get("tenantId") ?? "";
   const companyId = url.searchParams.get("companyId") ?? "";
-  const xeroOrganisations = !session.authDisabled && UUID_RE.test(tenantId) && UUID_RE.test(companyId)
-    ? await connectedXeroOrganisations(tenantId, companyId)
-    : [];
+  const realWorkspace = !session.authDisabled && UUID_RE.test(tenantId) && UUID_RE.test(companyId);
+  const xeroOrganisations = realWorkspace ? await connectedOrganisations("xero", tenantId, companyId) : [];
+  const quickbooksOrganisations = realWorkspace ? await connectedOrganisations("quickbooks", tenantId, companyId) : [];
+  const quickbooksConfigured = Boolean(process.env.QUICKBOOKS_CLIENT_ID && process.env.QUICKBOOKS_CLIENT_SECRET && process.env.QUICKBOOKS_REDIRECT_URI && process.env.INTEGRATION_ENCRYPTION_KEY);
   const integrations: AccountingIntegrationState[] = [
     integrationState("xero", "Xero", xeroConfigured(), xeroOrganisations, tenantId, companyId),
-    integrationState("quickbooks", "QuickBooks Online", Boolean(process.env.QUICKBOOKS_CLIENT_ID && process.env.QUICKBOOKS_CLIENT_SECRET && process.env.QUICKBOOKS_REDIRECT_URI && process.env.INTEGRATION_ENCRYPTION_KEY)),
+    integrationState("quickbooks", "QuickBooks Online", quickbooksConfigured, quickbooksOrganisations, tenantId, companyId),
   ];
   return NextResponse.json({ integrations });
 }
@@ -39,7 +40,7 @@ function integrationState(provider: AccountingIntegrationState["provider"], labe
     detail: connected
       ? `Connected to ${organisations.find((organisation) => organisation.selected)?.name}.`
       : selectionRequired
-        ? "Choose the Xero organisation that belongs to this ClosePilot company."
+        ? `Choose the ${label} organisation that belongs to this ClosePilot company.`
         : configured
       ? "OAuth application credentials detected. Ready to authorise."
       : `Set ${prefix}_CLIENT_ID, ${prefix}_CLIENT_SECRET and ${prefix}_REDIRECT_URI.`,
@@ -47,15 +48,16 @@ function integrationState(provider: AccountingIntegrationState["provider"], labe
     // workspace uses non-UUID ids (e.g. company_pilot_brightlane); linking it
     // would dead-end on the connect route's 400 "A UUID tenantId and companyId
     // are required." The client shows a "create a workspace first" guard instead.
-    connectUrl: configured && provider === "xero" && UUID_RE.test(tenantId) && UUID_RE.test(companyId) ? `/api/integrations/xero/connect?tenantId=${encodeURIComponent(tenantId)}&companyId=${encodeURIComponent(companyId)}` : undefined,
+    connectUrl: configured && UUID_RE.test(tenantId) && UUID_RE.test(companyId) ? `/api/integrations/${provider}/connect?tenantId=${encodeURIComponent(tenantId)}&companyId=${encodeURIComponent(companyId)}` : undefined,
     organisations,
   };
 }
 
-async function connectedXeroOrganisations(tenantId: string, companyId: string): Promise<NonNullable<AccountingIntegrationState["organisations"]>> {
+async function connectedOrganisations(provider: AccountingIntegrationState["provider"], tenantId: string, companyId: string): Promise<NonNullable<AccountingIntegrationState["organisations"]>> {
   const supabase = await createClient();
+  const fallback = provider === "xero" ? "Xero organisation" : "QuickBooks company";
   const { data } = await supabase.from("accounting_integrations")
     .select("id,external_tenant_name,selected,status,last_synced_at")
-    .eq("tenant_id", tenantId).eq("company_id", companyId).eq("provider", "xero");
-  return (data ?? []).map((row) => ({ id: row.id, name: row.external_tenant_name || "Xero organisation", selected: row.selected, status: row.status, lastSyncedAt: row.last_synced_at ?? undefined }));
+    .eq("tenant_id", tenantId).eq("company_id", companyId).eq("provider", provider);
+  return (data ?? []).map((row) => ({ id: row.id, name: row.external_tenant_name || fallback, selected: row.selected, status: row.status, lastSyncedAt: row.last_synced_at ?? undefined }));
 }
