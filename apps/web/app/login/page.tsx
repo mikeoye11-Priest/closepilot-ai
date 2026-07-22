@@ -102,6 +102,7 @@ export default function LoginPage() {
 
         <p className="mt-6 text-center text-xs text-slate-400">Standardise review and partner sign-off without replacing your accounts production software.</p>
         <p className="mt-2 text-center text-xs text-slate-500"><a className="underline hover:text-slate-300" href="/compatibility">View integrations and compatibility</a></p>
+        <p className="mt-2 text-center text-xs text-slate-500"><a className="underline hover:text-slate-300" href="/terms">Terms</a> · <a className="underline hover:text-slate-300" href="/privacy">Privacy</a></p>
       </div>
     </div>
   );

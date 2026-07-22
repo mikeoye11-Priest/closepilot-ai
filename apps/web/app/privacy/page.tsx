@@ -65,6 +65,7 @@ export default function PrivacyPage() {
 
         <Section title="6. How we store and protect your data">
           <p>Data is stored in a managed PostgreSQL database (Supabase) with <strong>row-level security</strong> scoping records to your workspace. All data is encrypted <strong>in transit</strong> (TLS/HTTPS) and <strong>at rest</strong>, and OAuth tokens are additionally encrypted at the application layer. Access is restricted and authenticated. We do not store payment-card data.</p>
+          <p>If a personal-data breach occurs, we investigate promptly, notify the Information Commissioner&rsquo;s Office within 72 hours where required, and inform affected users without undue delay where the breach is likely to result in a high risk to their rights.</p>
         </Section>
 
         <Section title="7. Service providers (sub-processors)">
