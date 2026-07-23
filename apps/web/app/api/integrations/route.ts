@@ -18,16 +18,19 @@ export async function GET(request: Request) {
   const realWorkspace = !session.authDisabled && UUID_RE.test(tenantId) && UUID_RE.test(companyId);
   const xeroOrganisations = realWorkspace ? await connectedOrganisations("xero", tenantId, companyId) : [];
   const quickbooksOrganisations = realWorkspace ? await connectedOrganisations("quickbooks", tenantId, companyId) : [];
+  const sageOrganisations = realWorkspace ? await connectedOrganisations("sage", tenantId, companyId) : [];
   const quickbooksConfigured = Boolean(process.env.QUICKBOOKS_CLIENT_ID && process.env.QUICKBOOKS_CLIENT_SECRET && process.env.QUICKBOOKS_REDIRECT_URI && process.env.INTEGRATION_ENCRYPTION_KEY);
+  const sageConfigured = Boolean(process.env.SAGE_CLIENT_ID && process.env.SAGE_CLIENT_SECRET && process.env.SAGE_REDIRECT_URI && process.env.INTEGRATION_ENCRYPTION_KEY);
   const integrations: AccountingIntegrationState[] = [
     integrationState("xero", "Xero", xeroConfigured(), xeroOrganisations, tenantId, companyId),
     integrationState("quickbooks", "QuickBooks Online", quickbooksConfigured, quickbooksOrganisations, tenantId, companyId),
+    integrationState("sage", "Sage Business Cloud", sageConfigured, sageOrganisations, tenantId, companyId),
   ];
   return NextResponse.json({ integrations });
 }
 
 function integrationState(provider: AccountingIntegrationState["provider"], label: string, configured: boolean, organisations: AccountingIntegrationState["organisations"] = [], tenantId = "", companyId = ""): AccountingIntegrationState {
-  const prefix = provider === "xero" ? "XERO" : "QUICKBOOKS";
+  const prefix = provider.toUpperCase();
   const connected = organisations.some((organisation) => organisation.selected);
   const selectionRequired = organisations.length > 1 && !connected;
   return {
@@ -55,7 +58,7 @@ function integrationState(provider: AccountingIntegrationState["provider"], labe
 
 async function connectedOrganisations(provider: AccountingIntegrationState["provider"], tenantId: string, companyId: string): Promise<NonNullable<AccountingIntegrationState["organisations"]>> {
   const supabase = await createClient();
-  const fallback = provider === "xero" ? "Xero organisation" : "QuickBooks company";
+  const fallback = provider === "xero" ? "Xero organisation" : provider === "sage" ? "Sage business" : "QuickBooks company";
   const { data } = await supabase.from("accounting_integrations")
     .select("id,external_tenant_name,selected,status,last_synced_at")
     .eq("tenant_id", tenantId).eq("company_id", companyId).eq("provider", provider);

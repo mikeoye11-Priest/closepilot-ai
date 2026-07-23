@@ -77,6 +77,8 @@ const HEADER_ALIASES: Record<string, string> = {
   account_no: "account_code",
   account_number: "account_code",
   account_number_long: "account_code",
+  n_c: "account_code", // Sage 50 nominal-ledger export ("N/C")
+  nc: "account_code",
   nominal_code: "account_code",
   nominal: "account_code",
   g_l_account: "account_code",
