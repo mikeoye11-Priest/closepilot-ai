@@ -22,6 +22,7 @@ export async function GET() {
     rateLimiting: Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN),
     xero: Boolean(process.env.XERO_CLIENT_ID && process.env.XERO_CLIENT_SECRET && process.env.XERO_REDIRECT_URI && process.env.INTEGRATION_ENCRYPTION_KEY),
     quickbooks: Boolean(process.env.QUICKBOOKS_CLIENT_ID && process.env.QUICKBOOKS_CLIENT_SECRET && process.env.QUICKBOOKS_REDIRECT_URI && process.env.INTEGRATION_ENCRYPTION_KEY),
+    sage: Boolean(process.env.SAGE_CLIENT_ID && process.env.SAGE_CLIENT_SECRET && process.env.SAGE_REDIRECT_URI && process.env.INTEGRATION_ENCRYPTION_KEY),
   };
 
   const ready = Object.values(checks).every(Boolean);
@@ -42,6 +43,7 @@ export async function GET() {
       aiCommentary: capabilities.aiCommentary,
       xero: capabilities.xero,
       quickbooks: capabilities.quickbooks,
+      sage: capabilities.sage,
     },
   }, { status: ready ? 200 : 503 });
 }

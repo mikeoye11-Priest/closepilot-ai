@@ -10743,7 +10743,7 @@ type XeroSyncPollResult = {
   error?: string;
 };
 
-async function pollSync(provider: "xero" | "quickbooks", syncId: string, onProgress: (status: XeroSyncPollResult["status"]) => void): Promise<XeroSyncPollResult> {
+async function pollSync(provider: "xero" | "quickbooks" | "sage", syncId: string, onProgress: (status: XeroSyncPollResult["status"]) => void): Promise<XeroSyncPollResult> {
   const deadline = Date.now() + 5 * 60 * 1000;
   while (Date.now() < deadline) {
     const response = await fetch(`/api/integrations/${provider}/sync?syncId=${encodeURIComponent(syncId)}`, { cache: "no-store" });
@@ -10814,8 +10814,8 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
     finally { setIntegrationBusy(false); }
   };
 
-  const syncProvider = async (provider: "xero" | "quickbooks") => {
-    const label = provider === "quickbooks" ? "QuickBooks" : "Xero";
+  const syncProvider = async (provider: "xero" | "quickbooks" | "sage") => {
+    const label = provider === "sage" ? "Sage" : provider === "quickbooks" ? "QuickBooks" : "Xero";
     setIntegrationBusy(true); setIntegrationMessage(`Queueing ${label} trial balance and VAT evidence…`);
     try {
       const chosenPeriod = vatFrequency === "accounts" ? undefined : vatPeriods.find((period) => period.value === vatPeriodValue);
@@ -10840,8 +10840,8 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
     finally { setIntegrationBusy(false); }
   };
 
-  const disconnectProvider = async (provider: "xero" | "quickbooks", integrationId: string) => {
-    const label = provider === "quickbooks" ? "QuickBooks" : "Xero";
+  const disconnectProvider = async (provider: "xero" | "quickbooks" | "sage", integrationId: string) => {
+    const label = provider === "sage" ? "Sage" : provider === "quickbooks" ? "QuickBooks" : "Xero";
     setIntegrationBusy(true); setIntegrationMessage("");
     try {
       const response = await fetch(`/api/integrations/${provider}/disconnect`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ integrationId }) });
@@ -10996,6 +10996,7 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
             </div>
           ))}
           {!integrations.length && <p className="text-sm text-muted">Integration status is unavailable.</p>}
+          <p className="text-xs text-muted">Using <span className="font-semibold">Sage 50</span> (desktop)? It has no cloud connection — export your trial balance / P&amp;L / balance sheet and upload them; ClosePilot builds the same review and accounts from the files.</p>
           {integrationMessage && <p className="rounded-lg border border-line bg-white p-3 text-sm font-semibold">{integrationMessage}</p>}
         </div>
       </Panel>

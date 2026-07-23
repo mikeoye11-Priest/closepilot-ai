@@ -1,4 +1,4 @@
-export type AccountingIntegrationProvider = "xero" | "quickbooks";
+export type AccountingIntegrationProvider = "xero" | "quickbooks" | "sage";
 
 export type AccountingIntegrationState = {
   provider: AccountingIntegrationProvider;
