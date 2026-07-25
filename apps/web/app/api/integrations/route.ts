@@ -62,5 +62,41 @@ async function connectedOrganisations(provider: AccountingIntegrationState["prov
   const { data } = await supabase.from("accounting_integrations")
     .select("id,external_tenant_name,selected,status,last_synced_at")
     .eq("tenant_id", tenantId).eq("company_id", companyId).eq("provider", provider);
-  return (data ?? []).map((row) => ({ id: row.id, name: row.external_tenant_name || fallback, selected: row.selected, status: row.status, lastSyncedAt: row.last_synced_at ?? undefined }));
+  const connections = data ?? [];
+  if (!connections.length) return [];
+
+  // Latest sync run per connection → lifecycle stage + a summary of the last sync.
+  const { data: runs } = await supabase.from("accounting_sync_runs")
+    .select("integration_id,status,records_imported,result_summary,error_message,completed_at,started_at")
+    .in("integration_id", connections.map((connection) => connection.id))
+    .order("started_at", { ascending: false });
+  const latest = new Map<string, NonNullable<typeof runs>[number]>();
+  for (const run of runs ?? []) if (!latest.has(run.integration_id)) latest.set(run.integration_id, run);
+
+  return connections.map((row) => {
+    const run = latest.get(row.id);
+    const summary = (run?.result_summary && typeof run.result_summary === "object" ? run.result_summary : {}) as { warnings?: unknown[]; statements?: { periodStart?: string; asOfDate?: string; vatPeriodStart?: string; vatPeriodEnd?: string } };
+    const statements = summary.statements ?? {};
+    const sync = run ? {
+      status: run.status,
+      recordsImported: run.records_imported ?? undefined,
+      periodStart: statements.periodStart,
+      periodEnd: statements.asOfDate,
+      vatPeriodStart: statements.vatPeriodStart,
+      vatPeriodEnd: statements.vatPeriodEnd,
+      completedAt: run.completed_at ?? undefined,
+      warnings: Array.isArray(summary.warnings) ? summary.warnings.length : 0,
+      error: run.error_message ?? undefined,
+    } : undefined;
+    const stage = stageFor(row.selected, run?.status);
+    return { id: row.id, name: row.external_tenant_name || fallback, selected: row.selected, status: row.status, lastSyncedAt: row.last_synced_at ?? undefined, stage, sync };
+  });
+}
+
+function stageFor(selected: boolean, runStatus?: string): NonNullable<NonNullable<AccountingIntegrationState["organisations"]>[number]["stage"]> {
+  if (!selected) return "authorised";
+  if (!runStatus) return "ready_to_sync";
+  if (runStatus === "queued" || runStatus === "running") return "syncing";
+  if (runStatus === "failed") return "needs_attention";
+  return "synced"; // completed
 }
