@@ -7,6 +7,9 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// The cross-file reconciliation checks (REC_001–005 + TB balance) that prove the
+// imported data is complete and accurate — surfaced per sync as data integrity.
+const RECONCILIATION_RE = /trial balance balances|(ar|ap) ledger agrees|(debtors|creditors) control|vat (report agrees|control)|balance sheet equation|bank reconciliation|p&l movement|retained earnings|cash accounts ready/i;
 
 export async function GET(request: Request) {
   const session = await requireApiSession();
@@ -75,8 +78,20 @@ async function connectedOrganisations(provider: AccountingIntegrationState["prov
 
   return connections.map((row) => {
     const run = latest.get(row.id);
-    const summary = (run?.result_summary && typeof run.result_summary === "object" ? run.result_summary : {}) as { warnings?: unknown[]; statements?: { periodStart?: string; asOfDate?: string; vatPeriodStart?: string; vatPeriodEnd?: string } };
+    const summary = (run?.result_summary && typeof run.result_summary === "object" ? run.result_summary : {}) as {
+      warnings?: unknown[];
+      statements?: { periodStart?: string; asOfDate?: string; vatPeriodStart?: string; vatPeriodEnd?: string };
+      analysis?: { validationChecks?: Array<{ name?: string; status?: string; detail?: string }> };
+    };
     const statements = summary.statements ?? {};
+    const recChecks = (summary.analysis?.validationChecks ?? []).filter((check) => RECONCILIATION_RE.test(String(check.name ?? "")));
+    const integrity = run?.status === "completed" && recChecks.length
+      ? {
+          total: recChecks.length,
+          passed: recChecks.filter((check) => check.status === "passed").length,
+          issues: recChecks.filter((check) => check.status !== "passed").map((check) => ({ name: String(check.name ?? ""), status: String(check.status ?? ""), detail: check.detail })),
+        }
+      : undefined;
     const sync = run ? {
       status: run.status,
       recordsImported: run.records_imported ?? undefined,
@@ -87,6 +102,7 @@ async function connectedOrganisations(provider: AccountingIntegrationState["prov
       completedAt: run.completed_at ?? undefined,
       warnings: Array.isArray(summary.warnings) ? summary.warnings.length : 0,
       error: run.error_message ?? undefined,
+      integrity,
     } : undefined;
     const stage = stageFor(row.selected, run?.status);
     return { id: row.id, name: row.external_tenant_name || fallback, selected: row.selected, status: row.status, lastSyncedAt: row.last_synced_at ?? undefined, stage, sync };

@@ -11009,6 +11009,9 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
                           {organisation.stage && <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${INTEGRATION_STAGE_META[organisation.stage]?.cls ?? "bg-slate-100 text-slate-600"}`}>{INTEGRATION_STAGE_META[organisation.stage]?.label ?? organisation.stage}</span>}
                         </div>
                         <p className={`text-xs ${organisation.stage === "needs_attention" ? "text-red-700" : "text-muted"}`}>{integrationSyncSummary(organisation)}</p>
+                        {organisation.sync?.integrity && (organisation.sync.integrity.issues.length === 0
+                          ? <p className="text-xs font-semibold text-emerald-700">✓ Data integrity: {organisation.sync.integrity.passed}/{organisation.sync.integrity.total} reconciliations passed</p>
+                          : <p className="text-xs font-semibold text-amber-800">⚠ Data integrity: {organisation.sync.integrity.passed}/{organisation.sync.integrity.total} passed — review {organisation.sync.integrity.issues.map((issue) => issue.name).join(", ")}</p>)}
                       </div>
                       <div className="flex gap-2">
                         {integration.provider === "xero" && !organisation.selected && <button className="rounded-lg border border-line px-3 py-2 text-xs font-black" disabled={integrationBusy} onClick={() => selectXeroOrganisation(organisation.id)}>Select</button>}
