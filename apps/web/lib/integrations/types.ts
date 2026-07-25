@@ -1,5 +1,23 @@
 export type AccountingIntegrationProvider = "xero" | "quickbooks" | "sage";
 
+// Connection lifecycle stage — makes "Connected" unambiguous about whether data
+// is actually available. authorised/ready_to_sync = connected but no data yet;
+// syncing = a run in flight; synced = last run completed; needs_attention = the
+// last run failed (or needs reconnection).
+export type IntegrationSyncStage = "authorised" | "ready_to_sync" | "syncing" | "synced" | "needs_attention";
+
+export type IntegrationSyncDetail = {
+  status: string;
+  recordsImported?: number;
+  periodStart?: string;
+  periodEnd?: string;
+  vatPeriodStart?: string;
+  vatPeriodEnd?: string;
+  completedAt?: string;
+  warnings?: number;
+  error?: string;
+};
+
 export type AccountingIntegrationState = {
   provider: AccountingIntegrationProvider;
   label: string;
@@ -9,5 +27,5 @@ export type AccountingIntegrationState = {
   capabilities: Array<"trial_balance" | "vat_transactions" | "vat_returns" | "contacts">;
   detail: string;
   connectUrl?: string;
-  organisations?: Array<{ id: string; name: string; selected: boolean; status: string; lastSyncedAt?: string }>;
+  organisations?: Array<{ id: string; name: string; selected: boolean; status: string; lastSyncedAt?: string; stage?: IntegrationSyncStage; sync?: IntegrationSyncDetail }>;
 };

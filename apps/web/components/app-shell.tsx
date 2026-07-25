@@ -10762,6 +10762,31 @@ async function pollSync(provider: "xero" | "quickbooks" | "sage", syncId: string
   throw new Error("The sync is still running. You can leave this page and check again shortly.");
 }
 
+type IntegrationOrg = NonNullable<AccountingIntegrationState["organisations"]>[number];
+const INTEGRATION_STAGE_META: Record<string, { label: string; cls: string }> = {
+  authorised: { label: "Authorised", cls: "bg-slate-100 text-slate-600" },
+  ready_to_sync: { label: "Ready to sync", cls: "bg-blue-50 text-blue-700 border border-blue-200" },
+  syncing: { label: "Syncing…", cls: "bg-amber-50 text-amber-800 border border-amber-200" },
+  synced: { label: "Synced", cls: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
+  needs_attention: { label: "Needs attention", cls: "bg-red-50 text-red-700 border border-red-200" },
+};
+// One-line summary of the last sync for a connected organisation: when, how many
+// records, the period covered, VAT period and any warnings/error.
+function integrationSyncSummary(org: IntegrationOrg): string {
+  const sync = org.sync;
+  if (!sync) return "Not yet synced";
+  if (sync.status === "queued" || sync.status === "running") return "Sync in progress…";
+  if (sync.status === "failed") return `Last sync failed${sync.error ? ` — ${sync.error}` : ""}`;
+  const parts: string[] = [];
+  const when = sync.completedAt ?? org.lastSyncedAt;
+  if (when) parts.push(`Last synced ${new Date(when).toLocaleString("en-GB")}`);
+  if (sync.recordsImported != null) parts.push(`${sync.recordsImported} records`);
+  if (sync.periodStart && sync.periodEnd) parts.push(`period ${sync.periodStart} → ${sync.periodEnd}`);
+  if (sync.vatPeriodStart && sync.vatPeriodEnd) parts.push(`VAT ${sync.vatPeriodStart} → ${sync.vatPeriodEnd}`);
+  if (sync.warnings) parts.push(`${sync.warnings} warning${sync.warnings === 1 ? "" : "s"}`);
+  return parts.join(" · ") || "Synced";
+}
+
 function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnalysis, setActive, presentationMode }: { tenant: Tenant; company: Company; userEmail: string; userName: string; onIntegrationAnalysis: (result: AnalysisResult, warnings?: string[]) => void; setActive: (value: string) => void; presentationMode: boolean }) {
   const canConnectLiveIntegration = WORKSPACE_UUID_RE.test(tenant.id) && WORKSPACE_UUID_RE.test(company.id);
   const [name, setName] = useState(userName);
@@ -10978,10 +11003,16 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
                   )}
                   {integration.organisations.map((organisation) => (
                     <div key={organisation.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-white p-3 text-sm">
-                      <div><strong>{organisation.name}</strong><p className="text-xs text-muted">{organisation.lastSyncedAt ? `Last synced ${new Date(organisation.lastSyncedAt).toLocaleString("en-GB")}` : "Not yet synced"}</p></div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <strong>{organisation.name}</strong>
+                          {organisation.stage && <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${INTEGRATION_STAGE_META[organisation.stage]?.cls ?? "bg-slate-100 text-slate-600"}`}>{INTEGRATION_STAGE_META[organisation.stage]?.label ?? organisation.stage}</span>}
+                        </div>
+                        <p className={`text-xs ${organisation.stage === "needs_attention" ? "text-red-700" : "text-muted"}`}>{integrationSyncSummary(organisation)}</p>
+                      </div>
                       <div className="flex gap-2">
                         {integration.provider === "xero" && !organisation.selected && <button className="rounded-lg border border-line px-3 py-2 text-xs font-black" disabled={integrationBusy} onClick={() => selectXeroOrganisation(organisation.id)}>Select</button>}
-                        {organisation.selected && <><button className="rounded-lg bg-brand px-3 py-2 text-xs font-black text-white" disabled={integrationBusy} onClick={() => syncProvider(integration.provider)}>Sync now</button><button className="rounded-lg border border-red-200 px-3 py-2 text-xs font-black text-red-700" disabled={integrationBusy} onClick={() => disconnectProvider(integration.provider, organisation.id)}>Disconnect</button></>}
+                        {organisation.selected && <><button className="rounded-lg bg-brand px-3 py-2 text-xs font-black text-white" disabled={integrationBusy} onClick={() => syncProvider(integration.provider)}>{organisation.stage === "needs_attention" ? "Retry sync" : "Sync now"}</button><button className="rounded-lg border border-red-200 px-3 py-2 text-xs font-black text-red-700" disabled={integrationBusy} onClick={() => disconnectProvider(integration.provider, organisation.id)}>Disconnect</button></>}
                       </div>
                     </div>
                   ))}
