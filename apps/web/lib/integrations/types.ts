@@ -16,6 +16,10 @@ export type IntegrationSyncDetail = {
   completedAt?: string;
   warnings?: number;
   error?: string;
+  // Cross-file reconciliation result for the imported data (REC checks): how many
+  // passed and which need review. Proves the sync is complete/accurate, not just
+  // that it ran.
+  integrity?: { passed: number; total: number; issues: Array<{ name: string; status: string; detail?: string }> };
 };
 
 export type AccountingIntegrationState = {
