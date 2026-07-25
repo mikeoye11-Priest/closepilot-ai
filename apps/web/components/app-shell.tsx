@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { evidenceGroundedAnswer, type GroundedAnswerSections } from "@/lib/ask-closepilot";
 import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompany, pilotTenant, tenant as seededTenant } from "@/lib/data";
-import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
+import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateMtdReadiness, calculateMtdReadinessDrivers, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type MtdReadinessDriver, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
 import { findingStandardReference } from "@/lib/finding-standards";
 import { buildPilotMetrics, PILOT_HOURLY_RATE, type PilotMetrics } from "@/lib/pilot-metrics";
@@ -122,6 +122,8 @@ type AssuranceMetrics = {
   closeReadiness: number;
   confidence: number;
   readinessDrivers: ReadinessDriver[];
+  mtdReadiness: number;
+  mtdReadinessDrivers: MtdReadinessDriver[];
 };
 
 type EvidenceProfile = {
@@ -368,7 +370,7 @@ const LAYER_RULE_COUNTS = {
 
 const TOTAL_RULES = Object.values(LAYER_RULE_COUNTS).reduce((s, v) => s + v, 0);
 
-function assuranceMetrics(findings: Finding[], validationChecks: ValidationCheck[], uploads: Upload[]): AssuranceMetrics {
+function assuranceMetrics(findings: Finding[], validationChecks: ValidationCheck[], uploads: Upload[], vatReview?: VatReviewResult): AssuranceMetrics {
   const scoredFindings = findings.filter((item) => item.evidenceStrength !== "advisory" && isOpenFinding(item));
   const critical = scoredFindings.filter((item) => item.severity === "critical").length;
   const high = scoredFindings.filter((item) => item.severity === "high").length;
@@ -393,7 +395,9 @@ function assuranceMetrics(findings: Finding[], validationChecks: ValidationCheck
   const closeReadiness = calculateAuditReadinessV2(findings, validationChecks, uploads);
   const confidence = calculateReviewConfidence(findings, validationChecks, uploads);
   const readinessDrivers = calculateReadinessDrivers(findings, validationChecks, uploads);
-  return { testsExecuted, critical, high, medium, low, closeReadiness, confidence, readinessDrivers };
+  const mtdReadiness = calculateMtdReadiness(findings, validationChecks, uploads, vatReview);
+  const mtdReadinessDrivers = calculateMtdReadinessDrivers(findings, validationChecks, uploads, vatReview);
+  return { testsExecuted, critical, high, medium, low, closeReadiness, confidence, readinessDrivers, mtdReadiness, mtdReadinessDrivers };
 }
 
 function coreQualityMetrics(
@@ -1764,7 +1768,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const timeSaved = estimateTimeSaved(openFindings);
   const validationBlockers = validationChecks.filter((item) => item.status === "failed").length;
   const validationWarnings = validationChecks.filter((item) => item.status === "warning").length;
-  const assurance = assuranceMetrics(findings, validationChecks, uploads);
+  const assurance = assuranceMetrics(findings, validationChecks, uploads, vatReview);
   const coreQuality = useMemo(() => coreQualityMetrics(uploads, validationChecks, findings, importProfiles, findingEvidence, partnerSignOff, vatReview), [findingEvidence, findings, importProfiles, partnerSignOff, uploads, validationChecks, vatReview]);
   const isPilotDemo = currentCompany.id === pilotCompany.id;
   const reviewLocked = partnerSignOff?.reviewPackStatus === "LOCKED" || partnerSignOff?.status === "locked" || partnerSignOff?.status === "signed";
@@ -3555,6 +3559,7 @@ function DashboardPanel({
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Metric title="Review Quality" value={uploads.length ? `${score}/100` : "—"} detail={uploads.length ? "Completeness of the reviewed pack" : "Awaiting upload"} tone={uploads.length ? risk : "medium"} />
         <Metric title="Audit Readiness" value={uploads.length ? `${assurance.closeReadiness}%` : "—"} detail={uploads.length ? "Manager review required" : "Awaiting finance pack"} tone={uploads.length ? (assurance.closeReadiness >= 80 ? "low" : assurance.closeReadiness >= 65 ? "medium" : "high") : "medium"} />
+        <Metric title="MTD Readiness" value={uploads.length ? `${assurance.mtdReadiness}%` : "—"} detail={uploads.length ? "Digital records for Making Tax Digital" : "Awaiting finance pack"} tone={uploads.length ? (assurance.mtdReadiness >= 80 ? "low" : assurance.mtdReadiness >= 65 ? "medium" : "high") : "medium"} />
         <Metric title="Review Confidence" value={uploads.length ? `${assurance.confidence}%` : "—"} detail={uploads.length ? "Evidence and validation quality" : "Awaiting evidence"} tone={uploads.length ? (assurance.confidence >= 85 ? "low" : "medium") : "medium"} />
         <Metric title="Month-End Time Saved" value={`${timeSaved}h`} detail="Estimated this close" tone="low" />
       </section>

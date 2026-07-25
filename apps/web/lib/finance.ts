@@ -273,6 +273,65 @@ export function calculateReviewConfidence(findings: Finding[], validationChecks:
   return Math.round(Math.max(0, Math.min(98, coverage * 0.35 + validation * 0.4 + evidence * 0.25)));
 }
 
+export type MtdReadinessDriver = { label: string; weight: number; passed: boolean; detail: string };
+
+// Making Tax Digital readiness — how ready a client's data is for MTD's digital
+// record-keeping and digital-submission requirements. ClosePilot is the review
+// layer (not the HMRC-filing bridge), so this scores the data feeding the return:
+// a digital link from source, complete + reconciled VAT digital records, and
+// retained/traceable records. "VAT reconciled" upgrades to "matches the filed
+// HMRC return" once the read-only MTD bridge is connected.
+export function calculateMtdReadinessDrivers(
+  findings: Finding[],
+  validationChecks: ValidationCheck[],
+  uploads: { fileType: string; detectionBasis?: string; detectedVendor?: string }[] = [],
+  vatReview?: { source?: string; transactionsAnalysed?: number },
+): MtdReadinessDriver[] {
+  const present = new Set(uploads.map((upload) => upload.fileType));
+  const hasVat = present.has("vat_report");
+  const viaApi = uploads.some((upload) => /api sync/i.test(upload.detectionBasis ?? ""));
+  const vatUsable = Boolean(vatReview && vatReview.source && vatReview.source !== "empty" && (vatReview.transactionsAnalysed ?? 0) > 0);
+  const vatControl = findValidation(validationChecks, ["vat report agrees", "vat control"]);
+  const evidenceRate = findings.length ? findings.filter((finding) => finding.evidence?.sourceFile).length / findings.length : 1;
+
+  return [
+    mtdDriver("Digital link from source", 30, uploads.length > 0, viaApi,
+      viaApi
+        ? "Data is pulled via an accounting-platform API — the digital link is preserved."
+        : "Data was uploaded manually. Fine for review, but keep the filing chain digital (no re-keying) to stay MTD-compliant."),
+    mtdDriver("VAT digital records", 25, hasVat, vatUsable,
+      vatUsable
+        ? "VAT transactions are captured and the return figures (Box 1–9) are computed from them."
+        : "No usable VAT records — a VAT export or connected VAT data is needed for MTD for VAT."),
+    mtdDriver("VAT reconciled", 25, hasVat, vatControl?.status === "passed",
+      vatControl?.status === "passed"
+        ? "VAT ties to the VAT control account. Upgrades to a match against the filed HMRC return once the MTD bridge is connected."
+        : "VAT does not yet reconcile to the control account — resolve before the return is filed."),
+    mtdDriver("Records retained & traceable", 20, uploads.length > 0, evidenceRate >= 0.8,
+      evidenceRate >= 0.8
+        ? "Findings are evidence-linked to source records, and sync history is retained."
+        : "Not every finding is evidence-linked — traceability back to source records is incomplete."),
+  ];
+}
+
+export function calculateMtdReadiness(
+  findings: Finding[],
+  validationChecks: ValidationCheck[],
+  uploads: { fileType: string; detectionBasis?: string; detectedVendor?: string }[] = [],
+  vatReview?: { source?: string; transactionsAnalysed?: number },
+): number {
+  if (!uploads.length) return 0;
+  const drivers = calculateMtdReadinessDrivers(findings, validationChecks, uploads, vatReview);
+  const earned = drivers.reduce((sum, driver) => sum + (driver.passed ? driver.weight : 0), 0);
+  // Open VAT findings drag readiness — VAT is the live MTD mandate.
+  const openVat = findings.filter((finding) => isScoreableFinding(finding) && finding.category === FINDING_CATEGORIES.VAT).length;
+  return Math.max(0, Math.min(98, Math.round(earned - openVat * 4)));
+}
+
+function mtdDriver(label: string, weight: number, hasEvidence: boolean, passed: boolean, detail: string): MtdReadinessDriver {
+  return { label, weight, passed: hasEvidence && passed, detail: hasEvidence ? detail : `${label} — needs a VAT/accounting export before it can be assessed.` };
+}
+
 export function findingRiskPenalty(finding: Finding) {
   const evidenceWeight = finding.evidenceStrength === "deterministic" ? 1 : finding.evidenceStrength === "advisory" ? 0.25 : 0.75;
   return (SEVERITY_PENALTY[finding.severity] ?? 4) *
