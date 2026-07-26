@@ -29,7 +29,24 @@ export async function GET(request: Request) {
     integrationState("quickbooks", "QuickBooks Online", quickbooksConfigured, quickbooksOrganisations, tenantId, companyId),
     integrationState("sage", "Sage Business Cloud", sageConfigured, sageOrganisations, tenantId, companyId),
   ];
-  return NextResponse.json({ integrations });
+  const recentActivity = realWorkspace ? await recentIntegrationActivity(tenantId) : [];
+  return NextResponse.json({ integrations, recentActivity });
+}
+
+export type IntegrationActivity = { action: string; at: string; entityType?: string };
+
+// The current user's recent connect / sync / disconnect events for this tenant,
+// so the audit trail is visible (not just written). RLS scopes audit_logs to the
+// acting user; `%connected` matches both connect and disconnect.
+async function recentIntegrationActivity(tenantId: string): Promise<IntegrationActivity[]> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("audit_logs")
+    .select("action,created_at,entity_type")
+    .eq("tenant_id", tenantId)
+    .or("action.ilike.%connected,action.ilike.%sync_completed")
+    .order("created_at", { ascending: false })
+    .limit(8);
+  return (data ?? []).map((row) => ({ action: row.action, at: row.created_at, entityType: row.entity_type ?? undefined }));
 }
 
 function integrationState(provider: AccountingIntegrationState["provider"], label: string, configured: boolean, organisations: AccountingIntegrationState["organisations"] = [], tenantId = "", companyId = ""): AccountingIntegrationState {
