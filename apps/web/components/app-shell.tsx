@@ -10787,6 +10787,15 @@ function integrationSyncSummary(org: IntegrationOrg): string {
   return parts.join(" · ") || "Synced";
 }
 
+// The connect / sync / disconnect audit trail, surfaced so the lifecycle is
+// traceable (the events are written on every action; this makes them visible).
+type IntegrationActivity = { action: string; at: string; entityType?: string };
+function integrationActivityLabel(action: string): string {
+  const provider = action.startsWith("quickbooks") ? "QuickBooks" : action.startsWith("sage") ? "Sage" : action.startsWith("xero") ? "Xero" : "";
+  const event = action.endsWith("_sync_completed") ? "synced" : action.endsWith("_disconnected") ? "disconnected" : action.endsWith("_connected") ? "connected" : action.replace(/_/g, " ");
+  return provider ? `${provider} ${event}` : action.replace(/_/g, " ");
+}
+
 function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnalysis, setActive, presentationMode }: { tenant: Tenant; company: Company; userEmail: string; userName: string; onIntegrationAnalysis: (result: AnalysisResult, warnings?: string[]) => void; setActive: (value: string) => void; presentationMode: boolean }) {
   const canConnectLiveIntegration = WORKSPACE_UUID_RE.test(tenant.id) && WORKSPACE_UUID_RE.test(company.id);
   const [name, setName] = useState(userName);
@@ -10798,6 +10807,7 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
   const [emailAlerts, setEmailAlerts] = useState(true);
   const [saved, setSaved] = useState(false);
   const [integrations, setIntegrations] = useState<AccountingIntegrationState[]>([]);
+  const [integrationActivity, setIntegrationActivity] = useState<IntegrationActivity[]>([]);
   const [integrationMessage, setIntegrationMessage] = useState("");
   const [integrationBusy, setIntegrationBusy] = useState(false);
   const [vatFrequency, setVatFrequency] = useState<"accounts" | VatFrequency>("accounts");
@@ -10820,17 +10830,21 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
     setAccountsPeriodValue(next === "current" ? "" : recentPeriods(next, PERIOD_COUNTS[next])[0]?.value ?? "");
   };
 
+  const applyIntegrations = (result: { integrations?: unknown; recentActivity?: unknown }) => {
+    setIntegrations(Array.isArray(result.integrations) ? result.integrations : []);
+    setIntegrationActivity(Array.isArray(result.recentActivity) ? result.recentActivity : []);
+  };
+
   useEffect(() => {
     fetch(`/api/integrations?tenantId=${encodeURIComponent(tenant.id)}&companyId=${encodeURIComponent(company.id)}`)
       .then((response) => response.json())
-      .then((result) => setIntegrations(Array.isArray(result.integrations) ? result.integrations : []))
-      .catch(() => setIntegrations([]));
+      .then(applyIntegrations)
+      .catch(() => { setIntegrations([]); setIntegrationActivity([]); });
   }, [company.id, tenant.id]);
 
   const reloadIntegrations = async () => {
     const response = await fetch(`/api/integrations?tenantId=${encodeURIComponent(tenant.id)}&companyId=${encodeURIComponent(company.id)}`);
-    const result = await response.json();
-    setIntegrations(Array.isArray(result.integrations) ? result.integrations : []);
+    applyIntegrations(await response.json());
   };
 
   const selectXeroOrganisation = async (integrationId: string) => {
@@ -10872,6 +10886,9 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
 
   const disconnectProvider = async (provider: "xero" | "quickbooks" | "sage", integrationId: string) => {
     const label = provider === "sage" ? "Sage" : provider === "quickbooks" ? "QuickBooks" : "Xero";
+    // Make the retention behaviour explicit: disconnecting only revokes the live
+    // connection — completed syncs, reviews and accounts stay as evidence.
+    if (typeof window !== "undefined" && !window.confirm(`Disconnect ${label}?\n\nThis stops future syncing and revokes ClosePilot's access. Reviews, accounts and sync evidence already produced are kept — reconnect any time to resume.`)) return;
     setIntegrationBusy(true); setIntegrationMessage("");
     try {
       const response = await fetch(`/api/integrations/${provider}/disconnect`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ integrationId }) });
@@ -11037,6 +11054,20 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
           {!integrations.length && <p className="text-sm text-muted">Integration status is unavailable.</p>}
           <p className="text-xs text-muted">Using <span className="font-semibold">Sage 50</span> (desktop)? It has no cloud connection — export your trial balance / P&amp;L / balance sheet and upload them; ClosePilot builds the same review and accounts from the files.</p>
           {integrationMessage && <p className="rounded-lg border border-line bg-white p-3 text-sm font-semibold">{integrationMessage}</p>}
+          {integrationActivity.length > 0 && (
+            <div className="rounded-lg border border-line bg-slate-50 p-3">
+              <p className="text-xs font-black uppercase tracking-wide text-muted">Recent activity</p>
+              <ul className="mt-2 grid gap-1">
+                {integrationActivity.map((event, index) => (
+                  <li key={`${event.action}-${event.at}-${index}`} className="flex items-center justify-between gap-3 text-xs">
+                    <span className="font-semibold">{integrationActivityLabel(event.action)}</span>
+                    <span className="text-muted">{new Date(event.at).toLocaleString("en-GB")}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[11px] text-muted">Connect, sync and disconnect events are recorded for this workspace — disconnecting keeps the reviews and accounts already produced.</p>
+            </div>
+          )}
         </div>
       </Panel>
 
