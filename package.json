@@ -39,7 +39,8 @@
     "verify": "npm run test && npm run test:rules && npm run test:finance-regression && npm run test:ai-explanations && npm run test:upload-capacity && npm run test:worker && npm run test:accounts && npm run test:vat && npm run test:vat-periods && npm run test:upload-statements && npm run test:quickbooks && npm run test:sage && npm run test:mtd && npm run test:standards && npm run test:pilot-metrics && npm run test:inventory && npm run test:scheduled-reports && npm run test:upload && npm run test:ui",
     "test:ui:install": "playwright install chromium",
     "check:launch": "node scripts/check-launch-readiness.mjs",
-    "db:migrate": "node scripts/migrate.mjs"
+    "db:migrate": "node scripts/migrate.mjs",
+    "verify:isolation": "node scripts/verify-tenant-isolation.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.107.0",
