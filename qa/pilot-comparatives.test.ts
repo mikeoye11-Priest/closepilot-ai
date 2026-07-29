@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { pilotStatements } from "../apps/web/lib/data";
+import { pilotStatements, pilotAnalysisResult } from "../apps/web/lib/data";
 import { buildManagementAccounts } from "../apps/web/lib/management-accounts";
 import { buildStatutoryAccounts } from "../apps/web/lib/statutory-accounts";
 
@@ -38,4 +38,20 @@ test("pilot statements drive statutory + full FRS 102 packs with comparatives, b
   const full = buildStatutoryAccounts(pilotStatements, { full: true });
   assert.equal(full.hasComparatives, true);
   assert.equal(full.balanced, true);
+});
+
+test("pilot VAT review ships a populated, consistent prior-period comparison", () => {
+  const vat = pilotAnalysisResult.vatReview!;
+  const pc = vat.periodComparison!;
+  // The movement panel renders whenever status !== "not_available".
+  assert.notEqual(pc.status, "not_available");
+  assert.ok(pc.previousVatDue > 0, "a prior-period VAT figure is present");
+  assert.equal(pc.movement, pc.currentVatDue - pc.previousVatDue, "movement is internally consistent");
+
+  // The prior-period assurance check is no longer untested, and with it resolved
+  // the pack carries no outstanding VAT exceptions.
+  const trend = vat.assuranceChecks.find((check) => check.id === "VAT-A05");
+  assert.equal(trend?.status, "passed");
+  assert.equal(vat.exceptionDashboard.total, 0);
+  assert.equal(vat.exceptionsCount, 0);
 });
