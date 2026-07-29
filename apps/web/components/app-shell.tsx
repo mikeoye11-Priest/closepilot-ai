@@ -11051,6 +11051,13 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
                         {organisation.sync?.integrity && (organisation.sync.integrity.issues.length === 0
                           ? <p className="text-xs font-semibold text-emerald-700">✓ Data integrity: {organisation.sync.integrity.passed}/{organisation.sync.integrity.total} reconciliations passed</p>
                           : <p className="text-xs font-semibold text-amber-800">⚠ Data integrity: {organisation.sync.integrity.passed}/{organisation.sync.integrity.total} passed — review {organisation.sync.integrity.issues.map((issue) => issue.name).join(", ")}</p>)}
+                        {organisation.change && organisation.change.recordsDelta !== 0 && (
+                          <p className={`text-xs ${organisation.change.recordsDelta < 0 ? "font-semibold text-amber-800" : "text-muted"}`}>
+                            {organisation.change.recordsDelta < 0 ? "⚠ " : ""}
+                            {organisation.change.recordsDelta > 0 ? "+" : ""}{organisation.change.recordsDelta} records vs last sync{organisation.change.sinceDate ? ` (${new Date(organisation.change.sinceDate).toLocaleDateString("en-GB")})` : ""}
+                            {organisation.change.recordsDelta < 0 ? " — fewer than before; check for a partial sync" : ""}
+                          </p>
+                        )}
                       </div>
                       <div className="flex gap-2">
                         {integration.provider === "xero" && !organisation.selected && <button className="rounded-lg border border-line px-3 py-2 text-xs font-black" disabled={integrationBusy} onClick={() => selectXeroOrganisation(organisation.id)}>Select</button>}

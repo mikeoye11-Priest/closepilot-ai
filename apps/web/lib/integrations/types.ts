@@ -23,6 +23,11 @@ export type IntegrationSyncDetail = {
   integrity?: { passed: number; total: number; issues: Array<{ name: string; status: string; detail?: string }> };
 };
 
+// How the imported data moved between the two most recent completed syncs. A
+// negative recordsDelta (fewer records than last time) is the signal worth
+// surfacing — it usually means a partial pull or newly missing data.
+export type IntegrationSyncChange = { sinceDate?: string; recordsDelta: number; previousRecords: number };
+
 export type AccountingIntegrationState = {
   provider: AccountingIntegrationProvider;
   label: string;
@@ -32,5 +37,5 @@ export type AccountingIntegrationState = {
   capabilities: Array<"trial_balance" | "vat_transactions" | "vat_returns" | "contacts">;
   detail: string;
   connectUrl?: string;
-  organisations?: Array<{ id: string; name: string; selected: boolean; status: string; lastSyncedAt?: string; stage?: IntegrationSyncStage; sync?: IntegrationSyncDetail }>;
+  organisations?: Array<{ id: string; name: string; selected: boolean; status: string; lastSyncedAt?: string; stage?: IntegrationSyncStage; sync?: IntegrationSyncDetail; change?: IntegrationSyncChange }>;
 };
