@@ -1824,7 +1824,12 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     if (active === "Collections Intelligence") return overduePromisesForAction
       ? { title: `${overduePromisesForAction} payment promise is overdue`, detail: "Contact the customer, confirm the revised date, and update the collection case.", cta: "Review Collection Queue", target: "Collections Intelligence", tone: "red" as const }
       : { title: "Confirm the next customer commitment", detail: "Update promises, disputes and contact history to keep the recovery forecast current.", cta: "Review Collection Queue", target: "Collections Intelligence", tone: "amber" as const };
-    if (active === "VAT Assurance") return { title: "Add the prior-period VAT return", detail: "Comparative VAT movement remains untested until the preceding return is uploaded.", cta: "Upload VAT Evidence", target: "Upload Finance Pack", tone: "amber" as const };
+    if (active === "VAT Assurance") {
+      const pc = vatReview?.periodComparison;
+      if (!pc || pc.status === "not_available") return { title: "Add the prior-period VAT return", detail: "Comparative VAT movement remains untested until the preceding return is uploaded.", cta: "Upload VAT Evidence", target: "Upload Finance Pack", tone: "amber" as const };
+      if (pc.status === "review") return { title: "Explain the VAT movement", detail: `Net VAT due moved ${pc.percentageChange === null ? "" : `${pc.percentageChange > 0 ? "+" : ""}${pc.percentageChange}% `}beyond the ${pc.threshold}% review threshold — document the driver before submission.`, cta: "Open Findings", target: "Findings", tone: "amber" as const };
+      return { title: "VAT return ready for submission", detail: "Boxes reconcile, the control account agrees and the prior-period movement is within threshold. Acknowledge and file.", cta: "Open Review Pack", target: "Review Pack", tone: "green" as const };
+    }
     if (active === "Findings") return acceptedRiskExposure
       ? { title: "Monitor the accepted debtor risk", detail: "The review is signed, but the accepted balance must remain visible until collection.", cta: "Open Collections", target: "Collections Intelligence", tone: "amber" as const }
       : { title: "Resolve the highest-impact finding", detail: "Open the first unresolved item, inspect its evidence, and record the reviewer decision.", cta: "Review Findings", target: "Findings", tone: "red" as const };

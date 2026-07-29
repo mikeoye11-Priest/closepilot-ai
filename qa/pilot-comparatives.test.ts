@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { pilotStatements, pilotAnalysisResult } from "../apps/web/lib/data";
 import { buildManagementAccounts } from "../apps/web/lib/management-accounts";
 import { buildStatutoryAccounts } from "../apps/web/lib/statutory-accounts";
+import { VAT_ENGINE_VERSION } from "../apps/web/lib/vat-engine";
 
 // The pilot demo ships prior-year comparatives so the accounts packs show a real
 // year-on-year comparison. This locks the figures + that both years balance.
@@ -54,4 +55,7 @@ test("pilot VAT review ships a populated, consistent prior-period comparison", (
   assert.equal(trend?.status, "passed");
   assert.equal(vat.exceptionDashboard.total, 0);
   assert.equal(vat.exceptionsCount, 0);
+
+  // Stamped with the current engine version, so it isn't flagged as stale.
+  assert.equal(vat.engineVersion, VAT_ENGINE_VERSION);
 });

@@ -1,6 +1,7 @@
 import type { AnalysisResult, ClientCompany, Company, Tenant } from "./types";
 import type { VatReviewResult } from "./vat-engine/types";
 import type { SyncStatements } from "./management-accounts";
+import { VAT_ENGINE_VERSION } from "./vat-engine";
 
 export const tenant: Tenant = {
   id: "tenant_default",
@@ -98,6 +99,9 @@ const pilotVatReview: VatReviewResult = {
   reconciliationStatus: "PASS",
   transactionsAnalysed: 142,
   source: "computed_transactions",
+  // Stamp the current engine version so the demo isn't flagged as a stale
+  // (older-engine) result needing a re-run.
+  engineVersion: VAT_ENGINE_VERSION,
 };
 
 // Prior-year comparative statements for the pilot demo (Brightlane Manufacturing
