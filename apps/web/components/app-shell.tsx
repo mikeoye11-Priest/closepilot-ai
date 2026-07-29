@@ -2988,7 +2988,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           onClose={() => setShowExport(false)}
         />
       )}
-      <aside className="no-print overflow-x-hidden border-b border-white/10 bg-[#111827] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0">
+      <aside className="no-print overflow-x-hidden border-b border-white/10 bg-[#0f172a] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r lg:border-white/5">
         <div className="flex items-center justify-between gap-4 px-4 py-4 lg:block lg:p-5">
           <div className="flex items-center gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-cyan to-brand font-black shadow-lg shadow-blue-950/30">CP</div>
@@ -3007,7 +3007,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
                 {group.items.map((item) => (
                   <button
                     key={item}
-                    className={`whitespace-nowrap rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors lg:whitespace-normal ${active === item ? "bg-white text-[#111827] shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`}
+                    className={`whitespace-nowrap rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors lg:whitespace-normal ${active === item ? "bg-white text-[#0f172a] shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`}
                     onClick={() => setActive(item)}
                   >
                     {pageLabel(item)}
@@ -3031,11 +3031,11 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
         </div>
       </aside>
       <main className="min-w-0 p-4 lg:p-6">
-        <header className="mb-5 rounded-lg border border-line bg-white/95 p-4 shadow-panel">
+        <header className="mb-5 rounded-xl border border-line bg-surface/95 p-4 shadow-card backdrop-blur-sm">
           <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
             <div className="min-w-0">
-              <p className="text-xs font-bold uppercase text-muted">ClosePilot Review</p>
-              <h1 className="mt-1 text-2xl font-black sm:text-3xl">{pageLabel(active)}</h1>
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">ClosePilot Review</p>
+              <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">{pageLabel(active)}</h1>
               <p className="mt-1 max-w-4xl text-sm font-semibold text-cyan">{tenant.name} · {currentCompany.name} · {uploads.length} finance exports reviewed, {openFindings.length} items to resolve.{timeSavedMins > 0 ? ` · Estimated time saved ${timeSavedHours}h (£${timeSavedValue.toLocaleString("en-GB")} manager capacity).` : ""}</p>
             </div>
             <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
@@ -6052,9 +6052,9 @@ function Metric({ title, value, detail, tone }: { title: string; value: string |
   const border = tone === "low" ? "border-l-green" : tone === "medium" ? "border-l-amber" : "border-l-red";
   const soft = tone === "low" ? "from-emerald-50" : tone === "medium" ? "from-amber-50" : "from-red-50";
   return (
-    <article className={`min-h-32 rounded-lg border border-l-4 border-line bg-gradient-to-br ${soft} to-white p-4 shadow-panel ${border}`}>
+    <article className={`min-h-32 rounded-xl border border-l-4 border-line bg-gradient-to-br ${soft} to-white p-4 shadow-card ${border}`}>
       <p className="text-sm font-bold text-muted">{title}</p>
-      <strong className="mt-3 block break-words text-3xl font-black leading-none">{value}</strong>
+      <strong className="mt-3 block break-words text-3xl font-black leading-none tracking-tight text-ink">{value}</strong>
       <span className="mt-2 block text-sm text-muted">{detail}</span>
     </article>
   );
@@ -6246,10 +6246,10 @@ function ReadinessTimeline({ uploads, findings, recommendations, validationCheck
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
-      <div className="mb-4 flex items-center gap-3">
-        <span className="h-5 w-1 rounded-full bg-brand" aria-hidden="true" />
-        <h2 className="font-bold">{title}</h2>
+    <section className="rounded-xl border border-line bg-surface p-5 shadow-card">
+      <div className="mb-4 flex items-center gap-2.5">
+        <span className="h-4 w-1 rounded-full bg-gradient-to-b from-cyan to-brand" aria-hidden="true" />
+        <h2 className="text-[15px] font-bold tracking-tight text-ink">{title}</h2>
       </div>
       {children}
     </section>
@@ -6258,20 +6258,20 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
 
 function Pill({ level, children }: { level: string; children: React.ReactNode }) {
   const colors: Record<string, string> = {
-    low: "bg-emerald-100 text-emerald-800",
-    medium: "bg-amber-100 text-amber-800",
-    high: "bg-red-100 text-red-800",
-    critical: "bg-red-100 text-red-800",
-    none: "bg-slate-100 text-slate-500"
+    low: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+    medium: "bg-amber-50 text-amber-700 ring-amber-600/20",
+    high: "bg-red-50 text-red-700 ring-red-600/20",
+    critical: "bg-red-50 text-red-700 ring-red-600/20",
+    none: "bg-slate-100 text-slate-500 ring-slate-500/20"
   };
-  return <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-black capitalize leading-none ${colors[level] || colors.medium}`}>{children}</span>;
+  return <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold capitalize leading-none ring-1 ring-inset ${colors[level] || colors.medium}`}>{children}</span>;
 }
 
 function MetricTile({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div className="rounded-lg border border-line bg-slate-50 p-4">
-      <p className="text-xs font-bold uppercase text-muted">{label}</p>
-      <p className="mt-2 truncate text-2xl font-black">{value}</p>
+    <div className="rounded-xl border border-line bg-slate-50/70 p-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p>
+      <p className="mt-2 truncate text-2xl font-black tracking-tight text-ink">{value}</p>
       <p className="mt-1 text-sm text-muted">{sub}</p>
     </div>
   );
