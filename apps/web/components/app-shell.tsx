@@ -22,14 +22,42 @@ import { ManagementAccountsPanel } from "@/components/management-accounts-panel"
 
 const navGroups = [
   { label: "", items: ["Partner Summary"] },
-  { label: "Review workflow", items: ["Findings", "Finance Review", "Audit Readiness", "Management Accounts", "Financial Accounts", "Full FRS 102 Accounts", "Inventory & WIP", "Review Pack"] },
-  { label: "Intelligence", items: ["Change Intelligence", "Cash Intelligence", "VAT Assurance", "Controls & Fraud", "Collections Intelligence", "Close Review"] },
-  { label: "Workspace", items: ["Upload Finance Pack", "Compatibility", "Practice Portal", "Practice Metrics", "Scheduled Reports", "Ask ClosePilot", "User Guide"] },
-  { label: "Admin", items: ["Assurance Engine", "Settings"], advanced: true },
+  { label: "Review", items: ["Findings", "Finance Review", "VAT Assurance", "Controls & Fraud", "Audit Readiness", "Review Pack"] },
+  { label: "Accounts", items: ["Accounts", "Inventory & WIP"] },
+  { label: "Analysis", items: ["Cash Intelligence", "Collections Intelligence", "Change Intelligence", "Close Review", "Ask ClosePilot"] },
+  { label: "Workspace", items: ["Upload Finance Pack", "Practice Portal", "Practice Metrics", "Scheduled Reports"] },
+  { label: "Help & admin", items: ["Compatibility", "User Guide", "Assurance Engine", "Settings"], advanced: true },
 ] as const;
 
+// item → its group label, so the sidebar can auto-open the section for the
+// current screen (progressive disclosure).
+const NAV_GROUP_OF: Record<string, string> = {};
+for (const group of navGroups) for (const item of group.items) NAV_GROUP_OF[item] = group.label;
+
+// Display labels — plain-English names for the nav + page header, kept separate
+// from the internal screen keys so routing/logic is untouched.
+const PAGE_LABELS: Record<string, string> = {
+  "Partner Summary": "Overview",
+  "Finance Review": "Finance review",
+  "VAT Assurance": "VAT",
+  "Controls & Fraud": "Controls & fraud",
+  "Audit Readiness": "Audit readiness",
+  "Review Pack": "Review pack",
+  "Cash Intelligence": "Cash flow",
+  "Collections Intelligence": "Collections",
+  "Change Intelligence": "Changes",
+  "Close Review": "Month-end close",
+  "Upload Finance Pack": "Import & upload",
+  "Practice Portal": "All clients",
+  "Practice Metrics": "Practice metrics",
+  "Scheduled Reports": "Scheduled reports",
+  "Assurance Engine": "Assurance engine",
+  "Compatibility": "File compatibility",
+  "User Guide": "Help & guide",
+};
+
 function pageLabel(value: string) {
-  return value === "Upload Finance Pack" ? "Import Prepared Accounts" : value;
+  return PAGE_LABELS[value] ?? value;
 }
 
 const storageKey = "closepilot.workspace.v2";
@@ -1716,6 +1744,10 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const workspaceLoadCancelled = useRef(false);
   const initialPilotSnapshot = presentationMode ? normaliseSnapshot(pilotAnalysisResult, { preserveStaleVatReview: true }) : undefined;
   const [active, setActive] = useState(presentationMode ? "Partner Summary" : "Onboarding");
+  // Sidebar accordion: only one section is expanded at a time (desktop). Opens the
+  // section that owns the current screen; defaults to Review when the screen has none.
+  const [openGroup, setOpenGroup] = useState<string>(() => NAV_GROUP_OF[presentationMode ? "Partner Summary" : "Onboarding"] || "Review");
+  useEffect(() => { const group = NAV_GROUP_OF[active]; if (group) setOpenGroup(group); }, [active]);
   const [onboardIntent, setOnboardIntent] = useState<"new" | "add-client">("new");
   const [tenant, setTenant] = useState<Tenant>(presentationMode ? pilotTenant : seededTenant);
   const [currentCompany, setCurrentCompany] = useState<Company>(presentationMode ? pilotCompany : seededCompany);
@@ -2941,9 +2973,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setFocusedFindingId(findingId);
       setActive("Findings");
     }} setActive={setActive} />;
-    if (active === "Management Accounts") return <ManagementAccountsPanel tenantId={tenant.id} companyId={currentCompany.id} companyName={currentCompany.name} />;
-    if (active === "Financial Accounts") return <ManagementAccountsPanel tenantId={tenant.id} companyId={currentCompany.id} companyName={currentCompany.name} variant="statutory" />;
-    if (active === "Full FRS 102 Accounts") return <ManagementAccountsPanel tenantId={tenant.id} companyId={currentCompany.id} companyName={currentCompany.name} variant="full" />;
+    if (active === "Accounts") return <AccountsWorkspace tenantId={tenant.id} companyId={currentCompany.id} companyName={currentCompany.name} />;
     if (active === "Review Pack") return <ReviewPack company={currentCompany} tenant={tenant} userName={userName} score={score} risk={risk} findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} recommendations={recommendations} validationChecks={validationChecks} uploads={uploads} financialExposure={financialExposure} cashAtRisk={cashAtRisk} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
     if (active === "Change Intelligence") return <ChangeIntelligence findings={findings} findingActivities={findingActivities} partnerSignOff={partnerSignOff} validationChecks={validationChecks} uploads={uploads} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
@@ -3000,22 +3030,37 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           <Pill level={hasUploadedData ? (openFindings.length ? "medium" : "low") : "none"}>{hasUploadedData ? (openFindings.length ? "Review open" : "Review complete") : "Awaiting upload"}</Pill>
         </div>
         <nav className="flex w-full max-w-full gap-1 overflow-x-auto px-4 pb-4 lg:block lg:overflow-y-auto lg:overflow-x-hidden lg:px-5 lg:pb-5">
-          {navGroups.filter((group) => !presentationMode || !("advanced" in group && group.advanced)).map((group) => (
-            <div key={group.label || "summary"} className="contents lg:mb-4 lg:block">
-              {group.label && <p className="hidden px-3 pb-1 pt-2 text-[11px] font-black uppercase tracking-wider text-slate-600 lg:block">{group.label}</p>}
-              <div className="contents lg:grid lg:gap-1">
-                {group.items.map((item) => (
+          {navGroups.filter((group) => !presentationMode || !("advanced" in group && group.advanced)).map((group) => {
+            // Ungrouped items (the Overview) always show; grouped sections expand
+            // one at a time on desktop. On mobile every item stays in the scroll rail.
+            const isOpen = !group.label || openGroup === group.label;
+            return (
+              <div key={group.label || "summary"} className="contents lg:mb-3 lg:block">
+                {group.label && (
                   <button
-                    key={item}
-                    className={`whitespace-nowrap rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors lg:whitespace-normal ${active === item ? "bg-white text-[#0f172a] shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`}
-                    onClick={() => setActive(item)}
+                    type="button"
+                    onClick={() => setOpenGroup(openGroup === group.label ? "" : group.label)}
+                    className="hidden w-full items-center justify-between rounded-lg px-3 pb-1 pt-2 text-[11px] font-black uppercase tracking-wider text-slate-500 transition-colors hover:text-slate-300 lg:flex"
+                    aria-expanded={isOpen}
                   >
-                    {pageLabel(item)}
+                    {group.label}
+                    <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className={`h-3.5 w-3.5 transition-transform ${isOpen ? "rotate-180" : ""}`}><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" /></svg>
                   </button>
-                ))}
+                )}
+                <div className={`contents lg:gap-1 ${isOpen ? "lg:grid" : "lg:hidden"}`}>
+                  {group.items.map((item) => (
+                    <button
+                      key={item}
+                      className={`whitespace-nowrap rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors lg:whitespace-normal ${active === item ? "bg-white text-[#0f172a] shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`}
+                      onClick={() => setActive(item)}
+                    >
+                      {pageLabel(item)}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
         <div className="mt-auto hidden border-t border-white/10 p-5 lg:block">
           <div className="mb-4 rounded-lg border border-white/10 bg-white/5 p-3">
@@ -6241,6 +6286,33 @@ function ReadinessTimeline({ uploads, findings, recommendations, validationCheck
         ))}
       </div>
     </Panel>
+  );
+}
+
+// One "Accounts" screen for the three production outputs (they share a component,
+// differing only by variant) — a segmented selector instead of three nav entries.
+function AccountsWorkspace({ tenantId, companyId, companyName }: { tenantId: string; companyId: string; companyName: string }) {
+  const [variant, setVariant] = useState<"management" | "statutory" | "full">("management");
+  const tabs: Array<{ id: "management" | "statutory" | "full"; label: string }> = [
+    { id: "management", label: "Management" },
+    { id: "statutory", label: "Financial (Statutory)" },
+    { id: "full", label: "Full FRS 102" },
+  ];
+  return (
+    <div className="grid gap-4">
+      <div className="inline-flex flex-wrap gap-1 self-start rounded-xl border border-line bg-surface p-1 shadow-card">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setVariant(tab.id)}
+            className={`rounded-lg px-3.5 py-2 text-sm font-bold transition-colors ${variant === tab.id ? "bg-brand text-white shadow-sm" : "text-muted hover:bg-slate-50"}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <ManagementAccountsPanel tenantId={tenantId} companyId={companyId} companyName={companyName} variant={variant} />
+    </div>
   );
 }
 
