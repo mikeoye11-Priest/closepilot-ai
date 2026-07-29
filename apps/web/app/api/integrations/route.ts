@@ -35,15 +35,15 @@ export async function GET(request: Request) {
 
 export type IntegrationActivity = { action: string; at: string; entityType?: string };
 
-// The current user's recent connect / sync / disconnect events for this tenant,
-// so the audit trail is visible (not just written). RLS scopes audit_logs to the
-// acting user; `%connected` matches both connect and disconnect.
+// The current user's recent connect / sync / disconnect / erase events for this
+// tenant, so the audit trail is visible (not just written). RLS scopes audit_logs
+// to the acting user; `%connected` matches both connect and disconnect.
 async function recentIntegrationActivity(tenantId: string): Promise<IntegrationActivity[]> {
   const supabase = await createClient();
   const { data } = await supabase.from("audit_logs")
     .select("action,created_at,entity_type")
     .eq("tenant_id", tenantId)
-    .or("action.ilike.%connected,action.ilike.%sync_completed")
+    .or("action.ilike.%connected,action.ilike.%sync_completed,action.ilike.%erased")
     .order("created_at", { ascending: false })
     .limit(8);
   return (data ?? []).map((row) => ({ action: row.action, at: row.created_at, entityType: row.entity_type ?? undefined }));

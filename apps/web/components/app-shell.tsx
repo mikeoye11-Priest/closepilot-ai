@@ -10791,6 +10791,7 @@ function integrationSyncSummary(org: IntegrationOrg): string {
 // traceable (the events are written on every action; this makes them visible).
 type IntegrationActivity = { action: string; at: string; entityType?: string };
 function integrationActivityLabel(action: string): string {
+  if (action === "integration_data_erased") return "Synced data erased";
   const provider = action.startsWith("quickbooks") ? "QuickBooks" : action.startsWith("sage") ? "Sage" : action.startsWith("xero") ? "Xero" : "";
   const event = action.endsWith("_sync_completed") ? "synced" : action.endsWith("_disconnected") ? "disconnected" : action.endsWith("_connected") ? "connected" : action.replace(/_/g, " ");
   return provider ? `${provider} ${event}` : action.replace(/_/g, " ");
@@ -10896,6 +10897,25 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
       if (!response.ok) throw new Error(result.error || `${label} disconnect failed.`);
       await reloadIntegrations(); setIntegrationMessage(`${label} disconnected.`);
     } catch (error) { setIntegrationMessage(error instanceof Error ? error.message : `${label} disconnect failed.`); }
+    finally { setIntegrationBusy(false); }
+  };
+
+  // Right to erasure — permanently deletes this client's synced accounting data
+  // and connections. Distinct from disconnect (which keeps the evidence): a
+  // typed confirmation guards it because it cannot be undone.
+  const eraseIntegrationData = async () => {
+    if (typeof window === "undefined") return;
+    const confirmation = window.prompt(`Permanently erase ALL synced accounting data and connections for ${company.name}?\n\nThis deletes the imported trial balances, VAT evidence and reviews sourced from the connected accounting systems, and cannot be undone. (Uploaded files and manual work are not affected.)\n\nType ERASE to confirm.`);
+    if (confirmation == null) return;
+    if (confirmation.trim().toUpperCase() !== "ERASE") { setIntegrationMessage("Erase cancelled — confirmation text did not match."); return; }
+    setIntegrationBusy(true); setIntegrationMessage("Erasing synced accounting data…");
+    try {
+      const response = await fetch(`/api/integrations/erase`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenantId: tenant.id, companyId: company.id }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Erase failed.");
+      await reloadIntegrations();
+      setIntegrationMessage(result.message || "Synced accounting data erased.");
+    } catch (error) { setIntegrationMessage(error instanceof Error ? error.message : "Erase failed."); }
     finally { setIntegrationBusy(false); }
   };
 
@@ -11066,6 +11086,13 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
                 ))}
               </ul>
               <p className="mt-2 text-[11px] text-muted">Connect, sync and disconnect events are recorded for this workspace — disconnecting keeps the reviews and accounts already produced.</p>
+            </div>
+          )}
+          {canConnectLiveIntegration && integrations.some((integration) => (integration.organisations?.length ?? 0) > 0) && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+              <p className="text-xs font-black uppercase tracking-wide text-red-700">Erase synced data</p>
+              <p className="mt-1 text-xs text-red-950">Permanently delete all accounting data synced for <span className="font-semibold">{company.name}</span> — imported trial balances, VAT evidence and the reviews built from them — and remove its connections. This <span className="font-semibold">cannot be undone</span>. Uploaded files and manual work are not affected. To simply stop syncing while keeping the evidence, use <span className="font-semibold">Disconnect</span> above.</p>
+              <button className="mt-2 rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-black text-red-700 disabled:opacity-50" disabled={integrationBusy} onClick={eraseIntegrationData}>Erase synced data…</button>
             </div>
           )}
         </div>
