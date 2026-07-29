@@ -4,6 +4,7 @@ import { authenticatedXeroClient, selectedXeroConnection } from "@/lib/integrati
 import { fetchXeroSyncData } from "@/lib/integrations/xero-sync";
 import { xeroParsedFiles } from "@/lib/integrations/xero-parsed-files";
 import { describeXeroError } from "@/lib/integrations/xero";
+import { isReauthError, markConnectionReauthRequired } from "@/lib/integrations/reauth";
 import { analyseParsedFiles, scopeAnalysisResult } from "@/lib/upload-analysis";
 import type { Company, Tenant } from "@/lib/types";
 import { reportError } from "@/lib/logger";
@@ -114,11 +115,14 @@ async function runXeroSync({ supabase, connection, syncId, sessionUserId, body, 
     // management-accounts pack can render P&L / balance sheet / aged / cash.
     const statements = { asOfDate, periodStart: sync.periodStart, vatPeriodStart: sync.vatPeriodStart, vatPeriodEnd: sync.vatPeriodEnd, currency: company.currency, companyName: company.name, companyIndustry: company.industry, profitLoss: sync.profitLossRows, priorProfitLoss: sync.priorProfitLossRows, balanceSheet: sync.balanceSheetRows, agedDebtors: sync.agedDebtorRows, agedCreditors: sync.agedCreditorRows, bank: sync.bankReconRows, trialBalance: sync.trialBalanceRows };
     await supabase.from("accounting_sync_runs").update({ status: "completed", records_imported: imported, result_summary: { counts: sync.counts, warnings: sync.warnings, statements, analysis }, completed_at: completedAt }).eq("id", syncId);
-    await supabase.from("accounting_integrations").update({ last_synced_at: completedAt, updated_at: completedAt }).eq("id", connection.id);
+    // A successful sync self-heals the connection status (e.g. after a reconnect).
+    await supabase.from("accounting_integrations").update({ status: "connected", last_synced_at: completedAt, updated_at: completedAt }).eq("id", connection.id);
     await supabase.from("audit_logs").insert({ id: crypto.randomUUID(), tenant_id: tenantId, user_id: sessionUserId, action: "xero_sync_completed", entity_type: "accounting_sync_run", entity_id: syncId });
   } catch (error) {
-    const message = describeXeroError(error);
+    const reauth = isReauthError(error);
+    const message = reauth ? "Reconnect needed — Xero access was revoked or has expired. Re-authorise to resume syncing." : describeXeroError(error);
     reportError(error, { route: "xero/sync", syncId, tenantId, companyId });
+    if (reauth) await markConnectionReauthRequired(supabase, connection.id);
     await supabase.from("accounting_sync_runs").update({ status: "failed", error_message: message, completed_at: new Date().toISOString() }).eq("id", syncId);
   }
 }
