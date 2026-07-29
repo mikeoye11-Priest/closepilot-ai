@@ -3,8 +3,9 @@ export type AccountingIntegrationProvider = "xero" | "quickbooks" | "sage";
 // Connection lifecycle stage — makes "Connected" unambiguous about whether data
 // is actually available. authorised/ready_to_sync = connected but no data yet;
 // syncing = a run in flight; synced = last run completed; needs_attention = the
-// last run failed (or needs reconnection).
-export type IntegrationSyncStage = "authorised" | "ready_to_sync" | "syncing" | "synced" | "needs_attention";
+// last run failed; reauth_required = the OAuth grant was revoked or expired and
+// the connection must be reconnected before it can sync again.
+export type IntegrationSyncStage = "authorised" | "ready_to_sync" | "syncing" | "synced" | "needs_attention" | "reauth_required";
 
 export type IntegrationSyncDetail = {
   status: string;

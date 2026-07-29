@@ -10769,10 +10769,12 @@ const INTEGRATION_STAGE_META: Record<string, { label: string; cls: string }> = {
   syncing: { label: "Syncing…", cls: "bg-amber-50 text-amber-800 border border-amber-200" },
   synced: { label: "Synced", cls: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
   needs_attention: { label: "Needs attention", cls: "bg-red-50 text-red-700 border border-red-200" },
+  reauth_required: { label: "Reconnect needed", cls: "bg-red-50 text-red-700 border border-red-200" },
 };
 // One-line summary of the last sync for a connected organisation: when, how many
 // records, the period covered, VAT period and any warnings/error.
 function integrationSyncSummary(org: IntegrationOrg): string {
+  if (org.stage === "reauth_required") return "Access was revoked or has expired — reconnect to resume syncing.";
   const sync = org.sync;
   if (!sync) return "Not yet synced";
   if (sync.status === "queued" || sync.status === "running") return "Sync in progress…";
@@ -11052,7 +11054,12 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
                       </div>
                       <div className="flex gap-2">
                         {integration.provider === "xero" && !organisation.selected && <button className="rounded-lg border border-line px-3 py-2 text-xs font-black" disabled={integrationBusy} onClick={() => selectXeroOrganisation(organisation.id)}>Select</button>}
-                        {organisation.selected && <><button className="rounded-lg bg-brand px-3 py-2 text-xs font-black text-white" disabled={integrationBusy} onClick={() => syncProvider(integration.provider)}>{organisation.stage === "needs_attention" ? "Retry sync" : "Sync now"}</button><button className="rounded-lg border border-red-200 px-3 py-2 text-xs font-black text-red-700" disabled={integrationBusy} onClick={() => disconnectProvider(integration.provider, organisation.id)}>Disconnect</button></>}
+                        {organisation.selected && <>
+                          {organisation.stage === "reauth_required" && integration.connectUrl
+                            ? <a className="rounded-lg bg-red-600 px-3 py-2 text-xs font-black text-white" href={integration.connectUrl}>Reconnect</a>
+                            : <button className="rounded-lg bg-brand px-3 py-2 text-xs font-black text-white" disabled={integrationBusy} onClick={() => syncProvider(integration.provider)}>{organisation.stage === "needs_attention" ? "Retry sync" : "Sync now"}</button>}
+                          <button className="rounded-lg border border-red-200 px-3 py-2 text-xs font-black text-red-700" disabled={integrationBusy} onClick={() => disconnectProvider(integration.provider, organisation.id)}>Disconnect</button>
+                        </>}
                       </div>
                     </div>
                   ))}

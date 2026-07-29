@@ -121,12 +121,15 @@ async function connectedOrganisations(provider: AccountingIntegrationState["prov
       error: run.error_message ?? undefined,
       integrity,
     } : undefined;
-    const stage = stageFor(row.selected, run?.status);
+    const stage = stageFor(row.selected, run?.status, row.status);
     return { id: row.id, name: row.external_tenant_name || fallback, selected: row.selected, status: row.status, lastSyncedAt: row.last_synced_at ?? undefined, stage, sync };
   });
 }
 
-function stageFor(selected: boolean, runStatus?: string): NonNullable<NonNullable<AccountingIntegrationState["organisations"]>[number]["stage"]> {
+function stageFor(selected: boolean, runStatus?: string, connectionStatus?: string): NonNullable<NonNullable<AccountingIntegrationState["organisations"]>[number]["stage"]> {
+  // A revoked/expired grant overrides everything — the connection can't sync
+  // until it's reconnected, regardless of the last run's outcome.
+  if (connectionStatus === "reauth_required") return "reauth_required";
   if (!selected) return "authorised";
   if (!runStatus) return "ready_to_sync";
   if (runStatus === "queued" || runStatus === "running") return "syncing";
