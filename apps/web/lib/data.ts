@@ -1,5 +1,6 @@
 import type { AnalysisResult, ClientCompany, Company, Tenant } from "./types";
 import type { VatReviewResult } from "./vat-engine/types";
+import type { SyncStatements } from "./management-accounts";
 
 export const tenant: Tenant = {
   id: "tenant_default",
@@ -99,7 +100,67 @@ const pilotVatReview: VatReviewResult = {
   source: "computed_transactions",
 };
 
+// Prior-year comparative statements for the pilot demo (Brightlane Manufacturing
+// Ltd), so the management / financial / full-FRS-102 accounts render a genuine
+// year-on-year comparison. Current FY to 31 May 2026 vs prior FY to 31 May 2025 —
+// a coherent, balancing SME manufacturer with a modest-growth, margin-improving
+// story. P&L costs are signed negative; the balance sheet carries the prior year
+// in `prior_amount`; both years balance (net assets = capital and reserves).
+const pilotProfitLoss = [
+  { category: "Turnover", description: "Product sales", amount: "1760000", prior_amount: "1610000" },
+  { category: "Turnover", description: "Service and maintenance", amount: "320000", prior_amount: "280000" },
+  { category: "Cost of Sales", description: "Raw materials", amount: "-910000", prior_amount: "-865000" },
+  { category: "Cost of Sales", description: "Direct labour", amount: "-430000", prior_amount: "-405000" },
+  { category: "Overheads", description: "Administrative salaries", amount: "-280000", prior_amount: "-260000" },
+  { category: "Overheads", description: "Premises and utilities", amount: "-96000", prior_amount: "-92000" },
+  { category: "Overheads", description: "Depreciation", amount: "-74000", prior_amount: "-70000" },
+  { category: "Overheads", description: "Other overheads", amount: "-128000", prior_amount: "-118000" },
+];
+
+export const pilotStatements: SyncStatements = {
+  asOfDate: "2026-05-31",
+  periodStart: "2025-06-01",
+  currency: "GBP",
+  companyName: pilotCompany.name,
+  companyIndustry: pilotCompany.industry,
+  profitLoss: pilotProfitLoss,
+  // Prior-year P&L as its own period (prior figures carried in `amount`), which
+  // drives the pack's summary comparatives and the year-on-year narrative.
+  priorProfitLoss: pilotProfitLoss.map((row) => ({ category: row.category, description: row.description, amount: row.prior_amount })),
+  balanceSheet: [
+    { category: "Fixed Assets", item: "Plant and machinery", amount: "520000", prior_amount: "480000" },
+    { category: "Fixed Assets", item: "Motor vehicles", amount: "60000", prior_amount: "72000" },
+    { category: "Fixed Assets", item: "Fixtures and fittings", amount: "40000", prior_amount: "35000" },
+    { category: "Current Assets", item: "Stock and work in progress", amount: "310000", prior_amount: "295000" },
+    { category: "Current Assets", item: "Trade debtors", amount: "268000", prior_amount: "240000" },
+    { category: "Current Assets", item: "Cash at bank", amount: "142000", prior_amount: "70000" },
+    { category: "Current Liabilities", item: "Trade creditors", amount: "196000", prior_amount: "180000" },
+    { category: "Current Liabilities", item: "VAT payable", amount: "15200", prior_amount: "12300" },
+    { category: "Current Liabilities", item: "Accruals and deferred income", amount: "48000", prior_amount: "44000" },
+    { category: "Current Liabilities", item: "Corporation tax payable", amount: "34000", prior_amount: "18000" },
+    { category: "Capital and reserves", item: "Called-up share capital", amount: "100000", prior_amount: "100000" },
+    { category: "Capital and reserves", item: "Retained earnings", amount: "946800", prior_amount: "837700" },
+  ],
+  agedDebtors: [
+    { customer: "Delphi Retail Group", amount: "120000", days_overdue: "0" },
+    { customer: "Halcyon Interiors", amount: "78000", days_overdue: "18" },
+    { customer: "Meridian Contracts", amount: "44000", days_overdue: "47" },
+    { customer: "Oakfield Trading", amount: "26000", days_overdue: "78" },
+  ],
+  agedCreditors: [
+    { supplier: "Steelworks Supplies Ltd", amount: "96000", days_overdue: "12" },
+    { supplier: "Northern Components", amount: "60000", days_overdue: "22" },
+    { supplier: "Apex Logistics", amount: "40000", days_overdue: "40" },
+  ],
+  bank: [
+    { account: "Business current account", closing_balance: "128000", unreconciled_count: "0" },
+    { account: "Reserve deposit account", closing_balance: "14000", unreconciled_count: "0" },
+  ],
+  trialBalance: [],
+};
+
 export const pilotAnalysisResult: AnalysisResult = {
+  statements: pilotStatements,
   uploads: [
     { id: "up_pilot_tb", tenantId: pilotTenant.id, companyId: pilotCompany.id, fileType: "trial_balance", fileName: "trial-balance-may.csv", originalFileName: "trial-balance-may.csv", uploadedAt, rowCount: 184, detectionConfidence: 0.98, detectedVendor: "Sage" },
     { id: "up_pilot_pl", tenantId: pilotTenant.id, companyId: pilotCompany.id, fileType: "profit_loss", fileName: "profit-loss-may.csv", originalFileName: "profit-loss-may.csv", uploadedAt, rowCount: 96, detectionConfidence: 0.96, detectedVendor: "Sage" },
