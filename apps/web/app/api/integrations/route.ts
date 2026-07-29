@@ -91,7 +91,15 @@ async function connectedOrganisations(provider: AccountingIntegrationState["prov
     .in("integration_id", connections.map((connection) => connection.id))
     .order("started_at", { ascending: false });
   const latest = new Map<string, NonNullable<typeof runs>[number]>();
-  for (const run of runs ?? []) if (!latest.has(run.integration_id)) latest.set(run.integration_id, run);
+  const completedByIntegration = new Map<string, NonNullable<typeof runs>>();
+  for (const run of runs ?? []) {
+    if (!latest.has(run.integration_id)) latest.set(run.integration_id, run);
+    if (run.status === "completed") {
+      const list = completedByIntegration.get(run.integration_id) ?? [];
+      list.push(run); // runs are ordered started_at desc, so [0] = latest completed
+      completedByIntegration.set(run.integration_id, list);
+    }
+  }
 
   return connections.map((row) => {
     const run = latest.get(row.id);
@@ -122,7 +130,13 @@ async function connectedOrganisations(provider: AccountingIntegrationState["prov
       integrity,
     } : undefined;
     const stage = stageFor(row.selected, run?.status, row.status);
-    return { id: row.id, name: row.external_tenant_name || fallback, selected: row.selected, status: row.status, lastSyncedAt: row.last_synced_at ?? undefined, stage, sync };
+    // Change detection: how the imported record count moved between the two most
+    // recent completed syncs (a drop usually flags a partial pull).
+    const completed = completedByIntegration.get(row.id) ?? [];
+    const change = completed.length >= 2
+      ? { sinceDate: completed[1].completed_at ?? completed[1].started_at ?? undefined, recordsDelta: (completed[0].records_imported ?? 0) - (completed[1].records_imported ?? 0), previousRecords: completed[1].records_imported ?? 0 }
+      : undefined;
+    return { id: row.id, name: row.external_tenant_name || fallback, selected: row.selected, status: row.status, lastSyncedAt: row.last_synced_at ?? undefined, stage, sync, change };
   });
 }
 
