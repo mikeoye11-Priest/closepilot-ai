@@ -4,6 +4,7 @@
 // stored (encrypted) in accounting_integrations exactly like Xero.
 
 import { redactSecrets } from "./xero";
+import { resilientFetch } from "./http";
 
 export const QUICKBOOKS_SCOPES = ["com.intuit.quickbooks.accounting", "openid", "profile", "email"];
 
@@ -45,7 +46,7 @@ type TokenResponse = { access_token: string; refresh_token: string; expires_in: 
 
 async function tokenRequest(form: URLSearchParams): Promise<QuickBooksTokens> {
   const auth = Buffer.from(`${required("QUICKBOOKS_CLIENT_ID")}:${required("QUICKBOOKS_CLIENT_SECRET")}`).toString("base64");
-  const response = await fetch(TOKEN_URL, {
+  const response = await resilientFetch(TOKEN_URL, {
     method: "POST",
     headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
     body: form.toString(),
@@ -72,7 +73,7 @@ export function refreshTokens(refreshToken: string) {
 // Authenticated Accounting API GET → JSON. Used for reports, entity queries and
 // company info during the callback.
 export async function quickbooksFetch<T>(baseUrl: string, accessToken: string, path: string): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
+  const response = await resilientFetch(`${baseUrl}${path}`, {
     headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
   });
   if (!response.ok) throw new Error(`QuickBooks API ${path.split("?")[0]} failed: HTTP ${response.status} — ${redactSecrets((await response.text()).slice(0, 300))}`);
