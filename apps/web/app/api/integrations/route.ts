@@ -2,6 +2,7 @@ import { requireApiSession } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase-server";
 import type { AccountingIntegrationState } from "@/lib/integrations/types";
 import { xeroConfigured } from "@/lib/integrations/xero";
+import { expireStaleRuns } from "@/lib/integrations/sync-runs";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -84,6 +85,10 @@ async function connectedOrganisations(provider: AccountingIntegrationState["prov
     .eq("tenant_id", tenantId).eq("company_id", companyId).eq("provider", provider);
   const connections = data ?? [];
   if (!connections.length) return [];
+
+  // Self-heal any stuck runs before reading, so a dead background job doesn't
+  // leave the connection showing "Syncing…" forever.
+  await expireStaleRuns(supabase, connections.map((connection) => connection.id));
 
   // Latest sync run per connection → lifecycle stage + a summary of the last sync.
   const { data: runs } = await supabase.from("accounting_sync_runs")
