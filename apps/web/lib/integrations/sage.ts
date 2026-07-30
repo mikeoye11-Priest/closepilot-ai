@@ -4,6 +4,7 @@
 // are stored (encrypted) in accounting_integrations like the other providers.
 
 import { redactSecrets } from "./xero";
+import { resilientFetch } from "./http";
 
 export const SAGE_SCOPES = ["full_access"];
 
@@ -41,7 +42,7 @@ type TokenResponse = { access_token: string; refresh_token: string; expires_in: 
 async function tokenRequest(form: URLSearchParams): Promise<SageTokens> {
   form.set("client_id", required("SAGE_CLIENT_ID"));
   form.set("client_secret", required("SAGE_CLIENT_SECRET"));
-  const response = await fetch(TOKEN_URL, {
+  const response = await resilientFetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
     body: form.toString(),
@@ -67,7 +68,7 @@ export function refreshTokens(refreshToken: string) {
 // Authenticated Accounting API GET → JSON. `businessId` scopes the request when
 // the user has more than one Sage business.
 export async function sageFetch<T>(accessToken: string, path: string, businessId?: string): Promise<T> {
-  const response = await fetch(`${SAGE_API_BASE}${path}`, {
+  const response = await resilientFetch(`${SAGE_API_BASE}${path}`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: "application/json",
