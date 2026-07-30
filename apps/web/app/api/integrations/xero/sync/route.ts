@@ -5,6 +5,7 @@ import { fetchXeroSyncData } from "@/lib/integrations/xero-sync";
 import { xeroParsedFiles } from "@/lib/integrations/xero-parsed-files";
 import { describeXeroError } from "@/lib/integrations/xero";
 import { isReauthError, markConnectionReauthRequired } from "@/lib/integrations/reauth";
+import { activeRunFor, expireStaleRuns } from "@/lib/integrations/sync-runs";
 import { analyseParsedFiles, scopeAnalysisResult } from "@/lib/upload-analysis";
 import type { Company, Tenant } from "@/lib/types";
 import { reportError } from "@/lib/logger";
@@ -57,8 +58,18 @@ export async function POST(request: Request) {
   const syncId = crypto.randomUUID();
   const supabase = await createClient();
   const connection = await selectedXeroConnection(supabase, tenantId, companyId);
+  // Refuse a second concurrent sync (parallel token refresh would invalidate the
+  // rotating refresh token); expire any stuck run first so it isn't blocked forever.
+  await expireStaleRuns(supabase, [connection.id]);
+  const active = await activeRunFor(supabase, connection.id);
+  if (active) return NextResponse.json({ error: "A Xero sync is already in progress for this connection. Please wait for it to finish.", syncId: active.id, status: active.status }, { status: 409 });
   const { error: queueError } = await supabase.from("accounting_sync_runs").insert({ id: syncId, tenant_id: tenantId, company_id: companyId, integration_id: connection.id, provider: "xero", sync_type: "finance_and_vat", status: "queued" });
-  if (queueError) return NextResponse.json({ error: queueError.message }, { status: 500 });
+  if (queueError) {
+    // The one-active-sync-per-connection index rejecting the insert means a
+    // concurrent sync won the race — surface that, not a 500.
+    const duplicate = /one_active_sync_per_connection|duplicate key/i.test(queueError.message);
+    return NextResponse.json({ error: duplicate ? "A Xero sync is already in progress for this connection. Please wait for it to finish." : queueError.message }, { status: duplicate ? 409 : 500 });
+  }
 
   after(() => runXeroSync({ supabase, connection, syncId, sessionUserId: session.userId!, body, tenantId, companyId, asOfDate }));
   return NextResponse.json({ queued: true, syncId, status: "queued" }, { status: 202 });
