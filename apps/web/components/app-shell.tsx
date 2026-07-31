@@ -1278,11 +1278,13 @@ function auditReviewPackWordHtml({
   partnerConclusion,
   findings,
   workpapers,
+  insightsHtml = "",
 }: {
   company: Company;
   tenant: Tenant;
   today: string;
   preparedBy: string;
+  insightsHtml?: string;
   auditPack: {
     client: string;
     period: string;
@@ -1421,6 +1423,8 @@ function auditReviewPackWordHtml({
             <tr><th>Status</th><td><span class="status">${htmlCell(auditPack.reviewStatus)}</span></td></tr>
           </table>
         </div>
+
+        ${insightsHtml}
 
         <h2>Executive Summary</h2>
         <table>
@@ -2999,7 +3003,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setActive("Findings");
     }} setActive={setActive} />;
     if (active === "Accounts") return <AccountsWorkspace tenantId={tenant.id} companyId={currentCompany.id} companyName={currentCompany.name} />;
-    if (active === "Review Pack") return <ReviewPack company={currentCompany} tenant={tenant} userName={userName} score={score} risk={risk} findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} recommendations={recommendations} validationChecks={validationChecks} uploads={uploads} financialExposure={financialExposure} cashAtRisk={cashAtRisk} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
+    if (active === "Review Pack") return <ReviewPack company={currentCompany} tenant={tenant} userName={userName} score={score} risk={risk} findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} recommendations={recommendations} validationChecks={validationChecks} uploads={uploads} financialExposure={financialExposure} cashAtRisk={cashAtRisk} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} statements={companySnapshots[currentCompany.id]?.statements} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
     if (active === "Change Intelligence") return <ChangeIntelligence findings={findings} findingActivities={findingActivities} partnerSignOff={partnerSignOff} validationChecks={validationChecks} uploads={uploads} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
       setFocusedFindingId(findingId);
@@ -4986,9 +4990,9 @@ function AuditReadiness({ findings, findingEvidence, partnerSignOff, validationC
 }
 
 function ReviewPack({
-  company, tenant, userName, score, risk, findings, findingEvidence, findingComments, findingActivities, partnerSignOff, reviewLocked, recommendations, validationChecks, uploads, financialExposure, cashAtRisk, timeSavedHours, timeSavedValue, onCreateNewReviewCycle, setActive
+  company, tenant, userName, score, risk, findings, findingEvidence, findingComments, findingActivities, partnerSignOff, reviewLocked, recommendations, validationChecks, uploads, financialExposure, cashAtRisk, timeSavedHours, timeSavedValue, statements, onCreateNewReviewCycle, setActive
 }: {
-  company: Company; tenant: Tenant; userName: string; score: number; risk: RiskLevel; findings: Finding[]; findingEvidence: Evidence[]; findingComments: FindingComment[]; findingActivities: FindingActivity[]; partnerSignOff?: PartnerSignOff; reviewLocked: boolean; recommendations: Recommendation[]; validationChecks: ValidationCheck[]; uploads: Upload[]; financialExposure: number; cashAtRisk: number; timeSavedHours: string; timeSavedValue: number; onCreateNewReviewCycle: () => void; setActive: (value: string) => void;
+  company: Company; tenant: Tenant; userName: string; score: number; risk: RiskLevel; findings: Finding[]; findingEvidence: Evidence[]; findingComments: FindingComment[]; findingActivities: FindingActivity[]; partnerSignOff?: PartnerSignOff; reviewLocked: boolean; recommendations: Recommendation[]; validationChecks: ValidationCheck[]; uploads: Upload[]; financialExposure: number; cashAtRisk: number; timeSavedHours: string; timeSavedValue: number; statements?: SyncStatements; onCreateNewReviewCycle: () => void; setActive: (value: string) => void;
 }) {
   const [preparedBy, setPreparedBy] = useState(userName || "ClosePilot Reviewer");
   const [reviewedBy, setReviewedBy] = useState(partnerSignOff?.reviewedBy ?? "");
@@ -4999,6 +5003,19 @@ function ReviewPack({
   const [conclusion, setConclusion] = useState(partnerSignOff ? "Approved and locked following partner sign-off." : "Draft: manager review required before final issue.");
   const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
   const profile = evidenceProfile(findings);
+
+  // Deterministic executive insights for the pack (finance synthesis + top open
+  // findings), so the "so-what" travels in the exported board pack.
+  const execFinance = statements ? buildFinanceInsights(statements) : null;
+  const execFindings = buildFindingsInsights(findings);
+  const execOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, positive: 3, info: 4 };
+  const execSignals = [...(execFinance?.signals ?? []), ...execFindings.signals].sort((a, b) => execOrder[a.severity] - execOrder[b.severity]).slice(0, 5);
+  const execHeadline = execFinance?.headline ?? (execFindings.available ? execFindings.headline : "");
+  const hasExecInsights = Boolean(execHeadline) || execSignals.length > 0;
+  const escHtml = (value: string) => value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+  const execInsightsHtml = hasExecInsights
+    ? `<h2>Executive Insights</h2>${execHeadline ? `<p><strong>${escHtml(execHeadline)}</strong></p>` : ""}<ul>${execSignals.map((s) => `<li><strong>[${escHtml(s.severity.toUpperCase())}] ${escHtml(s.title)}</strong> — ${escHtml(s.detail)}<br/>&rarr; ${escHtml(s.action)}</li>`).join("")}</ul>`
+    : "";
   const failedChecks = validationChecks.filter((v) => v.status === "failed");
   const warningChecks = validationChecks.filter((v) => v.status === "warning");
   const reconciliationChecks = validationChecks.filter((v) => v.id.startsWith("val_xfile") || v.id.startsWith("val_ar_ctrl") || v.id.startsWith("val_ap_ctrl"));
@@ -5176,12 +5193,31 @@ function ReviewPack({
       partnerConclusion,
       findings: visibleFindings,
       workpapers,
+      insightsHtml: execInsightsHtml,
     }),
     "application/msword;charset=utf-8",
   );
 
   return (
     <div className="grid gap-4">
+      {hasExecInsights && (
+        <section className="print-page rounded-xl border border-line bg-white p-6 shadow-card">
+          <p className="text-xs font-black uppercase tracking-wide text-brand">Executive Insights</p>
+          {execHeadline && <p className="mt-1 text-lg font-extrabold tracking-tight text-ink">{execHeadline}</p>}
+          {execSignals.length > 0 && (
+            <ul className="mt-3 grid gap-2">
+              {execSignals.map((signal, index) => (
+                <li key={index} className="rounded-lg border border-line p-3 text-sm">
+                  <span className="font-bold text-ink">[{signal.severity.toUpperCase()}] {signal.title}</span>
+                  <span className="text-muted"> — {signal.detail}</span>
+                  <div className="mt-1 text-xs font-semibold text-ink">→ {signal.action}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-3 text-[11px] text-muted">Generated by ClosePilot from the reviewed pack — a deterministic synthesis of the cash-flow tools and open findings. Figures are as reviewed.</p>
+        </section>
+      )}
       {reviewLocked && (
         <section className="flex flex-col gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
