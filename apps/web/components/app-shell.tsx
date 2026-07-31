@@ -5,6 +5,7 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, Respons
 import { evidenceGroundedAnswer, type GroundedAnswerSections } from "@/lib/ask-closepilot";
 import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompany, pilotTenant, tenant as seededTenant } from "@/lib/data";
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateMtdReadiness, calculateMtdReadinessDrivers, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type MtdReadinessDriver, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
+import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, type CashflowScenario, type StatementsForCashflow } from "@/lib/cashflow-13week";
 import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
 import { findingStandardReference } from "@/lib/finding-standards";
 import { buildPilotMetrics, PILOT_HOURLY_RATE, type PilotMetrics } from "@/lib/pilot-metrics";
@@ -2957,7 +2958,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     if (active === "Upload Finance Pack") return <UploadAnalyse analyseUploads={analyseUploads} isAnalysing={isAnalysing} uploadMessage={uploadMessage} uploadJob={uploadJob} validationChecks={validationChecks} uploads={uploads} importProfiles={importProfiles} confirmImportProfile={confirmImportProfile} findings={findings} recommendations={recommendations} onDelete={deleteUpload} onClear={clearCurrentReview} setActive={setActive} />;
     if (active === "Compatibility") return <CompatibilityPanel setActive={setActive} />;
     if (active === "Close Review") return <MonthEndClose findings={findings} recommendations={recommendations} completeRecommendation={completeRecommendation} updateFindingStatus={updateFindingStatus} />;
-    if (active === "Cash Intelligence") return <CashflowPanel findings={findings} uploads={uploads} collectionCases={collectionCases} openCollections={() => setActive("Collections Intelligence")} openFindingEvidence={(findingId) => {
+    if (active === "Cash Intelligence") return <CashflowPanel findings={findings} uploads={uploads} collectionCases={collectionCases} statements={companySnapshots[currentCompany.id]?.statements} openCollections={() => setActive("Collections Intelligence")} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : 1);
       setFocusedFindingId(findingId);
       setActive("Findings");
@@ -8091,10 +8092,113 @@ function MonthEndClose({ findings, recommendations, completeRecommendation, upda
   );
 }
 
-function CashflowPanel({ findings, uploads, collectionCases, openCollections, openFindingEvidence }: {
+// 13-week cash flow — a weekly liquidity projection from the company's aged
+// ledgers + bank + P&L run-rate. Shows the low point and any week cash turns
+// negative, with the assumptions made explicit for the finance manager to refine.
+function ThirteenWeekCashflow({ statements }: { statements?: StatementsForCashflow }) {
+  const [scenario, setScenario] = useState<CashflowScenario>("base");
+  const hasData = Boolean(
+    statements && (((statements.agedDebtors?.length ?? 0) > 0) || ((statements.bank?.length ?? 0) > 0) || ((statements.balanceSheet?.length ?? 0) > 0)),
+  );
+  const result = useMemo(
+    () => (hasData ? buildThirteenWeekCashflow(thirteenWeekInputFromStatements(statements as StatementsForCashflow, scenario)) : null),
+    [statements, scenario, hasData],
+  );
+
+  const gbp = (value: number) => `${value < 0 ? "−£" : "£"}${Math.abs(Math.round(value)).toLocaleString("en-GB")}`;
+
+  if (!result) {
+    return (
+      <Panel title="13-Week Cash Flow">
+        <p className="text-sm text-muted">Connect an accounting system (or upload a trial balance, aged debtors/creditors and bank) to project the next 13 weeks of cash from your live ledgers.</p>
+      </Panel>
+    );
+  }
+
+  const maxAbs = Math.max(1, ...result.weeks.map((w) => Math.abs(w.closing)), Math.abs(result.openingCash));
+  const scenarios: CashflowScenario[] = ["conservative", "base", "upside"];
+
+  return (
+    <Panel title="13-Week Cash Flow">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-2xl text-sm text-muted">A rolling 13-week liquidity projection built from your aged debtors, aged creditors, bank balance and P&amp;L run-rate — the short-term cash view a lender or board expects.</p>
+        <div className="inline-flex gap-1 rounded-lg border border-line bg-surface p-1">
+          {scenarios.map((option) => (
+            <button key={option} onClick={() => setScenario(option)} className={`rounded-md px-3 py-1.5 text-xs font-bold capitalize transition-colors ${scenario === option ? "bg-brand text-white shadow-sm" : "text-muted hover:bg-slate-50"}`}>{option}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricTile label="Opening cash" value={gbp(result.openingCash)} sub="This week" />
+        <MetricTile label={`Lowest balance · week ${result.lowestWeek}`} value={gbp(result.lowestBalance)} sub={result.lowestBalance < 0 ? "Projected shortfall" : "Tightest point"} />
+        <MetricTile label="Closing cash · week 13" value={gbp(result.closingCash)} sub={`Net ${result.netMovement >= 0 ? "+" : ""}${gbp(result.netMovement)} over 13 weeks`} />
+        <MetricTile label="First negative week" value={result.firstNegativeWeek ? `Week ${result.firstNegativeWeek}` : "None"} sub={result.firstNegativeWeek ? "Cash goes below zero" : "Stays cash-positive"} />
+      </div>
+
+      {result.firstNegativeWeek && (
+        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">⚠ Cash is projected to fall below zero in week {result.firstNegativeWeek} ({gbp(result.lowestBalance)} at the low point in week {result.lowestWeek}). Accelerate collections, phase supplier payments, or arrange facility headroom.</p>
+      )}
+
+      {/* Closing-balance bars: green above the zero line, red below. */}
+      <div className="mt-4 overflow-x-auto">
+        <div className="flex min-w-[560px] items-stretch gap-1" style={{ height: "160px" }} aria-hidden="true">
+          {result.weeks.map((w) => (
+            <div key={w.week} className="flex flex-1 flex-col" title={`Week ${w.week}: ${gbp(w.closing)}`}>
+              <div className="flex flex-1 flex-col justify-end">{w.closing >= 0 && <div className={`w-full rounded-t ${w.lowest ? "bg-amber-400" : "bg-emerald-400"}`} style={{ height: `${(w.closing / maxAbs) * 100}%` }} />}</div>
+              <div className="h-px w-full bg-line" />
+              <div className="flex flex-1 flex-col justify-start">{w.closing < 0 && <div className="w-full rounded-b bg-red-500" style={{ height: `${(Math.abs(w.closing) / maxAbs) * 100}%` }} />}</div>
+              <span className="mt-1 text-center text-[10px] font-semibold text-muted">{w.week}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[640px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-line text-left text-xs font-bold uppercase text-muted">
+              <th className="py-2 pr-3">Week</th>
+              <th className="px-3 py-2">Commencing</th>
+              <th className="px-3 py-2 text-right">Opening</th>
+              <th className="px-3 py-2 text-right">Receipts</th>
+              <th className="px-3 py-2 text-right">Payments</th>
+              <th className="px-3 py-2 text-right">Net</th>
+              <th className="py-2 pl-3 text-right">Closing</th>
+            </tr>
+          </thead>
+          <tbody>
+            {result.weeks.map((w) => (
+              <tr key={w.week} className={`border-b border-line/60 ${w.negative ? "bg-red-50" : w.lowest ? "bg-amber-50" : ""}`}>
+                <td className="py-2 pr-3 font-bold">{w.week}</td>
+                <td className="px-3 py-2 text-muted">{new Date(w.weekStart).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{gbp(w.opening)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-emerald-700">{w.receipts ? gbp(w.receipts) : "—"}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-red-700">{w.payments ? `(${gbp(w.payments)})` : "—"}</td>
+                <td className={`px-3 py-2 text-right tabular-nums ${w.net < 0 ? "text-red-700" : "text-muted"}`}>{w.net >= 0 ? "+" : "−"}{gbp(Math.abs(w.net))}</td>
+                <td className={`py-2 pl-3 text-right font-bold tabular-nums ${w.closing < 0 ? "text-red-700" : "text-ink"}`}>{gbp(w.closing)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <details className="mt-4">
+        <summary className="cursor-pointer text-xs font-bold uppercase tracking-wide text-muted">Assumptions ({scenario})</summary>
+        <ul className="mt-2 grid gap-1 text-xs text-muted">
+          {result.assumptions.map((line, index) => <li key={index}>• {line}</li>)}
+        </ul>
+        <p className="mt-2 text-[11px] text-muted">Directional planning model — adjust collection timing and run-rates for known events (large invoices, one-off capex, loan repayments) before relying on it.</p>
+      </details>
+    </Panel>
+  );
+}
+
+function CashflowPanel({ findings, uploads, collectionCases, statements, openCollections, openFindingEvidence }: {
   findings: Finding[];
   uploads: Upload[];
   collectionCases: CollectionCase[];
+  statements?: StatementsForCashflow;
   openCollections: () => void;
   openFindingEvidence: (findingId: string) => void;
 }) {
@@ -8149,6 +8253,8 @@ function CashflowPanel({ findings, uploads, collectionCases, openCollections, op
         </div>
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong>Liquidity boundary:</strong> no evidenced opening bank balance or payment schedule is loaded, so ClosePilot forecasts recoveries only. Upload bank and cash-planning evidence before treating this as an absolute cash-balance forecast.</div>
       </section>
+
+      <ThirteenWeekCashflow statements={statements} />
 
       <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <Panel title="Cumulative Recovery Forecast">
