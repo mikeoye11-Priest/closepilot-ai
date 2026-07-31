@@ -6,6 +6,8 @@ import { evidenceGroundedAnswer, type GroundedAnswerSections } from "@/lib/ask-c
 import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompany, pilotTenant, tenant as seededTenant } from "@/lib/data";
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateMtdReadiness, calculateMtdReadinessDrivers, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type MtdReadinessDriver, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, type CashflowScenario, type StatementsForCashflow } from "@/lib/cashflow-13week";
+import { buildWorkingCapital } from "@/lib/working-capital";
+import type { SyncStatements } from "@/lib/management-accounts";
 import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
 import { findingStandardReference } from "@/lib/finding-standards";
 import { buildPilotMetrics, PILOT_HOURLY_RATE, type PilotMetrics } from "@/lib/pilot-metrics";
@@ -8194,11 +8196,43 @@ function ThirteenWeekCashflow({ statements }: { statements?: StatementsForCashfl
   );
 }
 
+// Working capital & the cash conversion cycle — how many days of cash are tied
+// up in the operating cycle, and how much each DSO day frees up.
+function WorkingCapitalPanel({ statements }: { statements?: SyncStatements }) {
+  const wc = useMemo(() => (statements ? buildWorkingCapital(statements) : null), [statements]);
+  if (!wc || !wc.available) return null;
+  const gbp = (value: number) => `${value < 0 ? "−£" : "£"}${Math.abs(Math.round(value)).toLocaleString("en-GB")}`;
+  const d = (value: number | null) => (value === null ? "—" : `${Math.round(value)} days`);
+  const release = Math.round(wc.cashPerDsoDay * 5);
+  // Lower CCC is better; tone the headline on a rough SME benchmark.
+  const cccTone: RiskLevel = wc.ccc === null ? "medium" : wc.ccc <= 45 ? "low" : wc.ccc <= 90 ? "medium" : "high";
+
+  return (
+    <Panel title="Working Capital · Cash Conversion Cycle">
+      <p className="max-w-2xl text-sm text-muted">Days of cash tied up in the operating cycle: debtor days plus inventory days, less the supplier credit you take. Lower is better.</p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric title="Cash Conversion Cycle" value={d(wc.ccc)} detail="DSO + DIO − DPO" tone={cccTone} />
+        <MetricTile label="Debtor days (DSO)" value={d(wc.dso)} sub={`${gbp(wc.debtors)} owed to you`} />
+        <MetricTile label="Inventory days (DIO)" value={d(wc.dio)} sub={`${gbp(wc.inventory)} in stock/WIP`} />
+        <MetricTile label="Creditor days (DPO)" value={d(wc.dpo)} sub={`${gbp(wc.creditors)} supplier credit`} />
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
+          <strong>Cash release lever:</strong> every day you cut debtor days frees ~{gbp(wc.cashPerDsoDay)}. Collecting 5 days faster would release about <span className="font-black">{gbp(release)}</span>.
+        </div>
+        <div className="rounded-xl border border-line bg-slate-50/70 p-3 text-sm text-muted">
+          <strong className="text-ink">Net working capital:</strong> {gbp(wc.netWorkingCapital)} (current assets less current liabilities).
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function CashflowPanel({ findings, uploads, collectionCases, statements, openCollections, openFindingEvidence }: {
   findings: Finding[];
   uploads: Upload[];
   collectionCases: CollectionCase[];
-  statements?: StatementsForCashflow;
+  statements?: SyncStatements;
   openCollections: () => void;
   openFindingEvidence: (findingId: string) => void;
 }) {
@@ -8255,6 +8289,8 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, openCol
       </section>
 
       <ThirteenWeekCashflow statements={statements} />
+
+      <WorkingCapitalPanel statements={statements} />
 
       <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <Panel title="Cumulative Recovery Forecast">
