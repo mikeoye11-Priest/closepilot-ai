@@ -39,6 +39,7 @@ const ROLES: Record<string, string> = {
   fd: "a UK finance director",
   vat: "a UK VAT and Making Tax Digital adviser",
   findings: "a UK audit manager reviewing exceptions",
+  audit: "a UK audit manager assessing audit readiness",
 };
 
 export async function POST(request: Request) {
