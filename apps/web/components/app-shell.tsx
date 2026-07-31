@@ -8243,11 +8243,21 @@ function ThirteenWeekCashflow({ statements }: { statements?: StatementsForCashfl
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricTile label="Opening cash" value={gbp(result.openingCash)} sub="This week" />
+        <MetricTile label="Opening cash" value={gbp(result.openingCash)} sub={result.openingCashEvidenced ? "Bank balance, current week" : "Unevidenced — no bank balance"} />
         <MetricTile label={`Lowest balance · week ${result.lowestWeek}`} value={gbp(result.lowestBalance)} sub={result.lowestBalance < 0 ? "Projected shortfall" : "Tightest point"} />
-        <MetricTile label="Closing cash · week 13" value={gbp(result.closingCash)} sub={`Net ${result.netMovement >= 0 ? "+" : ""}${gbp(result.netMovement)} over 13 weeks`} />
-        <MetricTile label="First negative week" value={result.firstNegativeWeek ? `Week ${result.firstNegativeWeek}` : "None"} sub={result.firstNegativeWeek ? "Cash goes below zero" : "Stays cash-positive"} />
+        <MetricTile label="Closing cash · week 13" value={gbp(result.closingCash)} sub={`Net ${result.netMovement >= 0 ? "+" : "−"}${gbp(Math.abs(result.netMovement))} over 13 weeks`} />
+        <MetricTile label="First negative week" value={result.firstNegativeWeek ? `Week ${result.firstNegativeWeek}` : "None"} sub={result.firstNegativeWeek ? "Cash goes below zero" : "No projected deficit"} />
       </div>
+
+      {/* Receivables basis — makes the debtor population feeding the forecast explicit. */}
+      {result.receivables.aged > 0 && (
+        <p className="mt-3 text-xs text-muted">
+          <span className="font-bold text-ink">Receivables basis:</span> {gbp(result.receivables.aged)} aged debtors · {gbp(result.receivables.attributed)} matched to customers · {gbp(result.receivables.unattributed)} unattributed · <span className="font-semibold text-ink">{gbp(result.receivables.recognised)} recognised in this scenario</span>.
+        </p>
+      )}
+      {!result.openingCashEvidenced && (
+        <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">No evidenced opening bank balance is loaded, so treat the absolute cash line as indicative — the movements are more reliable than the level. Connect a bank feed or upload a bank balance for an absolute forecast.</p>
+      )}
 
       {result.firstNegativeWeek && (
         <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">⚠ Cash is projected to fall below zero in week {result.firstNegativeWeek} ({gbp(result.lowestBalance)} at the low point in week {result.lowestWeek}). Accelerate collections, phase supplier payments, or arrange facility headroom.</p>
