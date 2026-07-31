@@ -2865,7 +2865,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
 
   const content = useMemo(() => {
     if (active === "Onboarding") return <OnboardingPanel key={onboardIntent} intent={onboardIntent} tenant={tenant} createWorkspace={createWorkspace} addClient={addClient} loadPilotDemo={loadPilotDemo} />;
-    if (active === "Partner Summary" || active === "Dashboard") return <DashboardPanel score={score} risk={risk} assurance={assurance} findings={findings} partnerSignOff={partnerSignOff} openFindings={openFindings.length} cashAtRisk={cashAtRisk} financialExposure={financialExposure} timeSaved={timeSaved} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} validationWarnings={validationWarnings} validationBlockers={validationBlockers} validationChecks={validationChecks} recommendations={recommendations} clients={portfolioClients} uploads={uploads} companyName={currentCompany.name} scoreDrivers={scorecard.drivers} activities={findingActivities} setActive={setActive} />;
+    if (active === "Partner Summary" || active === "Dashboard") return <DashboardPanel score={score} risk={risk} assurance={assurance} findings={findings} partnerSignOff={partnerSignOff} openFindings={openFindings.length} cashAtRisk={cashAtRisk} financialExposure={financialExposure} timeSaved={timeSaved} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} validationWarnings={validationWarnings} validationBlockers={validationBlockers} validationChecks={validationChecks} recommendations={recommendations} clients={portfolioClients} uploads={uploads} companyName={currentCompany.name} scoreDrivers={scorecard.drivers} activities={findingActivities} statements={companySnapshots[currentCompany.id]?.statements} setActive={setActive} />;
     if (active === "Finance Review") {
       return (
         <>
@@ -3520,9 +3520,9 @@ function defaultReviewReason(status: FindingStatus) {
 }
 
 function DashboardPanel({
-  score, risk, assurance, findings, partnerSignOff, openFindings, cashAtRisk, financialExposure, timeSaved, timeSavedHours, timeSavedValue, validationWarnings, validationBlockers, validationChecks, recommendations, clients, uploads, companyName, scoreDrivers, activities, setActive
+  score, risk, assurance, findings, partnerSignOff, openFindings, cashAtRisk, financialExposure, timeSaved, timeSavedHours, timeSavedValue, validationWarnings, validationBlockers, validationChecks, recommendations, clients, uploads, companyName, scoreDrivers, activities, statements, setActive
 }: {
-  score: number; risk: RiskLevel; assurance: AssuranceMetrics; findings: Finding[]; partnerSignOff?: PartnerSignOff; openFindings: number; cashAtRisk: number; financialExposure: number; timeSaved: number; timeSavedHours: string; timeSavedValue: number; validationWarnings: number; validationBlockers: number; validationChecks: ValidationCheck[]; recommendations: Recommendation[]; clients: ClientCompany[]; uploads: Upload[]; companyName: string; scoreDrivers: ScoreDriver[]; activities: FindingActivity[]; setActive: (v: string) => void;
+  score: number; risk: RiskLevel; assurance: AssuranceMetrics; findings: Finding[]; partnerSignOff?: PartnerSignOff; openFindings: number; cashAtRisk: number; financialExposure: number; timeSaved: number; timeSavedHours: string; timeSavedValue: number; validationWarnings: number; validationBlockers: number; validationChecks: ValidationCheck[]; recommendations: Recommendation[]; clients: ClientCompany[]; uploads: Upload[]; companyName: string; scoreDrivers: ScoreDriver[]; activities: FindingActivity[]; statements?: SyncStatements; setActive: (v: string) => void;
 }) {
   const [showExposure, setShowExposure] = useState(false);
   const highRisk = clients.filter((c) => c.risk === "high" || c.risk === "critical").length;
@@ -3541,27 +3541,30 @@ function DashboardPanel({
   const closePilotHours = uploads.length ? "6.5" : "—";
 
   return (
-    <OperationalOverviewDashboard
-      score={score}
-      risk={risk}
-      assurance={assurance}
-      findings={findings}
-      partnerSignOff={partnerSignOff}
-      openFindings={openFindings}
-      financialExposure={financialExposure}
-      timeSavedHours={timeSavedHours}
-      timeSavedValue={timeSavedValue}
-      validationWarnings={validationWarnings}
-      validationBlockers={validationBlockers}
-      validationChecks={validationChecks}
-      recommendations={recommendations}
-      uploads={uploads}
-      companyName={companyName}
-      cashAtRisk={cashAtRisk}
-      scoreDrivers={scoreDrivers}
-      activities={activities}
-      setActive={setActive}
-    />
+    <div className="grid gap-4">
+      <OverviewInsightBanner statements={statements} findings={findings} setActive={setActive} />
+      <OperationalOverviewDashboard
+        score={score}
+        risk={risk}
+        assurance={assurance}
+        findings={findings}
+        partnerSignOff={partnerSignOff}
+        openFindings={openFindings}
+        financialExposure={financialExposure}
+        timeSavedHours={timeSavedHours}
+        timeSavedValue={timeSavedValue}
+        validationWarnings={validationWarnings}
+        validationBlockers={validationBlockers}
+        validationChecks={validationChecks}
+        recommendations={recommendations}
+        uploads={uploads}
+        companyName={companyName}
+        cashAtRisk={cashAtRisk}
+        scoreDrivers={scoreDrivers}
+        activities={activities}
+        setActive={setActive}
+      />
+    </div>
   );
 
   return (
@@ -9414,6 +9417,50 @@ function VatReviewGroupCard({ group, decision, onDecision, updateFindingStatus }
       </div>
       {decision && <p className="mt-3 text-xs text-muted">Decision by <strong>{decision.reviewer}</strong> on {new Date(decision.reviewedAt).toLocaleString("en-GB")}.</p>}
     </div>
+  );
+}
+
+// Overview hero — the single most important cross-domain insight on the landing
+// screen: the cash-flow headline plus the top signals from the cashflow tools and
+// open findings, each linking to the relevant screen. Deterministic (no AI call
+// on load); the "Explain with AI" narratives live on the detail screens.
+function OverviewInsightBanner({ statements, findings, setActive }: { statements?: SyncStatements; findings: Finding[]; setActive: (v: string) => void }) {
+  const fin = useMemo(() => (statements ? buildFinanceInsights(statements) : null), [statements]);
+  const find = useMemo(() => buildFindingsInsights(findings), [findings]);
+  const order: Record<string, number> = { critical: 0, high: 1, medium: 2, positive: 3, info: 4 };
+  const merged = useMemo(
+    () => [...(fin?.signals ?? []), ...find.signals].sort((a, b) => order[a.severity] - order[b.severity]).slice(0, 3),
+    [fin, find],
+  );
+  const headline = fin?.headline ?? (find.available ? find.headline : null);
+  if (!headline && merged.length === 0) return null;
+
+  const topSeverity = merged[0]?.severity ?? "positive";
+  const alert = topSeverity === "critical" || topSeverity === "high";
+  const targetFor = (area: string) => (/debtor|creditor|control|vat|data quality|financial statements|month-end/i.test(area) ? "Findings" : "Cash Intelligence");
+
+  return (
+    <section className={`rounded-xl border p-5 shadow-card ${alert ? "border-red-200 bg-gradient-to-br from-red-50 to-white" : "border-brand/20 bg-gradient-to-br from-brand/5 to-white"}`}>
+      <p className="text-xs font-black uppercase tracking-wide text-brand">ClosePilot Insights</p>
+      {headline && <p className="mt-1 text-lg font-extrabold tracking-tight text-ink">{headline}</p>}
+      {merged.length > 0 && (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {merged.map((signal, index) => (
+            <button key={index} onClick={() => setActive(targetFor(signal.area))} className="rounded-xl border border-line bg-white/70 p-3 text-left transition-colors hover:border-brand/40">
+              <div className="flex items-center gap-2">
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ring-1 ring-inset ${INSIGHT_SEV_CHIP[signal.severity] ?? INSIGHT_SEV_CHIP.info}`}>{signal.severity}</span>
+                <span className="truncate text-xs font-bold text-ink">{signal.title}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted">{signal.action}</p>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {fin && <button className="rounded-lg bg-brand px-3 py-2 text-xs font-black text-white" onClick={() => setActive("Cash Intelligence")}>Open cash flow tools</button>}
+        {find.available && <button className="rounded-lg border border-line px-3 py-2 text-xs font-black" onClick={() => setActive("Findings")}>Review findings</button>}
+      </div>
+    </section>
   );
 }
 
