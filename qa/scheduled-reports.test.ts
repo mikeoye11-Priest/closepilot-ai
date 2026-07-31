@@ -44,3 +44,27 @@ test("latestSnapshotFor returns the newest snapshot for the company/report", () 
   assert.equal(latestSnapshotFor([older, newer], "c1", "inventory")?.id, "r2");
   assert.equal(latestSnapshotFor([older, newer], "other", "inventory"), undefined);
 });
+
+// ── Finance insights digest ─────────────────────────────────────────────────
+import { financeInsightsFingerprint, type FinanceInsightsSnapshot } from "../apps/web/lib/scheduled-reports";
+
+const snap = (headline: string, signals: FinanceInsightsSnapshot["signals"]): FinanceInsightsSnapshot => ({ headline, signals });
+const sig = (severity: string, title: string) => ({ severity, area: "Liquidity", title, detail: "", action: "" });
+
+test("finance-insights fingerprint is stable and change-sensitive", () => {
+  const a = snap("Cash-tight", [sig("high", "Thin cash cover"), sig("medium", "78-day cycle")]);
+  const b = snap("Cash-tight", [sig("high", "Thin cash cover"), sig("medium", "78-day cycle")]);
+  const c = snap("Cash-tight", [sig("high", "Thin cash cover")]);
+  assert.equal(financeInsightsFingerprint(a), financeInsightsFingerprint(b), "same digest → same fingerprint");
+  assert.notEqual(financeInsightsFingerprint(a), financeInsightsFingerprint(c), "fewer signals → different fingerprint");
+});
+
+test("finance-insights schedule generates when due and data changed, skips when unchanged", () => {
+  const schedule: ReportSchedule = { id: "s", companyId: "c", report: "finance_insights", cadence: "weekly", enabled: true };
+  const fp = financeInsightsFingerprint(snap("H", [sig("high", "X")]));
+  const last: ScheduledReport = { id: "1", companyId: "c", companyName: "Co", report: "finance_insights", cadence: "weekly", generatedAt: new Date(Date.now() - 8 * 86_400_000).toISOString(), asOfDate: "2026-05-31", fingerprint: "OLD" };
+  assert.equal(shouldGenerateSnapshot(schedule, undefined, fp), true, "no prior snapshot → generate");
+  assert.equal(shouldGenerateSnapshot(schedule, last, fp), true, "a week later + changed → generate");
+  assert.equal(shouldGenerateSnapshot(schedule, { ...last, fingerprint: fp }, fp), false, "unchanged → skip");
+  assert.equal(latestSnapshotFor([last], "c", "finance_insights")?.id, "1");
+});

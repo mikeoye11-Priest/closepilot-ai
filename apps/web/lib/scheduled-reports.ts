@@ -7,25 +7,32 @@
 import type { InventoryReviewResult } from "./inventory-engine";
 
 export type ReportCadence = "weekly" | "monthly";
+export type ReportKind = "inventory" | "finance_insights";
 
 export type ReportSchedule = {
   id: string;
   companyId: string;
-  report: "inventory";
+  report: ReportKind;
   cadence: ReportCadence;
   enabled: boolean;
 };
+
+// A frozen finance-insights digest (headline + prioritised signals), captured on
+// cadence so management gets a periodic cash/insights snapshot in the inbox.
+export type ScheduledInsightSignal = { severity: string; area: string; title: string; detail: string; action: string };
+export type FinanceInsightsSnapshot = { headline: string; signals: ScheduledInsightSignal[] };
 
 export type ScheduledReport = {
   id: string;
   companyId: string;
   companyName: string;
-  report: "inventory";
+  report: ReportKind;
   cadence: ReportCadence;
   generatedAt: string; // ISO
   asOfDate: string;
   fingerprint: string;
-  review: InventoryReviewResult;
+  review?: InventoryReviewResult;
+  insights?: FinanceInsightsSnapshot;
 };
 
 const CADENCE_DAYS: Record<ReportCadence, number> = { weekly: 7, monthly: 28 };
@@ -54,6 +61,12 @@ export function shouldGenerateSnapshot(
   if (lastSnapshot.fingerprint === currentFingerprint) return false; // data unchanged
   const elapsedDays = (now.getTime() - Date.parse(lastSnapshot.generatedAt)) / 86_400_000;
   return elapsedDays >= CADENCE_DAYS[schedule.cadence];
+}
+
+// Stable signature of a finance-insights digest — same headline + same ordered
+// signals means the same digest, so no duplicate snapshot is appended.
+export function financeInsightsFingerprint(snapshot: FinanceInsightsSnapshot): string {
+  return [snapshot.headline, snapshot.signals.length, snapshot.signals.map((s) => `${s.severity}:${s.title}`).join("~")].join("|");
 }
 
 export function latestSnapshotFor(reports: ScheduledReport[], companyId: string, report: ReportSchedule["report"]): ScheduledReport | undefined {
