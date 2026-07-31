@@ -12,7 +12,17 @@ import { buildVariance } from "@/lib/variance";
 import { buildCovenants, type CovenantUnit } from "@/lib/covenants";
 import { buildConcentration } from "@/lib/concentration";
 import { buildFinanceInsights } from "@/lib/finance-insights";
+import { buildVatInsights } from "@/lib/vat-insights";
 import type { SyncStatements } from "@/lib/management-accounts";
+
+// Shared severity → chip styling for the insight signal cards.
+const INSIGHT_SEV_CHIP: Record<string, string> = {
+  critical: "bg-red-100 text-red-800 ring-red-600/20",
+  high: "bg-red-50 text-red-700 ring-red-600/20",
+  medium: "bg-amber-50 text-amber-700 ring-amber-600/20",
+  positive: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+  info: "bg-slate-100 text-slate-600 ring-slate-500/20",
+};
 import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
 import { findingStandardReference } from "@/lib/finding-standards";
 import { buildPilotMetrics, PILOT_HOURLY_RATE, type PilotMetrics } from "@/lib/pilot-metrics";
@@ -2975,7 +2985,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setFocusedFindingId(findingId);
       setActive("Findings");
     }} />;
-    if (active === "VAT Assurance") return <VatAssuranceModule vatReview={vatReview} findings={findings} uploads={uploads} updateFindingStatus={updateFindingStatus} setActive={setActive} userName={userName} tenantId={tenant.id} companyId={currentCompany.id} onVatReviewChange={setVatReview} syncDiagnostics={integrationDiagnostics} />;
+    if (active === "VAT Assurance") return <VatAssuranceModule vatReview={vatReview} findings={findings} validationChecks={validationChecks} uploads={uploads} updateFindingStatus={updateFindingStatus} setActive={setActive} userName={userName} tenantId={tenant.id} companyId={currentCompany.id} onVatReviewChange={setVatReview} syncDiagnostics={integrationDiagnostics} />;
     if (active === "Controls & Fraud") return <ControlsFraudPanel findings={findings} validationChecks={validationChecks} uploads={uploads} partnerSignOff={partnerSignOff} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_close_001" ? 3 : 1);
       setFocusedFindingId(findingId);
@@ -9405,7 +9415,60 @@ function VatReviewGroupCard({ group, decision, onDecision, updateFindingStatus }
   );
 }
 
-function VatAssuranceModule({ vatReview, findings, uploads, updateFindingStatus, setActive, userName, tenantId, companyId, onVatReviewChange, syncDiagnostics = [] }: { vatReview?: VatReviewResult; findings: Finding[]; uploads: Upload[]; updateFindingStatus: (findingId: string, status: FindingStatus, reason?: string) => void; setActive: (value: string) => void; userName: string; tenantId: string; companyId: string; onVatReviewChange: (review: VatReviewResult) => void; syncDiagnostics?: string[] }) {
+// VAT & MTD adviser — prioritised signals + actions from the VAT review and MTD
+// readiness, with an on-demand grounded AI narrative (role: vat).
+function VatInsightsPanel({ vatReview, findings, validationChecks, uploads }: { vatReview?: VatReviewResult; findings: Finding[]; validationChecks: ValidationCheck[]; uploads: Upload[] }) {
+  const insights = useMemo(() => buildVatInsights(vatReview, findings, validationChecks, uploads), [vatReview, findings, validationChecks, uploads]);
+  const [ai, setAi] = useState<{ narrative: string; aiGenerated: boolean } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  if (!insights.available) return null;
+
+  const explain = async () => {
+    setLoading(true); setError("");
+    try {
+      const response = await fetch("/api/insight-narrative", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ factSheet: insights.factSheet, headline: insights.headline, role: "vat" }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not generate the narrative.");
+      setAi({ narrative: data.narrative, aiGenerated: data.aiGenerated });
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not generate the narrative."); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <Panel title="VAT & MTD Insights">
+      <p className="text-base font-bold text-ink">{insights.headline}</p>
+      {ai ? (
+        <div className="mt-3 rounded-xl border border-brand/20 bg-brand/5 p-4">
+          <p className="text-[11px] font-black uppercase tracking-wide text-brand">{ai.aiGenerated ? "AI-drafted — review before filing" : "Summary"}</p>
+          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-ink">{ai.narrative}</p>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white disabled:opacity-60" disabled={loading} onClick={explain}>{loading ? "Thinking…" : "Explain with AI"}</button>
+          {error && <span className="text-sm text-red-700">{error}</span>}
+        </div>
+      )}
+      <div className="mt-4 grid gap-2">
+        {insights.signals.map((signal, index) => (
+          <div key={index} className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-line p-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ring-1 ring-inset ${INSIGHT_SEV_CHIP[signal.severity] ?? INSIGHT_SEV_CHIP.info}`}>{signal.severity}</span>
+                <span className="text-sm font-bold text-ink">{signal.title}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted">{signal.detail}</p>
+              <p className="mt-1 text-xs font-semibold text-ink">→ {signal.action}</p>
+            </div>
+            <span className="shrink-0 text-[11px] font-bold uppercase text-muted">{signal.area}</span>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function VatAssuranceModule({ vatReview, findings, validationChecks, uploads, updateFindingStatus, setActive, userName, tenantId, companyId, onVatReviewChange, syncDiagnostics = [] }: { vatReview?: VatReviewResult; findings: Finding[]; validationChecks: ValidationCheck[]; uploads: Upload[]; updateFindingStatus: (findingId: string, status: FindingStatus, reason?: string) => void; setActive: (value: string) => void; userName: string; tenantId: string; companyId: string; onVatReviewChange: (review: VatReviewResult) => void; syncDiagnostics?: string[] }) {
   const vatFindings = findings.filter((item) => item.category === "vat");
   const vatUpload = uploads.find((upload) => upload.fileType === "vat_report");
   const xeroVatUpload = uploads.find((upload) => upload.fileType === "vat_report" && /xero/i.test(`${upload.fileName} ${upload.detectedVendor ?? ""} ${upload.detectionBasis ?? ""}`));
@@ -9634,6 +9697,7 @@ function VatAssuranceModule({ vatReview, findings, uploads, updateFindingStatus,
 
   return (
     <div className="grid gap-4">
+      <VatInsightsPanel vatReview={vatReview} findings={findings} validationChecks={validationChecks} uploads={uploads} />
       {vatReviewIsStale && (
         <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
