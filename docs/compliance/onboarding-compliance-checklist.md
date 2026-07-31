@@ -6,7 +6,11 @@
 
 ## A. Legal & policy
 
-- [ ] **DPA executed** with the practice (see [dpa-outline.md](./dpa-outline.md)).
+- [ ] **ICO registration** — registered with the ICO and the **annual data-
+      protection fee** paid (unless a documented exemption applies). *(This is a
+      filing with the regulator — separate from the Data Processing Agreement below.)*
+- [ ] **DPA executed** — Data Processing Agreement (Art 28 controller↔processor
+      contract) signed with the practice (see [dpa-outline.md](./dpa-outline.md)).
 - [ ] **Sub-processor DPAs / Art 28 terms** in place: Supabase, Vercel, Google
       (Gemini), Upstash, Sentry. — evidence: [link]
 - [ ] **Retention & deletion policy** finalised and published

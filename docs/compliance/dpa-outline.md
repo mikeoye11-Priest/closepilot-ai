@@ -4,6 +4,11 @@
 > outline of the Article 28 (UK GDPR) terms to put in place between ClosePilot
 > (processor) and each practice (controller). It is **not** a signable contract
 > and **not** legal advice. Have a solicitor turn it into your executed DPA.
+>
+> **"DPA" here = Data Processing Agreement** (this controller↔processor contract),
+> **not** the Data Protection Act 2018 (the UK statute) and **not** anything filed
+> with the ICO. ICO registration / the data-protection fee is a separate obligation
+> — see the [checklist](./onboarding-compliance-checklist.md) §A.
 
 ## Parties
 
