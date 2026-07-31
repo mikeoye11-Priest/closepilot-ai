@@ -7,6 +7,7 @@ import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompan
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateMtdReadiness, calculateMtdReadinessDrivers, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type MtdReadinessDriver, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, type CashflowScenario, type StatementsForCashflow } from "@/lib/cashflow-13week";
 import { buildWorkingCapital } from "@/lib/working-capital";
+import { buildRunway } from "@/lib/runway";
 import type { SyncStatements } from "@/lib/management-accounts";
 import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
 import { findingStandardReference } from "@/lib/finding-standards";
@@ -8196,6 +8197,31 @@ function ThirteenWeekCashflow({ statements }: { statements?: StatementsForCashfl
   );
 }
 
+// Cash runway & burn — are we generating or burning cash, how many months of
+// cash do we hold, and when do we run out?
+function RunwayPanel({ statements }: { statements?: SyncStatements }) {
+  const r = useMemo(() => (statements ? buildRunway(statements) : null), [statements]);
+  if (!r || r.status === "unavailable") return null;
+  const gbp = (value: number) => `${value < 0 ? "−£" : "£"}${Math.abs(Math.round(value)).toLocaleString("en-GB")}`;
+  const months = (value: number) => `${value.toFixed(1)} mo`;
+  const burning = r.status === "burning";
+  return (
+    <Panel title="Cash Runway & Burn">
+      <div className={`rounded-xl border p-3 text-sm ${burning ? "border-red-200 bg-red-50 text-red-900" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}>
+        {burning
+          ? <><strong>Burning {gbp(r.burnRateMonthly ?? 0)}/month.</strong> At this rate the {gbp(r.cashOnHand)} cash balance lasts about <span className="font-black">{r.runwayMonths !== null ? months(r.runwayMonths) : "—"}</span>{r.runwayDate ? ` (to ~${new Date(r.runwayDate).toLocaleDateString("en-GB", { month: "short", year: "numeric" })})` : ""}. Extend runway by improving collections, trimming spend or raising finance.</>
+          : <><strong>Cash generative at {gbp(r.monthlyOperatingCash)}/month.</strong> Runway isn't the constraint — the watch item is cash cover: you hold about {months(r.cashCoverMonths)} of operating costs.</>}
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricTile label="Cash on hand" value={gbp(r.cashOnHand)} sub="Bank balance" />
+        <MetricTile label="Monthly operating cash" value={`${r.monthlyOperatingCash >= 0 ? "+" : "−"}${gbp(Math.abs(r.monthlyOperatingCash))}`} sub="Profit + depreciation, /12" />
+        <MetricTile label="Cash cover" value={months(r.cashCoverMonths)} sub="Months of operating costs held" />
+        <MetricTile label="Runway" value={burning ? (r.runwayMonths !== null ? months(r.runwayMonths) : "—") : "Cash-generative"} sub={burning && r.runwayDate ? `~${new Date(r.runwayDate).toLocaleDateString("en-GB", { month: "short", year: "numeric" })}` : "No burn"} />
+      </div>
+    </Panel>
+  );
+}
+
 // Working capital & the cash conversion cycle — how many days of cash are tied
 // up in the operating cycle, and how much each DSO day frees up.
 function WorkingCapitalPanel({ statements }: { statements?: SyncStatements }) {
@@ -8289,6 +8315,8 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, openCol
       </section>
 
       <ThirteenWeekCashflow statements={statements} />
+
+      <RunwayPanel statements={statements} />
 
       <WorkingCapitalPanel statements={statements} />
 
