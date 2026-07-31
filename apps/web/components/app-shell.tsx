@@ -5017,6 +5017,36 @@ function ReviewPack({
   const execInsightsHtml = hasExecInsights
     ? `<h2>Executive Insights</h2>${execHeadline ? `<p><strong>${escHtml(execHeadline)}</strong></p>` : ""}<ul>${execSignals.map((s) => `<li><strong>[${escHtml(s.severity.toUpperCase())}] ${escHtml(s.title)}</strong> — ${escHtml(s.detail)}<br/>&rarr; ${escHtml(s.action)}</li>`).join("")}</ul>`
     : "";
+
+  // AI-drafted board cover note (on-demand). Grounded in a brief built from the
+  // pack; once generated it renders in the pack and travels into the exports.
+  const [coverNote, setCoverNote] = useState("");
+  const [coverAi, setCoverAi] = useState(false);
+  const [coverLoading, setCoverLoading] = useState(false);
+  const [coverError, setCoverError] = useState("");
+  const coverOpen = findings.filter(isOpenFinding);
+  const coverBrief = [
+    `Company: ${company.name}`,
+    `Prepared: ${today}`,
+    `Financial health score: ${score}/100 (${risk})`,
+    `Open findings: ${coverOpen.length} (critical ${coverOpen.filter((f) => f.severity === "critical").length}, high ${coverOpen.filter((f) => f.severity === "high").length})`,
+    `Financial exposure: £${Math.round(financialExposure).toLocaleString("en-GB")}`,
+    `Cash at risk: £${Math.round(cashAtRisk).toLocaleString("en-GB")}`,
+    execHeadline ? `Key insight: ${execHeadline}` : "",
+    ...execSignals.slice(0, 4).map((s) => `- [${s.severity}] ${s.title}: ${s.action}`),
+  ].filter(Boolean).join("\n");
+  const generateCoverNote = async () => {
+    setCoverLoading(true); setCoverError("");
+    try {
+      const response = await fetch("/api/cover-note", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company: company.name, brief: coverBrief }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not draft the cover note.");
+      if (!data.note) setCoverError("AI drafting is unavailable in this environment — the pack still exports with Executive Insights.");
+      else { setCoverNote(data.note); setCoverAi(Boolean(data.aiGenerated)); }
+    } catch (e) { setCoverError(e instanceof Error ? e.message : "Could not draft the cover note."); }
+    finally { setCoverLoading(false); }
+  };
+  const coverNoteHtml = coverNote ? `<h2>Board Cover Note</h2><p>${escHtml(coverNote).replace(/\n/g, "<br/>")}</p>` : "";
   const failedChecks = validationChecks.filter((v) => v.status === "failed");
   const warningChecks = validationChecks.filter((v) => v.status === "warning");
   const reconciliationChecks = validationChecks.filter((v) => v.id.startsWith("val_xfile") || v.id.startsWith("val_ar_ctrl") || v.id.startsWith("val_ap_ctrl"));
@@ -5194,13 +5224,19 @@ function ReviewPack({
       partnerConclusion,
       findings: visibleFindings,
       workpapers,
-      insightsHtml: execInsightsHtml,
+      insightsHtml: coverNoteHtml + execInsightsHtml,
     }),
     "application/msword;charset=utf-8",
   );
 
   return (
     <div className="grid gap-4">
+      {coverNote && (
+        <section className="print-page rounded-xl border border-line bg-white p-6 shadow-card">
+          <p className="text-xs font-black uppercase tracking-wide text-brand">Board Cover Note{coverAi && <span className="font-semibold text-muted"> · AI-drafted, review before issuing</span>}</p>
+          <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-ink">{coverNote}</p>
+        </section>
+      )}
       {hasExecInsights && (
         <section className="print-page rounded-xl border border-line bg-white p-6 shadow-card">
           <p className="text-xs font-black uppercase tracking-wide text-brand">Executive Insights</p>
@@ -5239,10 +5275,12 @@ function ReviewPack({
             <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:text-muted" disabled={reviewLocked} onClick={() => setActive("Upload Finance Pack")}>Import More</button>
             <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => exportFile(`${fileSlug}_findings.csv`, findingsCsv(findings), "text/csv;charset=utf-8")}>Findings Schedule</button>
             <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={downloadEvidencePack}>Evidence Archive</button>
+            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:text-muted" disabled={coverLoading} onClick={generateCoverNote}>{coverLoading ? "Drafting…" : coverNote ? "Redraft cover note" : "Draft cover note (AI)"}</button>
             <button className="rounded-lg border border-brand px-4 py-2 text-sm font-bold text-brand" onClick={downloadWordPack}>Export Word Report</button>
             <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => printWithTitle(`${company.name} Partner Review Report`)}>Export Partner PDF</button>
           </div>
         </div>
+        {coverError && <p className="mt-2 text-sm text-amber-800">{coverError}</p>}
         <div className="mt-4 grid gap-3 md:grid-cols-5">
           <label className="grid gap-1">
             <span className="text-xs font-bold uppercase text-muted">Pack Type</span>
