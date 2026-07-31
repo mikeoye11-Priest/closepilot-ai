@@ -9,6 +9,7 @@ import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, type Cashfl
 import { buildWorkingCapital } from "@/lib/working-capital";
 import { buildRunway } from "@/lib/runway";
 import { buildVariance } from "@/lib/variance";
+import { buildCovenants, type CovenantUnit } from "@/lib/covenants";
 import type { SyncStatements } from "@/lib/management-accounts";
 import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
 import { findingStandardReference } from "@/lib/finding-standards";
@@ -8275,6 +8276,42 @@ function WhatIfPlanner({ statements }: { statements?: SyncStatements }) {
   );
 }
 
+// Covenant & liquidity alerts — the ratios a lender/board watches, plus a
+// 13-week minimum-cash floor, against thresholds.
+function CovenantPanel({ statements }: { statements?: SyncStatements }) {
+  const report = useMemo(() => (statements ? buildCovenants(statements) : null), [statements]);
+  if (!report || !report.available) return null;
+  const fmt = (value: number, unit: CovenantUnit) => unit === "ratio" ? `${value.toFixed(2)}x` : unit === "months" ? `${value.toFixed(1)} mo` : `${value < 0 ? "−£" : "£"}${Math.abs(Math.round(value)).toLocaleString("en-GB")}`;
+  const chip: Record<string, string> = {
+    pass: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+    watch: "bg-amber-50 text-amber-700 ring-amber-600/20",
+    breach: "bg-red-50 text-red-700 ring-red-600/20",
+  };
+  return (
+    <Panel title="Covenant & Liquidity Alerts">
+      <div className="flex flex-wrap gap-2 text-xs font-bold">
+        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 ring-1 ring-inset ring-emerald-600/20">{report.passed} pass</span>
+        {report.watches > 0 && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 ring-1 ring-inset ring-amber-600/20">{report.watches} watch</span>}
+        {report.breaches > 0 && <span className="rounded-full bg-red-50 px-2.5 py-1 text-red-700 ring-1 ring-inset ring-red-600/20">{report.breaches} breach</span>}
+      </div>
+      <div className="mt-4 grid gap-2">
+        {report.covenants.map((c) => (
+          <div key={c.name} className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3 ${c.status === "breach" ? "border-red-200 bg-red-50/50" : c.status === "watch" ? "border-amber-200 bg-amber-50/50" : "border-line"}`}>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-ink">{c.name} <span className="text-xs font-normal text-muted">· covenant ≥ {fmt(c.threshold, c.unit)}</span></p>
+              <p className="text-xs text-muted">{c.detail}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-black tabular-nums text-ink">{fmt(c.actual, c.unit)}</span>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-bold uppercase ring-1 ring-inset ${chip[c.status]}`}>{c.status}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
 // Budget / prior-period variance — line-by-line P&L movement with a
 // direction-aware favourable/adverse read.
 function VariancePanel({ statements }: { statements?: SyncStatements }) {
@@ -8438,6 +8475,8 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, openCol
       <RunwayPanel statements={statements} />
 
       <WorkingCapitalPanel statements={statements} />
+
+      <CovenantPanel statements={statements} />
 
       <VariancePanel statements={statements} />
 
