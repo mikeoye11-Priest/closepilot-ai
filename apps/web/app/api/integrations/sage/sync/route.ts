@@ -5,6 +5,7 @@ import { fetchSageSyncData } from "@/lib/integrations/sage-sync";
 import { describeSageError } from "@/lib/integrations/sage";
 import { isReauthError, markConnectionReauthRequired } from "@/lib/integrations/reauth";
 import { activeRunFor, expireStaleRuns } from "@/lib/integrations/sync-runs";
+import { enforceRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { accountingParsedFiles } from "@/lib/integrations/xero-parsed-files";
 import { analyseParsedFiles, scopeAnalysisResult } from "@/lib/upload-analysis";
 import type { Company, Tenant } from "@/lib/types";
@@ -51,6 +52,8 @@ export async function POST(request: Request) {
   const session = await requireApiSession();
   if (!session.ok) return session.response;
   if (session.authDisabled || !session.userId) return NextResponse.json({ error: "Authentication is required to sync Sage." }, { status: 401 });
+  const limited = await enforceRateLimit("sync", rateLimitKey(session.userId, request));
+  if (limited) return limited;
   const body = await request.json();
   const tenantId = stringValue(body.tenantId);
   const companyId = stringValue(body.companyId);

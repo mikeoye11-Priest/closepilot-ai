@@ -15,11 +15,14 @@ const url = process.env.UPSTASH_REDIS_REST_URL;
 const token = process.env.UPSTASH_REDIS_REST_TOKEN;
 const redis = url && token ? new Redis({ url, token }) : null;
 
-export type RateLimitBucket = "ai" | "upload";
+export type RateLimitBucket = "ai" | "upload" | "sync";
 
 const RULES: Record<RateLimitBucket, { tokens: number; window: `${number} ${"s" | "m" | "h"}` }> = {
   ai: { tokens: 20, window: "1 m" },
   upload: { tokens: 10, window: "1 m" },
+  // Accounting syncs are heavy (many provider calls) and rarely need to run more
+  // than a few times a minute; this caps accidental hammering per user.
+  sync: { tokens: 6, window: "1 m" },
 };
 
 const limiters: Record<RateLimitBucket, Ratelimit> | null = redis
@@ -34,6 +37,12 @@ const limiters: Record<RateLimitBucket, Ratelimit> | null = redis
         redis,
         limiter: Ratelimit.slidingWindow(RULES.upload.tokens, RULES.upload.window),
         prefix: "closepilot:rl:upload",
+        analytics: false,
+      }),
+      sync: new Ratelimit({
+        redis,
+        limiter: Ratelimit.slidingWindow(RULES.sync.tokens, RULES.sync.window),
+        prefix: "closepilot:rl:sync",
         analytics: false,
       }),
     }
