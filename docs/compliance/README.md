@@ -15,6 +15,20 @@ processor**. UK GDPR + the Data Protection Act 2018 apply.
 
 Operating entity: **Zequence Digital Ltd** (update if incorrect).
 
+### Terminology (avoid the "DPA" ambiguity)
+
+- **DPA = Data Processing Agreement** — the Article 28 contract between ClosePilot
+  (processor) and a practice (controller). This is [dpa-outline.md](./dpa-outline.md).
+  It is a **private contract**; the ICO is not a party to it.
+- **DPA 2018 = Data Protection Act 2018** — the UK **statute** (applies alongside
+  UK GDPR). Wherever this pack says "the Data Protection Act 2018" it means the Act.
+- **ICO = Information Commissioner's Office** — the UK **regulator**. You do not
+  sign a DPA *with* the ICO. Your ICO obligations are separate: **register / pay the
+  annual data-protection fee** (unless exempt), align your Data Processing Agreement
+  to the ICO's data-processing-contract checklist, and report breaches (as
+  processor, ClosePilot notifies the controller; the controller notifies the ICO
+  within 72 hours).
+
 ## Contents
 
 | Document | Purpose | Owner action |
