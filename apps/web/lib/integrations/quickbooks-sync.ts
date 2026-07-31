@@ -8,6 +8,7 @@
 
 import { quickbooksFetch, describeQuickBooksError } from "./quickbooks";
 import { type AccountingSyncData, numberFrom, vatRow, runWithConcurrency } from "./accounting-sync";
+import { logger } from "../logger";
 
 type Row = Record<string, string>;
 type QboColData = { value?: string; id?: string };
@@ -156,15 +157,22 @@ const VAT_ENTITIES: Array<{ name: string; type: "Sale" | "Purchase"; negate: boo
   { name: "VendorCredit", type: "Purchase", negate: true },
 ];
 
+const QBO_PAGE_SIZE = 1000;
+// Safety bound only — page until a short page signals the end. 50k rows per entity
+// per VAT period is far beyond any SME; hitting it is logged as a truncation risk.
+const QBO_MAX_PAGES = 50;
+
 async function queryEntity(baseUrl: string, accessToken: string, realmId: string, entity: string, start: string, end: string): Promise<QboTxn[]> {
   const items: QboTxn[] = [];
-  for (let startPosition = 1; startPosition <= 3001; startPosition += 1000) {
-    const query = `SELECT * FROM ${entity} WHERE TxnDate >= '${start}' AND TxnDate <= '${end}' STARTPOSITION ${startPosition} MAXRESULTS 1000`;
+  for (let page = 0; page < QBO_MAX_PAGES; page += 1) {
+    const startPosition = page * QBO_PAGE_SIZE + 1;
+    const query = `SELECT * FROM ${entity} WHERE TxnDate >= '${start}' AND TxnDate <= '${end}' STARTPOSITION ${startPosition} MAXRESULTS ${QBO_PAGE_SIZE}`;
     const response = await quickbooksFetch<{ QueryResponse?: Record<string, QboTxn[]> }>(baseUrl, accessToken, `/v3/company/${realmId}/query?query=${encodeURIComponent(query)}&minorversion=70`);
     const batch = response.QueryResponse?.[entity] ?? [];
     items.push(...batch);
-    if (batch.length < 1000) break;
+    if (batch.length < QBO_PAGE_SIZE) return items; // last page reached
   }
+  logger.warn("QuickBooks entity pagination hit the safety cap — results may be truncated", { entity, maxRows: QBO_MAX_PAGES * QBO_PAGE_SIZE, start, end });
   return items;
 }
 
