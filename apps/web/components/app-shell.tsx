@@ -8655,6 +8655,7 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
   openFindingEvidence: (findingId: string) => void;
 }) {
   const [scenario, setScenario] = useState<"conservative" | "base" | "upside">("base");
+  const [cashTab, setCashTab] = useState<"forecast" | "liquidity" | "performance" | "recovery">("forecast");
   const accounts = collectionAccounts(findings);
   const arFindings = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
   const totalExposure = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
@@ -8708,19 +8709,29 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
 
       <FinanceInsightsPanel statements={statements} tenantId={tenantId} companyId={companyId} />
 
-      <ThirteenWeekCashflow statements={statements} />
+      <div className="flex flex-wrap gap-1 rounded-xl border border-line bg-surface p-1 shadow-card">
+        {([["forecast", "13-week & what-if"], ["liquidity", "Runway, working capital & covenants"], ["performance", "Variance & concentration"], ["recovery", "Recovery & collections"]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setCashTab(id)} className={`rounded-lg px-3.5 py-2 text-sm font-bold transition-colors ${cashTab === id ? "bg-brand text-white shadow-sm" : "text-muted hover:bg-slate-50"}`}>{label}</button>
+        ))}
+      </div>
 
-      <WhatIfPlanner statements={statements} />
+      {cashTab === "forecast" && (<>
+        <ThirteenWeekCashflow statements={statements} />
+        <WhatIfPlanner statements={statements} />
+      </>)}
 
-      <RunwayPanel statements={statements} />
+      {cashTab === "liquidity" && (<>
+        <RunwayPanel statements={statements} />
+        <WorkingCapitalPanel statements={statements} />
+        <CovenantPanel statements={statements} companyId={companyId} />
+      </>)}
 
-      <WorkingCapitalPanel statements={statements} />
+      {cashTab === "performance" && (<>
+        <VariancePanel statements={statements} />
+        <ConcentrationPanel statements={statements} />
+      </>)}
 
-      <CovenantPanel statements={statements} companyId={companyId} />
-
-      <VariancePanel statements={statements} />
-
-      <ConcentrationPanel statements={statements} />
+      {cashTab === "recovery" && (<>
 
       <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <Panel title="Cumulative Recovery Forecast">
@@ -8765,6 +8776,7 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
           </table>
         </div>
       </section>
+      </>)}
     </div>
   );
 }
