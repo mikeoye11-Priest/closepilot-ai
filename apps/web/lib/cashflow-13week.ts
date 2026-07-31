@@ -7,6 +7,13 @@
 // review/accounts use (aged debtors/creditors, bank, P&L), so it needs no extra
 // upload. It is a directional planning model — the assumptions are made explicit
 // so a finance manager can sanity-check and refine them.
+//
+// Integrity guarantees (every headline reconciles visibly):
+//  - the forecast starts the CURRENT week — no past weeks presented as forecast;
+//  - all weekly figures are integer-rounded and CHAINED, so opening + net =
+//    closing and Σreceipts − Σpayments = net movement = closing − opening exactly;
+//  - receivables are split into attributed vs unattributed; scenarios recognise
+//    the unattributed portion at a stated weight (conservative excludes it).
 
 type Row = Record<string, string>;
 
@@ -27,8 +34,10 @@ export type WeeklyCashflow = {
 
 export type ThirteenWeekInput = {
   openingCash: number;
-  startDate?: string; // week-1 Monday; defaults to the coming Monday
-  agedReceivables?: Array<{ amount: number; daysOverdue?: number; name?: string }>;
+  openingCashEvidenced?: boolean; // is opening cash backed by a bank balance?
+  openingAsOf?: string; // the date the opening balance was struck (for the caveat)
+  startDate?: string; // week-1 Monday; defaults to the coming Monday (current week)
+  agedReceivables?: Array<{ amount: number; daysOverdue?: number; name?: string; attributed?: boolean }>;
   agedPayables?: Array<{ amount: number; daysOverdue?: number; name?: string }>;
   weeklyPayroll?: number; // recurring cash outflow / week
   weeklyOverheads?: number; // recurring cash outflow / week (ex-payroll, ex-depreciation)
@@ -37,11 +46,17 @@ export type ThirteenWeekInput = {
   receivableTermDays?: number; // override AR terms (what-if: collect faster/slower)
   payableTermDays?: number; // override AP terms (what-if: pay suppliers later)
   overdueHaircut?: number; // 0..1 write-down applied to 90+ day receivables (doubtful)
+  unattributedWeight?: number; // 0..1 fraction of UN-attributed receivables recognised
 };
+
+// Debtor populations, so the forecast's receivables basis is transparent and
+// reconcilable to the ledger.
+export type ReceivablesBreakdown = { aged: number; attributed: number; unattributed: number; recognised: number };
 
 export type ThirteenWeekResult = {
   weeks: WeeklyCashflow[];
   openingCash: number;
+  openingCashEvidenced: boolean;
   totalReceipts: number;
   totalPayments: number;
   closingCash: number;
@@ -49,6 +64,7 @@ export type ThirteenWeekResult = {
   lowestBalance: number;
   lowestWeek: number;
   firstNegativeWeek: number | null;
+  receivables: ReceivablesBreakdown;
   assumptions: string[];
 };
 
@@ -88,17 +104,33 @@ export function buildThirteenWeekCashflow(input: ThirteenWeekInput): ThirteenWee
   const arTerm = Math.max(0, input.receivableTermDays ?? termDays);
   const apTerm = Math.max(0, input.payableTermDays ?? termDays);
   const haircut = clamp(input.overdueHaircut ?? 0, 0, 1);
-  const start = mondayOnOrAfter(input.startDate);
+  const unattributedWeight = clamp(input.unattributedWeight ?? 1, 0, 1);
+  const start = mondayOnOrAfter(input.startDate); // current week unless a start is given
+  const evidenced = input.openingCashEvidenced ?? true;
 
   const receiptsByWeek = new Array(WEEKS + 1).fill(0);
   const paymentsByWeek = new Array(WEEKS + 1).fill(0);
 
+  let aged = 0;
+  let attributed = 0;
+  let unattributed = 0;
+  let recognised = 0;
   for (const receivable of input.agedReceivables ?? []) {
-    let amount = Math.abs(receivable.amount);
-    if (amount <= 0) continue;
+    const gross = Math.abs(receivable.amount);
+    if (gross <= 0) continue;
+    aged += gross;
     const overdue = receivable.daysOverdue ?? 0;
+    let amount = gross;
     if (overdue > 90 && haircut > 0) amount *= 1 - haircut; // doubtful older debt
+    if (receivable.attributed === false) {
+      unattributed += gross;
+      amount *= unattributedWeight; // exclude/weight balances not matched to a customer
+    } else {
+      attributed += gross;
+    }
+    if (amount <= 0) continue;
     receiptsByWeek[weekFor(overdue, arTerm, 3)] += amount;
+    recognised += amount;
   }
   for (const payable of input.agedPayables ?? []) {
     const amount = Math.abs(payable.amount);
@@ -116,22 +148,24 @@ export function buildThirteenWeekCashflow(input: ThirteenWeekInput): ThirteenWee
     else oneOffOut[week] += Math.abs(item.amount);
   }
 
+  // Chain ROUNDED weekly values so what is shown adds up exactly.
   const weeks: WeeklyCashflow[] = [];
-  let opening = input.openingCash;
+  const openingCash = round(input.openingCash);
+  let opening = openingCash;
   for (let week = 1; week <= WEEKS; week += 1) {
-    const receipts = receiptsByWeek[week] + oneOffIn[week];
-    const payments = paymentsByWeek[week] + payroll + overheads + oneOffOut[week];
+    const receipts = round(receiptsByWeek[week] + oneOffIn[week]);
+    const payments = round(paymentsByWeek[week] + payroll + overheads + oneOffOut[week]);
     const net = receipts - payments;
     const closing = opening + net;
     weeks.push({
       week,
       weekStart: addDaysISO(start, (week - 1) * 7),
       weekEnd: addDaysISO(start, week * 7 - 1),
-      opening: round(opening),
-      receipts: round(receipts),
-      payments: round(payments),
-      net: round(net),
-      closing: round(closing),
+      opening,
+      receipts,
+      payments,
+      net,
+      closing,
       lowest: false,
       negative: closing < 0,
     });
@@ -146,8 +180,12 @@ export function buildThirteenWeekCashflow(input: ThirteenWeekInput): ThirteenWee
 
   const totalReceipts = weeks.reduce((sum, week) => sum + week.receipts, 0);
   const totalPayments = weeks.reduce((sum, week) => sum + week.payments, 0);
+  const netMovement = totalReceipts - totalPayments; // == closingCash − openingCash
+  const closingCash = weeks[WEEKS - 1].closing;
 
   const assumptions = [
+    `Opening cash ${money(openingCash)}${input.openingAsOf ? ` (as at ${input.openingAsOf})` : ""}, projected forward from the current week.${evidenced ? "" : " Not evidenced by a bank balance — treat the absolute cash line with caution."}`,
+    `Receivables: ${money(aged)} aged; ${money(round(recognised))} recognised in this scenario${unattributed > 0 ? ` (${money(unattributed)} not matched to a customer${unattributedWeight < 1 ? `, ${Math.round(unattributedWeight * 100)}% recognised` : ""})` : ""}.`,
     `Receivables collected around ${termDays}-day terms, less how overdue they already are (overdue balances chased into the near weeks).`,
     "Payables settled when due or overdue.",
     payroll > 0 ? `Payroll spread evenly at ${money(payroll)}/week.` : "No payroll run-rate supplied.",
@@ -158,14 +196,16 @@ export function buildThirteenWeekCashflow(input: ThirteenWeekInput): ThirteenWee
 
   return {
     weeks,
-    openingCash: round(input.openingCash),
-    totalReceipts: round(totalReceipts),
-    totalPayments: round(totalPayments),
-    closingCash: weeks[WEEKS - 1].closing,
-    netMovement: round(totalReceipts - totalPayments),
-    lowestBalance: round(lowestBalance),
+    openingCash,
+    openingCashEvidenced: evidenced,
+    totalReceipts,
+    totalPayments,
+    closingCash,
+    netMovement,
+    lowestBalance,
     lowestWeek,
     firstNegativeWeek,
+    receivables: { aged: round(aged), attributed: round(attributed), unattributed: round(unattributed), recognised: round(recognised) },
     assumptions,
   };
 }
@@ -175,10 +215,12 @@ function money(value: number): string {
   return `${rounded < 0 ? "−£" : "£"}${Math.abs(rounded).toLocaleString("en-GB")}`;
 }
 
-const SCENARIOS: Record<CashflowScenario, { termDays: number; overdueHaircut: number }> = {
-  upside: { termDays: 21, overdueHaircut: 0 },
-  base: { termDays: 30, overdueHaircut: 0 },
-  conservative: { termDays: 45, overdueHaircut: 0.5 },
+// Scenarios differ on collection speed, doubtful-debt write-down AND how much of
+// the un-attributed (not matched to a customer) receivable balance is recognised.
+const SCENARIOS: Record<CashflowScenario, { termDays: number; overdueHaircut: number; unattributedWeight: number }> = {
+  upside: { termDays: 21, overdueHaircut: 0, unattributedWeight: 1 },
+  base: { termDays: 30, overdueHaircut: 0, unattributedWeight: 0.7 },
+  conservative: { termDays: 45, overdueHaircut: 0.5, unattributedWeight: 0 },
 };
 
 export type StatementsForCashflow = {
@@ -190,10 +232,18 @@ export type StatementsForCashflow = {
   asOfDate?: string;
 };
 
+// A receivable row is "attributed" when it is matched to a named customer (not a
+// generic placeholder). Unattributed balances are scenario-weighted.
+function isAttributed(name: string): boolean {
+  const trimmed = name.trim();
+  return trimmed.length > 0 && !/^(unattributed|unallocated|unmatched|various|sundry|other|misc(ellaneous)?|n\/?a|control)$/i.test(trimmed);
+}
+
 // Derive a 13-week model input from a company's statements. Opening cash from the
 // bank (or balance-sheet cash), receipts/payments from aged ledgers, payroll +
 // overhead run-rates from the P&L (annualised → weekly), and the VAT liability as
-// a one-off payment mid-quarter.
+// a one-off payment mid-quarter. The forecast starts the current week; the
+// reporting date is retained only as the opening-balance "as at".
 export function thirteenWeekInputFromStatements(statements: StatementsForCashflow, scenario: CashflowScenario = "base"): ThirteenWeekInput {
   const s = SCENARIOS[scenario];
   const bank = statements.bank ?? [];
@@ -201,11 +251,14 @@ export function thirteenWeekInputFromStatements(statements: StatementsForCashflo
   const bsCash = (statements.balanceSheet ?? []).filter((row) => /cash|bank/i.test(String(row.item ?? ""))).reduce((sum, row) => sum + num(row.amount), 0);
   const openingCash = bank.length ? bankCash : bsCash;
 
-  const agedReceivables = (statements.agedDebtors ?? []).map((row) => ({ amount: num(row.amount), daysOverdue: num(row.days_overdue), name: String(row.customer ?? row.name ?? "") }));
+  const agedReceivables = (statements.agedDebtors ?? []).map((row) => {
+    const name = String(row.customer ?? row.name ?? "");
+    return { amount: num(row.amount), daysOverdue: num(row.days_overdue), name, attributed: isAttributed(name) };
+  });
   const agedPayables = (statements.agedCreditors ?? []).map((row) => ({ amount: num(row.amount), daysOverdue: num(row.days_overdue), name: String(row.supplier ?? row.name ?? "") }));
 
-  // Weekly run-rates from the annual P&L. Payroll = salary/wage/direct-labour
-  // lines; overheads = other expense lines excluding depreciation (non-cash).
+  // Weekly run-rates from the annual P&L. Payroll = salary/wage lines; overheads =
+  // other expense lines excluding depreciation (non-cash).
   const pl = statements.profitLoss ?? [];
   const isCost = (row: Row) => num(row.amount) < 0 || /cost of sales|overhead|expense|admin/i.test(String(row.category ?? ""));
   const annualPayroll = pl.filter((row) => /salar|wage|payroll/i.test(String(row.description ?? "")) ).reduce((sum, row) => sum + Math.abs(num(row.amount)), 0);
@@ -220,7 +273,9 @@ export function thirteenWeekInputFromStatements(statements: StatementsForCashflo
 
   return {
     openingCash,
-    startDate: statements.asOfDate,
+    openingCashEvidenced: bank.length > 0,
+    openingAsOf: statements.asOfDate,
+    // startDate intentionally omitted → forecast starts the current week.
     agedReceivables,
     agedPayables,
     weeklyPayroll: annualPayroll / 52,
@@ -228,5 +283,6 @@ export function thirteenWeekInputFromStatements(statements: StatementsForCashflo
     oneOffs,
     termDays: s.termDays,
     overdueHaircut: s.overdueHaircut,
+    unattributedWeight: s.unattributedWeight,
   };
 }

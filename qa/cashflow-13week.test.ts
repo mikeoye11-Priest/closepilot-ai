@@ -38,12 +38,47 @@ test("flags the week cash turns negative", () => {
   assert.equal(result.lowestBalance, -400);
 });
 
-test("conservative scenario writes down 90+ day debtors vs base", () => {
-  const statements = { agedDebtors: [{ amount: "10000", days_overdue: "120" }], bank: [{ closing_balance: "5000" }] };
+test("conservative scenario writes down 90+ day debtors vs base (attributed)", () => {
+  const statements = { agedDebtors: [{ customer: "Acme Ltd", amount: "10000", days_overdue: "120" }], bank: [{ closing_balance: "5000" }] };
   const base = buildThirteenWeekCashflow(thirteenWeekInputFromStatements(statements, "base"));
   const conservative = buildThirteenWeekCashflow(thirteenWeekInputFromStatements(statements, "conservative"));
-  assert.equal(base.totalReceipts, 10000, "base collects the full doubtful debt");
+  assert.equal(base.totalReceipts, 10000, "base collects the full attributed doubtful debt");
   assert.equal(conservative.totalReceipts, 5000, "conservative applies a 50% write-down to 90+ day debt");
+});
+
+test("unattributed receivables are scenario-weighted (base) and excluded (conservative)", () => {
+  // no customer name → unattributed; days_overdue 10 so no doubtful-debt haircut.
+  const statements = { agedDebtors: [{ amount: "10000", days_overdue: "10" }], bank: [{ closing_balance: "0" }] };
+  const base = buildThirteenWeekCashflow(thirteenWeekInputFromStatements(statements, "base"));
+  const conservative = buildThirteenWeekCashflow(thirteenWeekInputFromStatements(statements, "conservative"));
+  const upside = buildThirteenWeekCashflow(thirteenWeekInputFromStatements(statements, "upside"));
+  assert.equal(base.receivables.unattributed, 10000);
+  assert.equal(base.receivables.attributed, 0);
+  assert.equal(base.receivables.recognised, 7000, "base recognises 70% of unattributed");
+  assert.equal(conservative.receivables.recognised, 0, "conservative excludes unattributed");
+  assert.equal(upside.receivables.recognised, 10000, "upside recognises all");
+});
+
+test("every headline figure reconciles exactly", () => {
+  const result = buildThirteenWeekCashflow(thirteenWeekInputFromStatements(pilotStatements, "base"));
+  assert.equal(result.netMovement, result.closingCash - result.openingCash, "net movement = closing − opening");
+  assert.equal(result.totalReceipts - result.totalPayments, result.netMovement, "receipts − payments = net movement");
+  assert.equal(result.weeks[result.weeks.length - 1].closing, result.closingCash, "last week closing = headline closing");
+  assert.equal(result.receivables.attributed + result.receivables.unattributed, result.receivables.aged, "attributed + unattributed = aged");
+});
+
+test("forecast starts the current week, not the (past) reporting date", () => {
+  const result = buildThirteenWeekCashflow(thirteenWeekInputFromStatements(pilotStatements, "base"));
+  const monday = new Date(`${result.weeks[0].weekStart}T00:00:00Z`);
+  assert.equal(monday.getUTCDay(), 1, "week 1 begins on a Monday");
+  assert.ok(result.weeks[0].weekStart >= new Date().toISOString().slice(0, 10), "week 1 is today or later — not 2026-05");
+});
+
+test("opening cash is flagged unevidenced when there is no bank balance", () => {
+  const withBank = thirteenWeekInputFromStatements(pilotStatements, "base");
+  assert.equal(buildThirteenWeekCashflow(withBank).openingCashEvidenced, true);
+  const noBank = thirteenWeekInputFromStatements({ ...pilotStatements, bank: [] }, "base");
+  assert.equal(buildThirteenWeekCashflow(noBank).openingCashEvidenced, false, "no bank rows → unevidenced opening");
 });
 
 test("what-if levers: collecting faster and paying later both lift the low point", () => {
