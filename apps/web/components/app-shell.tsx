@@ -8,6 +8,7 @@ import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, 
 import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, type CashflowScenario, type StatementsForCashflow } from "@/lib/cashflow-13week";
 import { buildWorkingCapital } from "@/lib/working-capital";
 import { buildRunway } from "@/lib/runway";
+import { buildVariance } from "@/lib/variance";
 import type { SyncStatements } from "@/lib/management-accounts";
 import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
 import { findingStandardReference } from "@/lib/finding-standards";
@@ -8197,6 +8198,45 @@ function ThirteenWeekCashflow({ statements }: { statements?: StatementsForCashfl
   );
 }
 
+// Budget / prior-period variance — line-by-line P&L movement with a
+// direction-aware favourable/adverse read.
+function VariancePanel({ statements }: { statements?: SyncStatements }) {
+  const report = useMemo(() => (statements ? buildVariance(statements) : null), [statements]);
+  if (!report || !report.hasComparison) return null;
+  const gbp = (value: number) => `${value < 0 ? "−£" : "£"}${Math.abs(Math.round(value)).toLocaleString("en-GB")}`;
+  return (
+    <Panel title="Variance · Actual vs Prior Period">
+      <p className="max-w-2xl text-sm text-muted">Where the P&amp;L moved against the comparison period. Favourable = higher income/profit or lower cost.</p>
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[560px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-line text-left text-xs font-bold uppercase text-muted">
+              <th className="py-2 pr-3">Line</th>
+              <th className="px-3 py-2 text-right">Actual</th>
+              <th className="px-3 py-2 text-right">{report.basis}</th>
+              <th className="px-3 py-2 text-right">Variance</th>
+              <th className="px-3 py-2 text-right">%</th>
+              <th className="py-2 pl-3">Read</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.lines.map((l) => (
+              <tr key={l.label} className={`border-b border-line/60 ${l.kind === "result" ? "font-bold" : ""}`}>
+                <td className="py-2 pr-3">{l.label}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{gbp(l.actual)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-muted">{gbp(l.comparison)}</td>
+                <td className={`px-3 py-2 text-right tabular-nums ${l.favourable ? "text-emerald-700" : "text-red-700"}`}>{l.variance >= 0 ? "+" : "−"}{gbp(Math.abs(l.variance))}</td>
+                <td className={`px-3 py-2 text-right tabular-nums ${l.favourable ? "text-emerald-700" : "text-red-700"}`}>{l.variancePct === null ? "—" : `${l.variancePct >= 0 ? "+" : ""}${l.variancePct.toFixed(1)}%`}</td>
+                <td className="py-2 pl-3"><span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset ${l.favourable ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20" : "bg-red-50 text-red-700 ring-red-600/20"}`}>{l.favourable ? "Favourable" : "Adverse"}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
 // Cash runway & burn — are we generating or burning cash, how many months of
 // cash do we hold, and when do we run out?
 function RunwayPanel({ statements }: { statements?: SyncStatements }) {
@@ -8319,6 +8359,8 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, openCol
       <RunwayPanel statements={statements} />
 
       <WorkingCapitalPanel statements={statements} />
+
+      <VariancePanel statements={statements} />
 
       <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <Panel title="Cumulative Recovery Forecast">
