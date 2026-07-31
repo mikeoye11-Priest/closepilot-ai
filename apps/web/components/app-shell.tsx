@@ -9,7 +9,7 @@ import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, type Cashfl
 import { buildWorkingCapital } from "@/lib/working-capital";
 import { buildRunway } from "@/lib/runway";
 import { buildVariance } from "@/lib/variance";
-import { buildCovenants, type CovenantUnit } from "@/lib/covenants";
+import { buildCovenants, DEFAULT_COVENANTS, type CovenantUnit, type CovenantThresholds } from "@/lib/covenants";
 import { buildConcentration } from "@/lib/concentration";
 import { buildFinanceInsights } from "@/lib/finance-insights";
 import { buildVatInsights } from "@/lib/vat-insights";
@@ -8338,8 +8338,28 @@ function ConcentrationPanel({ statements }: { statements?: SyncStatements }) {
 
 // Covenant & liquidity alerts — the ratios a lender/board watches, plus a
 // 13-week minimum-cash floor, against thresholds.
-function CovenantPanel({ statements }: { statements?: SyncStatements }) {
-  const report = useMemo(() => (statements ? buildCovenants(statements) : null), [statements]);
+function CovenantPanel({ statements, companyId }: { statements?: SyncStatements; companyId: string }) {
+  const [thresholds, setThresholds] = useState<CovenantThresholds>(DEFAULT_COVENANTS);
+  const [editing, setEditing] = useState(false);
+  const storageKey = `closepilot.covenants.${companyId}`;
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      setThresholds(raw ? { ...DEFAULT_COVENANTS, ...JSON.parse(raw) } : DEFAULT_COVENANTS);
+    } catch { setThresholds(DEFAULT_COVENANTS); }
+  }, [storageKey]);
+  const update = (key: keyof CovenantThresholds, value: number) => {
+    const next = { ...thresholds, [key]: Number.isFinite(value) ? value : 0 };
+    setThresholds(next);
+    try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* non-blocking */ }
+  };
+  const resetThresholds = () => {
+    setThresholds(DEFAULT_COVENANTS);
+    try { localStorage.removeItem(storageKey); } catch { /* non-blocking */ }
+  };
+  const customised = (["currentRatio", "quickRatio", "cashCoverMonths", "minForecastCash"] as const).some((key) => thresholds[key] !== DEFAULT_COVENANTS[key]);
+
+  const report = useMemo(() => (statements ? buildCovenants(statements, thresholds) : null), [statements, thresholds]);
   if (!report || !report.available) return null;
   const fmt = (value: number, unit: CovenantUnit) => unit === "ratio" ? `${value.toFixed(2)}x` : unit === "months" ? `${value.toFixed(1)} mo` : `${value < 0 ? "−£" : "£"}${Math.abs(Math.round(value)).toLocaleString("en-GB")}`;
   const chip: Record<string, string> = {
@@ -8349,11 +8369,29 @@ function CovenantPanel({ statements }: { statements?: SyncStatements }) {
   };
   return (
     <Panel title="Covenant & Liquidity Alerts">
-      <div className="flex flex-wrap gap-2 text-xs font-bold">
-        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 ring-1 ring-inset ring-emerald-600/20">{report.passed} pass</span>
-        {report.watches > 0 && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 ring-1 ring-inset ring-amber-600/20">{report.watches} watch</span>}
-        {report.breaches > 0 && <span className="rounded-full bg-red-50 px-2.5 py-1 text-red-700 ring-1 ring-inset ring-red-600/20">{report.breaches} breach</span>}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
+          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 ring-1 ring-inset ring-emerald-600/20">{report.passed} pass</span>
+          {report.watches > 0 && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 ring-1 ring-inset ring-amber-600/20">{report.watches} watch</span>}
+          {report.breaches > 0 && <span className="rounded-full bg-red-50 px-2.5 py-1 text-red-700 ring-1 ring-inset ring-red-600/20">{report.breaches} breach</span>}
+          {customised && <span className="rounded-full bg-brand/10 px-2.5 py-1 text-brand ring-1 ring-inset ring-brand/20">custom thresholds</span>}
+        </div>
+        <button className="rounded-lg border border-line px-3 py-1.5 text-xs font-black" onClick={() => setEditing((v) => !v)}>{editing ? "Done" : "Edit thresholds"}</button>
       </div>
+
+      {editing && (
+        <div className="mt-3 rounded-xl border border-line bg-slate-50/70 p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-muted">Covenant thresholds (saved for this client)</p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <label className="grid gap-1 text-xs font-semibold"><span>Current ratio ≥</span><input type="number" step={0.1} min={0} value={thresholds.currentRatio} onChange={(e) => update("currentRatio", Number(e.target.value))} className="h-9 rounded-lg border border-line px-2" /></label>
+            <label className="grid gap-1 text-xs font-semibold"><span>Quick ratio ≥</span><input type="number" step={0.1} min={0} value={thresholds.quickRatio} onChange={(e) => update("quickRatio", Number(e.target.value))} className="h-9 rounded-lg border border-line px-2" /></label>
+            <label className="grid gap-1 text-xs font-semibold"><span>Cash cover (months) ≥</span><input type="number" step={0.5} min={0} value={thresholds.cashCoverMonths} onChange={(e) => update("cashCoverMonths", Number(e.target.value))} className="h-9 rounded-lg border border-line px-2" /></label>
+            <label className="grid gap-1 text-xs font-semibold"><span>13-wk min cash (£) ≥</span><input type="number" step={5000} value={thresholds.minForecastCash} onChange={(e) => update("minForecastCash", Number(e.target.value))} className="h-9 rounded-lg border border-line px-2" /></label>
+          </div>
+          {customised && <button className="mt-3 rounded-lg border border-line px-3 py-1.5 text-xs font-black" onClick={resetThresholds}>Reset to defaults</button>}
+        </div>
+      )}
+
       <div className="mt-4 grid gap-2">
         {report.covenants.map((c) => (
           <div key={c.name} className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3 ${c.status === "breach" ? "border-red-200 bg-red-50/50" : c.status === "watch" ? "border-amber-200 bg-amber-50/50" : "border-line"}`}>
@@ -8602,7 +8640,7 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
 
       <WorkingCapitalPanel statements={statements} />
 
-      <CovenantPanel statements={statements} />
+      <CovenantPanel statements={statements} companyId={companyId} />
 
       <VariancePanel statements={statements} />
 
