@@ -8198,6 +8198,83 @@ function ThirteenWeekCashflow({ statements }: { statements?: StatementsForCashfl
   );
 }
 
+// What-if planner — live levers on the 13-week model (collect faster, pay
+// suppliers later, add a recurring cost, draw down finance) vs the base case.
+function WhatIfPlanner({ statements }: { statements?: SyncStatements }) {
+  const [collectFaster, setCollectFaster] = useState(0);
+  const [payLater, setPayLater] = useState(0);
+  const [extraMonthly, setExtraMonthly] = useState(0);
+  const [drawdown, setDrawdown] = useState(0);
+
+  const base = useMemo(() => (statements ? thirteenWeekInputFromStatements(statements, "base") : null), [statements]);
+  const baseResult = useMemo(() => (base ? buildThirteenWeekCashflow(base) : null), [base]);
+  const scenario = useMemo(() => {
+    if (!base) return null;
+    const term = base.termDays ?? 30;
+    return buildThirteenWeekCashflow({
+      ...base,
+      receivableTermDays: Math.max(0, term - collectFaster),
+      payableTermDays: term + payLater,
+      weeklyPayroll: (base.weeklyPayroll ?? 0) + (extraMonthly * 12) / 52,
+      oneOffs: drawdown > 0 ? [...(base.oneOffs ?? []), { week: 1, amount: drawdown, label: "Facility drawdown" }] : base.oneOffs,
+    });
+  }, [base, collectFaster, payLater, extraMonthly, drawdown]);
+
+  if (!base || !baseResult || !scenario) return null;
+  const gbp = (value: number) => `${value < 0 ? "−£" : "£"}${Math.abs(Math.round(value)).toLocaleString("en-GB")}`;
+  const reset = () => { setCollectFaster(0); setPayLater(0); setExtraMonthly(0); setDrawdown(0); };
+  const dirty = collectFaster || payLater || extraMonthly || drawdown;
+
+  const deltaChip = (scenarioValue: number, baseValue: number, higherIsBetter = true) => {
+    const diff = scenarioValue - baseValue;
+    if (Math.abs(diff) < 1) return <span className="text-xs text-muted">no change</span>;
+    const good = higherIsBetter ? diff > 0 : diff < 0;
+    return <span className={`text-xs font-bold ${good ? "text-emerald-700" : "text-red-700"}`}>{diff >= 0 ? "+" : "−"}{gbp(Math.abs(diff))}</span>;
+  };
+  return (
+    <Panel title="What-If Planner">
+      <p className="max-w-2xl text-sm text-muted">Pull the levers to see the effect on the 13-week position against the base case — before you commit to a collections push, a payment deferral, a new hire or drawing on a facility.</p>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <label className="grid gap-1 text-sm">
+          <span className="flex justify-between font-semibold"><span>Collect debtors faster</span><span className="tabular-nums text-brand">{collectFaster} days</span></span>
+          <input type="range" min={0} max={21} value={collectFaster} onChange={(e) => setCollectFaster(Number(e.target.value))} className="accent-brand" />
+        </label>
+        <label className="grid gap-1 text-sm">
+          <span className="flex justify-between font-semibold"><span>Pay suppliers later</span><span className="tabular-nums text-brand">{payLater} days</span></span>
+          <input type="range" min={0} max={21} value={payLater} onChange={(e) => setPayLater(Number(e.target.value))} className="accent-brand" />
+        </label>
+        <label className="grid gap-1 text-sm">
+          <span className="font-semibold">Extra recurring cost (e.g. a new hire)</span>
+          <div className="flex items-center gap-2"><span className="text-muted">£</span><input type="number" min={0} step={500} value={extraMonthly} onChange={(e) => setExtraMonthly(Math.max(0, Number(e.target.value)))} className="h-10 w-40 rounded-lg border border-line px-3" /><span className="text-xs text-muted">/month</span></div>
+        </label>
+        <label className="grid gap-1 text-sm">
+          <span className="font-semibold">Finance drawdown (week 1)</span>
+          <div className="flex items-center gap-2"><span className="text-muted">£</span><input type="number" min={0} step={5000} value={drawdown} onChange={(e) => setDrawdown(Math.max(0, Number(e.target.value)))} className="h-10 w-40 rounded-lg border border-line px-3" /></div>
+        </label>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-line bg-slate-50/70 p-3">
+          <p className="text-xs font-bold uppercase text-muted">Closing cash · week 13</p>
+          <p className="mt-1 text-xl font-black tabular-nums text-ink">{gbp(scenario.closingCash)}</p>
+          {deltaChip(scenario.closingCash, baseResult.closingCash)}
+        </div>
+        <div className="rounded-xl border border-line bg-slate-50/70 p-3">
+          <p className="text-xs font-bold uppercase text-muted">Lowest balance · week {scenario.lowestWeek}</p>
+          <p className={`mt-1 text-xl font-black tabular-nums ${scenario.lowestBalance < 0 ? "text-red-700" : "text-ink"}`}>{gbp(scenario.lowestBalance)}</p>
+          {deltaChip(scenario.lowestBalance, baseResult.lowestBalance)}
+        </div>
+        <div className="rounded-xl border border-line bg-slate-50/70 p-3">
+          <p className="text-xs font-bold uppercase text-muted">First negative week</p>
+          <p className={`mt-1 text-xl font-black ${scenario.firstNegativeWeek ? "text-red-700" : "text-emerald-700"}`}>{scenario.firstNegativeWeek ? `Week ${scenario.firstNegativeWeek}` : "None"}</p>
+          <span className="text-xs text-muted">base: {baseResult.firstNegativeWeek ? `week ${baseResult.firstNegativeWeek}` : "none"}</span>
+        </div>
+      </div>
+      {dirty ? <button className="mt-3 rounded-lg border border-line px-3 py-2 text-xs font-black" onClick={reset}>Reset to base case</button> : <p className="mt-3 text-xs text-muted">Base case shown — move a lever to model a change.</p>}
+    </Panel>
+  );
+}
+
 // Budget / prior-period variance — line-by-line P&L movement with a
 // direction-aware favourable/adverse read.
 function VariancePanel({ statements }: { statements?: SyncStatements }) {
@@ -8355,6 +8432,8 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, openCol
       </section>
 
       <ThirteenWeekCashflow statements={statements} />
+
+      <WhatIfPlanner statements={statements} />
 
       <RunwayPanel statements={statements} />
 

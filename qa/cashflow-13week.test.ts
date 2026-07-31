@@ -46,6 +46,20 @@ test("conservative scenario writes down 90+ day debtors vs base", () => {
   assert.equal(conservative.totalReceipts, 5000, "conservative applies a 50% write-down to 90+ day debt");
 });
 
+test("what-if levers: collecting faster and paying later both lift the low point", () => {
+  const base = thirteenWeekInputFromStatements(pilotStatements, "base");
+  const baseLow = buildThirteenWeekCashflow(base).lowestBalance;
+  // Collect 14 days faster → receipts land earlier → tightest point no worse.
+  const faster = buildThirteenWeekCashflow({ ...base, receivableTermDays: (base.termDays ?? 30) - 14 });
+  assert.ok(faster.lowestBalance >= baseLow, "faster collection does not worsen the low point");
+  // Pay suppliers 21 days later → payments deferred → low point improves.
+  const later = buildThirteenWeekCashflow({ ...base, payableTermDays: (base.termDays ?? 30) + 21 });
+  assert.ok(later.lowestBalance >= baseLow, "deferring supplier payments lifts the low point");
+  // A one-off finance drawdown lifts every subsequent closing balance.
+  const drawdown = buildThirteenWeekCashflow({ ...base, oneOffs: [...(base.oneOffs ?? []), { week: 1, amount: 100_000, label: "Facility drawdown" }] });
+  assert.equal(drawdown.closingCash, buildThirteenWeekCashflow(base).closingCash + 100_000);
+});
+
 test("derives a full model from pilot statements (opening cash, run-rates, VAT one-off)", () => {
   const input = thirteenWeekInputFromStatements(pilotStatements, "base");
   assert.equal(input.openingCash, 142000, "opening cash = bank closing balances (128k + 14k)");
