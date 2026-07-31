@@ -47,6 +47,11 @@ export type ThirteenWeekInput = {
   payableTermDays?: number; // override AP terms (what-if: pay suppliers later)
   overdueHaircut?: number; // 0..1 write-down applied to 90+ day receivables (doubtful)
   unattributedWeight?: number; // 0..1 fraction of UN-attributed receivables recognised
+  // When supplied (from the canonical debtor ledger's recovery forecast), weekly
+  // receipts come straight from the selected recovery scenario instead of being
+  // re-scheduled here — so the 13-week receipts equal the recovery model exactly.
+  weeklyReceipts?: number[]; // index 1..13
+  receivablesOverride?: ReceivablesBreakdown;
 };
 
 // Debtor populations, so the forecast's receivables basis is transparent and
@@ -115,22 +120,30 @@ export function buildThirteenWeekCashflow(input: ThirteenWeekInput): ThirteenWee
   let attributed = 0;
   let unattributed = 0;
   let recognised = 0;
-  for (const receivable of input.agedReceivables ?? []) {
-    const gross = Math.abs(receivable.amount);
-    if (gross <= 0) continue;
-    aged += gross;
-    const overdue = receivable.daysOverdue ?? 0;
-    let amount = gross;
-    if (overdue > 90 && haircut > 0) amount *= 1 - haircut; // doubtful older debt
-    if (receivable.attributed === false) {
-      unattributed += gross;
-      amount *= unattributedWeight; // exclude/weight balances not matched to a customer
-    } else {
-      attributed += gross;
+  if (input.weeklyReceipts) {
+    // Receipts come from the canonical recovery forecast — do not re-schedule.
+    for (let week = 1; week <= WEEKS; week += 1) receiptsByWeek[week] = Math.max(0, input.weeklyReceipts[week] ?? 0);
+    const b = input.receivablesOverride;
+    if (b) { aged = b.aged; attributed = b.attributed; unattributed = b.unattributed; recognised = b.recognised; }
+    else recognised = receiptsByWeek.reduce((sum, x) => sum + x, 0);
+  } else {
+    for (const receivable of input.agedReceivables ?? []) {
+      const gross = Math.abs(receivable.amount);
+      if (gross <= 0) continue;
+      aged += gross;
+      const overdue = receivable.daysOverdue ?? 0;
+      let amount = gross;
+      if (overdue > 90 && haircut > 0) amount *= 1 - haircut; // doubtful older debt
+      if (receivable.attributed === false) {
+        unattributed += gross;
+        amount *= unattributedWeight; // exclude/weight balances not matched to a customer
+      } else {
+        attributed += gross;
+      }
+      if (amount <= 0) continue;
+      receiptsByWeek[weekFor(overdue, arTerm, 3)] += amount;
+      recognised += amount;
     }
-    if (amount <= 0) continue;
-    receiptsByWeek[weekFor(overdue, arTerm, 3)] += amount;
-    recognised += amount;
   }
   for (const payable of input.agedPayables ?? []) {
     const amount = Math.abs(payable.amount);

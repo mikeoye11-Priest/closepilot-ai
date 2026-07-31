@@ -95,6 +95,16 @@ test("what-if levers: collecting faster and paying later both lift the low point
   assert.equal(drawdown.closingCash, buildThirteenWeekCashflow(base).closingCash + 100_000);
 });
 
+test("weeklyReceipts override makes 13-week receipts equal the supplied recovery scenario", () => {
+  const weekly = new Array(14).fill(0);
+  weekly[1] = 1000; weekly[6] = 500;
+  const r = buildThirteenWeekCashflow({ openingCash: 0, weeklyReceipts: weekly, receivablesOverride: { aged: 2000, attributed: 2000, unattributed: 0, recognised: 1500 } });
+  assert.equal(r.totalReceipts, 1500, "receipts = the supplied recovery scenario, not re-scheduled aged debtors");
+  assert.equal(r.receivables.recognised, 1500);
+  assert.equal(r.weeks[0].receipts, 1000);
+  assert.equal(r.weeks[5].receipts, 500);
+});
+
 test("derives a full model from pilot statements (opening cash, run-rates, VAT one-off)", () => {
   const input = thirteenWeekInputFromStatements(pilotStatements, "base");
   assert.equal(input.openingCash, 142000, "opening cash = bank closing balances (128k + 14k)");

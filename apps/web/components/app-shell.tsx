@@ -5,7 +5,8 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, Respons
 import { evidenceGroundedAnswer, type GroundedAnswerSections } from "@/lib/ask-closepilot";
 import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompany, pilotTenant, tenant as seededTenant } from "@/lib/data";
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateMtdReadiness, calculateMtdReadinessDrivers, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type MtdReadinessDriver, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
-import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, type CashflowScenario, type StatementsForCashflow } from "@/lib/cashflow-13week";
+import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, num as cashNum, type CashflowScenario, type StatementsForCashflow } from "@/lib/cashflow-13week";
+import { buildDebtorLedger, forecastRecovery, type DebtorLedger } from "@/lib/debtor-ledger";
 import { buildWorkingCapital } from "@/lib/working-capital";
 import { buildRunway } from "@/lib/runway";
 import { buildVariance } from "@/lib/variance";
@@ -8205,18 +8206,75 @@ function MonthEndClose({ findings, recommendations, validationChecks, completeRe
   );
 }
 
+// Debtor bridge — the one authoritative reconciliation from the TB control down
+// to the recovery-adjusted forecast. Every debtor figure on the screen reconciles
+// to this; duplicates and unattributed balances are isolated, not double-counted.
+function DebtorBridgePanel({ ledger }: { ledger: DebtorLedger }) {
+  if (!ledger.bridge.agedTotal && !ledger.bridge.tbControl) return null;
+  const b = ledger.bridge;
+  const base = forecastRecovery(ledger, "base");
+  const gbp = (value: number) => `£${Math.round(value).toLocaleString("en-GB")}`;
+  const lowConfidence = ledger.unique.filter((r) => r.keyConfidence === "low").length;
+  const rows: Array<[string, string, string?]> = [
+    ["TB debtors control", b.tbControl == null ? "—" : gbp(b.tbControl), "Trial-balance receivable"],
+    ["Aged-debtors total", gbp(b.agedTotal), "Aged report"],
+    ["Difference", b.difference == null ? "—" : gbp(b.difference), b.reconciled ? "Reconciled" : "Review"],
+    ["Unique invoice balance", gbp(b.uniqueInvoiceBalance), b.duplicatesExcluded > 0 ? `${gbp(b.duplicatesExcluded)} duplicates excluded` : "After de-duplication"],
+    ["Customer-attributed", gbp(b.customerAttributed), "Matched to a customer"],
+    ["Unattributed", gbp(b.unattributed), "Not matched — isolated"],
+    ["Disputed", gbp(b.disputed), "Subset"],
+    ["Promised", gbp(b.promised), "Subset"],
+    ["Eligible collection balance", gbp(b.eligible), "Matched, non-duplicate, undisputed"],
+    ["Forecast recovery (base)", gbp(base.expected), "Probability × timing adjusted"],
+  ];
+  return (
+    <Panel title="Debtor Bridge · one reconciled debtor total">
+      <p className="max-w-2xl text-sm text-muted">The single authoritative receivables reconciliation. Every debtor figure — exposure, collections, cash-flow receipts — draws from this, so a 90-day invoice is counted once and its ageing/risk/promise signals are children, not extra balance.</p>
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[420px] text-sm">
+          <tbody>
+            {rows.map(([label, value, note]) => (
+              <tr key={label} className="border-b border-line/60">
+                <td className="py-2 pr-3 font-semibold text-ink">{label}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-bold text-ink">{value}</td>
+                <td className="py-2 pl-3 text-xs text-muted">{note}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {lowConfidence > 0 && <p className="mt-2 text-xs text-muted">{lowConfidence} receivable(s) matched by fingerprint (no invoice id) — lower-confidence identity.</p>}
+      {ledger.validationBlockers.length > 0 && (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+          <strong>Reconciliation exceptions:</strong>
+          <ul className="mt-1 grid gap-1">{ledger.validationBlockers.slice(0, 5).map((blocker, index) => <li key={index}>• {blocker}</li>)}</ul>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 // 13-week cash flow — a weekly liquidity projection from the company's aged
 // ledgers + bank + P&L run-rate. Shows the low point and any week cash turns
 // negative, with the assumptions made explicit for the finance manager to refine.
-function ThirteenWeekCashflow({ statements }: { statements?: StatementsForCashflow }) {
+function ThirteenWeekCashflow({ statements, ledger }: { statements?: StatementsForCashflow; ledger?: DebtorLedger }) {
   const [scenario, setScenario] = useState<CashflowScenario>("base");
   const hasData = Boolean(
     statements && (((statements.agedDebtors?.length ?? 0) > 0) || ((statements.bank?.length ?? 0) > 0) || ((statements.balanceSheet?.length ?? 0) > 0)),
   );
-  const result = useMemo(
-    () => (hasData ? buildThirteenWeekCashflow(thirteenWeekInputFromStatements(statements as StatementsForCashflow, scenario)) : null),
-    [statements, scenario, hasData],
-  );
+  const result = useMemo(() => {
+    if (!hasData) return null;
+    const input = thirteenWeekInputFromStatements(statements as StatementsForCashflow, scenario);
+    // When the canonical debtor ledger is available, receipts come straight from
+    // its recovery forecast for the selected scenario — so 13-week receipts equal
+    // the recovery model, drawn only from eligible unique balances.
+    if (ledger && ledger.unique.length) {
+      const recovery = forecastRecovery(ledger, scenario);
+      input.weeklyReceipts = recovery.weekly;
+      input.receivablesOverride = { aged: ledger.bridge.agedTotal, attributed: ledger.bridge.customerAttributed, unattributed: ledger.bridge.unattributed, recognised: recovery.expected };
+    }
+    return buildThirteenWeekCashflow(input);
+  }, [statements, scenario, hasData, ledger]);
 
   const gbp = (value: number) => `${value < 0 ? "−£" : "£"}${Math.abs(Math.round(value)).toLocaleString("en-GB")}`;
 
@@ -8704,6 +8762,14 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
 }) {
   const [scenario, setScenario] = useState<"conservative" | "base" | "upside">("base");
   const [cashTab, setCashTab] = useState<"forecast" | "liquidity" | "performance" | "recovery">("forecast");
+  // Canonical debtor ledger — the single authoritative receivables model every
+  // debtor figure on this screen draws from (bridge + de-dup + recovery forecast).
+  const debtorLedger = useMemo(() => buildDebtorLedger({
+    agedDebtors: statements?.agedDebtors as Record<string, string>[] | undefined,
+    tbControl: statements ? ((statements.balanceSheet ?? []).filter((row) => /debtor|receivable/i.test(String((row as Record<string, string>).item ?? ""))).reduce((sum, row) => sum + cashNum((row as Record<string, string>).amount), 0) || null) : null,
+    collectionCases: collectionCases.map((c) => ({ customer: c.customer, status: c.status, promiseAmount: c.promiseAmount, promiseDate: c.promiseDate })),
+    currency: "GBP",
+  }), [statements, collectionCases]);
   const accounts = collectionAccounts(findings);
   const arFindings = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
   const totalExposure = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
@@ -8767,7 +8833,8 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
       </div>
 
       {cashTab === "forecast" && (<>
-        <ThirteenWeekCashflow statements={statements} />
+        <DebtorBridgePanel ledger={debtorLedger} />
+        <ThirteenWeekCashflow statements={statements} ledger={debtorLedger} />
         <WhatIfPlanner statements={statements} />
       </>)}
 
