@@ -3029,6 +3029,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
 
   return (
     <div className="min-h-screen bg-page text-ink lg:grid lg:grid-cols-[280px_1fr]">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-brand focus:px-4 focus:py-2 focus:font-bold focus:text-white focus:shadow-lg">Skip to content</a>
       {showExport && (
         <ExportModal
           company={currentCompany}
@@ -3059,7 +3060,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           </div>
           <Pill level={hasUploadedData ? (openFindings.length ? "medium" : "low") : "none"}>{hasUploadedData ? (openFindings.length ? "Review open" : "Review complete") : "Awaiting upload"}</Pill>
         </div>
-        <nav className="flex w-full max-w-full gap-1 overflow-x-auto px-4 pb-4 lg:block lg:overflow-y-auto lg:overflow-x-hidden lg:px-5 lg:pb-5">
+        <nav aria-label="Primary" className="flex w-full max-w-full gap-1 overflow-x-auto px-4 pb-4 lg:block lg:overflow-y-auto lg:overflow-x-hidden lg:px-5 lg:pb-5">
           {navGroups.filter((group) => !presentationMode || !("advanced" in group && group.advanced)).map((group) => {
             // Ungrouped items (the Overview) always show; grouped sections expand
             // one at a time on desktop. On mobile every item stays in the scroll rail.
@@ -3105,7 +3106,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           )}
         </div>
       </aside>
-      <main className="min-w-0 p-4 lg:p-6">
+      <main id="main-content" className="min-w-0 p-4 lg:p-6">
         <header className="mb-5 rounded-xl border border-line bg-surface/95 p-4 shadow-card backdrop-blur-sm">
           <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
             <div className="min-w-0">
@@ -12052,7 +12053,7 @@ function clientHealthRisks(client: ClientCompany): { cashflow: RiskLevel; vat: R
 function RiskDot({ level }: { level: RiskLevel }) {
   const colors: Record<RiskLevel, string> = { low: "bg-emerald-500", medium: "bg-amber-400", high: "bg-red-500", critical: "bg-red-700" };
   const titles: Record<RiskLevel, string> = { low: "Low risk", medium: "Watch", high: "At risk", critical: "Critical" };
-  return <span className={`inline-block h-2.5 w-2.5 rounded-full ${colors[level]}`} title={titles[level]} />;
+  return <span role="img" aria-label={titles[level]} className={`inline-block h-2.5 w-2.5 rounded-full ${colors[level]}`} title={titles[level]} />;
 }
 
 function InventoryPanel({ review, uploads, companyName, setActive, scheduleCadence, onScheduleChange }: { review?: InventoryReviewResult; uploads: Upload[]; companyName: string; setActive: (v: string) => void; scheduleCadence?: ReportCadence; onScheduleChange: (cadence: ReportCadence | "off") => void }) {
