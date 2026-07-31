@@ -10,6 +10,7 @@ import { buildWorkingCapital } from "@/lib/working-capital";
 import { buildRunway } from "@/lib/runway";
 import { buildVariance } from "@/lib/variance";
 import { buildCovenants, type CovenantUnit } from "@/lib/covenants";
+import { buildConcentration } from "@/lib/concentration";
 import type { SyncStatements } from "@/lib/management-accounts";
 import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
 import { findingStandardReference } from "@/lib/finding-standards";
@@ -8276,6 +8277,47 @@ function WhatIfPlanner({ statements }: { statements?: SyncStatements }) {
   );
 }
 
+// Customer concentration — how dependent the business is on a few customers,
+// from the aged-debtor mix (share, top-1/top-3, HHI).
+function ConcentrationPanel({ statements }: { statements?: SyncStatements }) {
+  const report = useMemo(() => (statements ? buildConcentration(statements) : null), [statements]);
+  if (!report || !report.available) return null;
+  const gbp = (value: number) => `£${Math.round(value).toLocaleString("en-GB")}`;
+  const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
+  const levelChip: Record<string, string> = {
+    low: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+    moderate: "bg-amber-50 text-amber-700 ring-amber-600/20",
+    high: "bg-red-50 text-red-700 ring-red-600/20",
+  };
+  const top = report.customers.slice(0, 6);
+  return (
+    <Panel title="Customer Concentration">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-xl text-sm text-muted">Dependency on your largest customers, from the receivables mix. High concentration is a revenue and bad-debt risk.</p>
+        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ring-1 ring-inset ${levelChip[report.level]}`}>{report.level} concentration</span>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <MetricTile label="Largest customer" value={pct(report.top1Share)} sub={`${report.customers[0]?.name ?? "—"} · ${gbp(report.customers[0]?.balance ?? 0)}`} />
+        <MetricTile label="Top 3 customers" value={pct(report.top3Share)} sub="Share of receivables" />
+        <MetricTile label="HHI index" value={Math.round(report.hhi).toLocaleString("en-GB")} sub={report.hhi > 2500 ? "Highly concentrated" : report.hhi > 1500 ? "Moderately concentrated" : "Diversified"} />
+      </div>
+      {report.level === "high" && (
+        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">⚠ {report.customers[0]?.name} is {pct(report.top1Share)} of receivables — losing them would materially hit cash. Consider credit limits, deposits or diversifying the book.</p>
+      )}
+      <div className="mt-4 grid gap-2">
+        {top.map((c) => (
+          <div key={c.name} className="grid grid-cols-[1fr_auto] items-center gap-3">
+            <div>
+              <div className="flex justify-between text-sm"><span className="font-semibold text-ink">{c.name}</span><span className="tabular-nums text-muted">{gbp(c.balance)} · {pct(c.share)}</span></div>
+              <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-brand" style={{ width: `${Math.min(100, c.share * 100)}%` }} /></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
 // Covenant & liquidity alerts — the ratios a lender/board watches, plus a
 // 13-week minimum-cash floor, against thresholds.
 function CovenantPanel({ statements }: { statements?: SyncStatements }) {
@@ -8479,6 +8521,8 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, openCol
       <CovenantPanel statements={statements} />
 
       <VariancePanel statements={statements} />
+
+      <ConcentrationPanel statements={statements} />
 
       <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <Panel title="Cumulative Recovery Forecast">
