@@ -34,6 +34,8 @@ export type ThirteenWeekInput = {
   weeklyOverheads?: number; // recurring cash outflow / week (ex-payroll, ex-depreciation)
   oneOffs?: Array<{ week: number; amount: number; label: string }>; // +inflow / −outflow in a given week
   termDays?: number; // assumed settlement terms for scheduling (default 30)
+  receivableTermDays?: number; // override AR terms (what-if: collect faster/slower)
+  payableTermDays?: number; // override AP terms (what-if: pay suppliers later)
   overdueHaircut?: number; // 0..1 write-down applied to 90+ day receivables (doubtful)
 };
 
@@ -83,6 +85,8 @@ function weekFor(daysOverdue: number, termDays: number, minDays: number): number
 
 export function buildThirteenWeekCashflow(input: ThirteenWeekInput): ThirteenWeekResult {
   const termDays = input.termDays ?? 30;
+  const arTerm = Math.max(0, input.receivableTermDays ?? termDays);
+  const apTerm = Math.max(0, input.payableTermDays ?? termDays);
   const haircut = clamp(input.overdueHaircut ?? 0, 0, 1);
   const start = mondayOnOrAfter(input.startDate);
 
@@ -94,12 +98,12 @@ export function buildThirteenWeekCashflow(input: ThirteenWeekInput): ThirteenWee
     if (amount <= 0) continue;
     const overdue = receivable.daysOverdue ?? 0;
     if (overdue > 90 && haircut > 0) amount *= 1 - haircut; // doubtful older debt
-    receiptsByWeek[weekFor(overdue, termDays, 3)] += amount;
+    receiptsByWeek[weekFor(overdue, arTerm, 3)] += amount;
   }
   for (const payable of input.agedPayables ?? []) {
     const amount = Math.abs(payable.amount);
     if (amount <= 0) continue;
-    paymentsByWeek[weekFor(payable.daysOverdue ?? 0, termDays, 1)] += amount;
+    paymentsByWeek[weekFor(payable.daysOverdue ?? 0, apTerm, 1)] += amount;
   }
 
   const payroll = Math.max(0, input.weeklyPayroll ?? 0);
