@@ -8406,20 +8406,31 @@ function ConcentrationPanel({ statements }: { statements?: SyncStatements }) {
     moderate: "bg-amber-50 text-amber-700 ring-amber-600/20",
     high: "bg-red-50 text-red-700 ring-red-600/20",
   };
+  // When most of the book is unattributed, concentration can't be assessed —
+  // don't present the unattributed bucket as a "top customer".
+  if (!report.attributable) {
+    return (
+      <Panel title="Customer Concentration">
+        <p className="max-w-xl text-sm text-muted">Dependency on your largest customers, from the receivables mix.</p>
+        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><strong>{pct(report.unattributedShare)}</strong> of receivables ({gbp(report.unattributed)}) are not matched to a named customer, so concentration can&apos;t be reliably assessed. Match the aged debtors to customers to enable it.</p>
+      </Panel>
+    );
+  }
   const top = report.customers.slice(0, 6);
   return (
     <Panel title="Customer Concentration">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-xl text-sm text-muted">Dependency on your largest customers, from the receivables mix. High concentration is a revenue and bad-debt risk.</p>
+        <p className="max-w-xl text-sm text-muted">Dependency on your largest customers, from the matched receivables mix. High concentration is a revenue and bad-debt risk.</p>
         <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ring-1 ring-inset ${levelChip[report.level]}`}>{report.level} concentration</span>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <MetricTile label="Largest customer" value={pct(report.top1Share)} sub={`${report.customers[0]?.name ?? "—"} · ${gbp(report.customers[0]?.balance ?? 0)}`} />
-        <MetricTile label="Top 3 customers" value={pct(report.top3Share)} sub="Share of receivables" />
+        <MetricTile label="Top 3 customers" value={pct(report.top3Share)} sub="of matched receivables" />
         <MetricTile label="HHI index" value={Math.round(report.hhi).toLocaleString("en-GB")} sub={report.hhi > 2500 ? "Highly concentrated" : report.hhi > 1500 ? "Moderately concentrated" : "Diversified"} />
       </div>
+      {report.unattributed > 0 && <p className="mt-2 text-xs text-muted">Excludes {gbp(report.unattributed)} ({pct(report.unattributedShare)}) not matched to a customer.</p>}
       {report.level === "high" && (
-        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">⚠ {report.customers[0]?.name} is {pct(report.top1Share)} of receivables — losing them would materially hit cash. Consider credit limits, deposits or diversifying the book.</p>
+        <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">⚠ {report.customers[0]?.name} is {pct(report.top1Share)} of matched receivables — losing them would materially hit cash. Consider credit limits, deposits or diversifying the book.</p>
       )}
       <div className="mt-4 grid gap-2">
         {top.map((c) => (
@@ -8467,12 +8478,13 @@ function CovenantPanel({ statements, companyId }: { statements?: SyncStatements;
     breach: "bg-red-50 text-red-700 ring-red-600/20",
   };
   return (
-    <Panel title="Covenant & Liquidity Alerts">
+    <Panel title="Liquidity Benchmarks">
+      <p className="mb-2 text-xs text-muted">Configurable liquidity/solvency benchmarks — <span className="font-semibold text-ink">not loaded lender covenants</span>. "Below" means below the configured benchmark, not a contractual breach.</p>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
           <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 ring-1 ring-inset ring-emerald-600/20">{report.passed} pass</span>
           {report.watches > 0 && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 ring-1 ring-inset ring-amber-600/20">{report.watches} watch</span>}
-          {report.breaches > 0 && <span className="rounded-full bg-red-50 px-2.5 py-1 text-red-700 ring-1 ring-inset ring-red-600/20">{report.breaches} breach</span>}
+          {report.breaches > 0 && <span className="rounded-full bg-red-50 px-2.5 py-1 text-red-700 ring-1 ring-inset ring-red-600/20">{report.breaches} below</span>}
           {customised && <span className="rounded-full bg-brand/10 px-2.5 py-1 text-brand ring-1 ring-inset ring-brand/20">custom thresholds</span>}
         </div>
         <button className="rounded-lg border border-line px-3 py-1.5 text-xs font-black" onClick={() => setEditing((v) => !v)}>{editing ? "Done" : "Edit thresholds"}</button>
@@ -8495,12 +8507,12 @@ function CovenantPanel({ statements, companyId }: { statements?: SyncStatements;
         {report.covenants.map((c) => (
           <div key={c.name} className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3 ${c.status === "breach" ? "border-red-200 bg-red-50/50" : c.status === "watch" ? "border-amber-200 bg-amber-50/50" : "border-line"}`}>
             <div className="min-w-0">
-              <p className="text-sm font-bold text-ink">{c.name} <span className="text-xs font-normal text-muted">· covenant ≥ {fmt(c.threshold, c.unit)}</span></p>
+              <p className="text-sm font-bold text-ink">{c.name} <span className="text-xs font-normal text-muted">· benchmark ≥ {fmt(c.threshold, c.unit)}</span></p>
               <p className="text-xs text-muted">{c.detail}</p>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-lg font-black tabular-nums text-ink">{fmt(c.actual, c.unit)}</span>
-              <span className={`rounded-full px-2.5 py-1 text-xs font-bold uppercase ring-1 ring-inset ${chip[c.status]}`}>{c.status}</span>
+              <span className={`rounded-full px-2.5 py-1 text-xs font-bold uppercase ring-1 ring-inset ${chip[c.status]}`}>{c.status === "breach" ? "below" : c.status}</span>
             </div>
           </div>
         ))}
@@ -8697,7 +8709,10 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
   const totalExposure = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
   const sourceLinked = accounts.reduce((sum, account) => sum + account.balance, 0);
   const residual = Math.max(0, totalExposure - sourceLinked);
-  const coverage = totalExposure ? Math.round(sourceLinked / totalExposure * 100) : 0;
+  // Coverage is capped at 100%; evidence exceeding the exposure is an overmatch
+  // (a reconciliation exception), reported separately — never shown as >100%.
+  const overmatch = Math.max(0, sourceLinked - totalExposure);
+  const coverage = totalExposure ? Math.min(100, Math.round(sourceLinked / totalExposure * 100)) : (sourceLinked > 0 ? 100 : 0);
   const caseFor = (account: CollectionAccount) => collectionCases.find((collectionCase) => collectionCase.findingId === account.findingId && collectionCase.customer === account.customer);
   const promised = collectionCases.filter((collectionCase) => collectionCase.status === "promised").reduce((sum, collectionCase) => sum + (collectionCase.promiseAmount ?? 0), 0);
   const disputed = accounts.filter((account) => caseFor(account)?.status === "disputed").reduce((sum, account) => sum + account.balance, 0);
@@ -8738,7 +8753,7 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
           <Metric title="30-Day Recovery" value={`£${forecast[0].recovery.toLocaleString("en-GB")}`} detail={`${scenarioLabel} scenario`} tone={forecast[0].recovery ? "low" : "medium"} />
           <Metric title="90-Day Recovery" value={`£${forecast[2].recovery.toLocaleString("en-GB")}`} detail={`${Math.round(forecast[2].recovery / Math.max(totalExposure, 1) * 100)}% of exposure`} tone={forecast[2].recovery >= totalExposure * 0.7 ? "low" : "medium"} />
           <Metric title="Disputed" value={`£${Math.round(disputed).toLocaleString("en-GB")}`} detail="Expected recovery after disputes" tone={disputed ? "high" : "low"} />
-          <Metric title="Evidence Coverage" value={`${coverage}%`} detail={`£${Math.round(residual).toLocaleString("en-GB")} awaiting customer evidence`} tone={coverage >= 90 ? "low" : "medium"} />
+          <Metric title="Evidence Coverage" value={`${coverage}%`} detail={overmatch > 0 ? `£${Math.round(overmatch).toLocaleString("en-GB")} overmatched — reconcile` : `£${Math.round(residual).toLocaleString("en-GB")} awaiting customer evidence`} tone={overmatch > 0 ? "medium" : coverage >= 90 ? "low" : "medium"} />
         </div>
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong>Liquidity boundary:</strong> no evidenced opening bank balance or payment schedule is loaded, so ClosePilot forecasts recoveries only. Upload bank and cash-planning evidence before treating this as an absolute cash-balance forecast.</div>
       </section>
@@ -8746,7 +8761,7 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
       <FinanceInsightsPanel statements={statements} tenantId={tenantId} companyId={companyId} scheduleCadence={insightsScheduleCadence} onSchedule={onInsightsSchedule} />
 
       <div className="flex flex-wrap gap-1 rounded-xl border border-line bg-surface p-1 shadow-card">
-        {([["forecast", "13-week & what-if"], ["liquidity", "Runway, working capital & covenants"], ["performance", "Variance & concentration"], ["recovery", "Recovery & collections"]] as const).map(([id, label]) => (
+        {([["forecast", "13-week & what-if"], ["liquidity", "Runway, working capital & benchmarks"], ["performance", "Variance & concentration"], ["recovery", "Recovery & collections"]] as const).map(([id, label]) => (
           <button key={id} onClick={() => setCashTab(id)} className={`rounded-lg px-3.5 py-2 text-sm font-bold transition-colors ${cashTab === id ? "bg-brand text-white shadow-sm" : "text-muted hover:bg-slate-50"}`}>{label}</button>
         ))}
       </div>
