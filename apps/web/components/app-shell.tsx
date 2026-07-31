@@ -15,6 +15,7 @@ import { buildFinanceInsights } from "@/lib/finance-insights";
 import { buildVatInsights } from "@/lib/vat-insights";
 import { buildFindingsInsights } from "@/lib/findings-insights";
 import { buildAuditInsights } from "@/lib/audit-insights";
+import { buildCloseInsights } from "@/lib/close-insights";
 import type { SyncStatements } from "@/lib/management-accounts";
 
 // Shared severity → chip styling for the insight signal cards.
@@ -2980,7 +2981,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     if (active === "Assurance Engine") return <AssuranceEngine assurance={assurance} coreQuality={coreQuality} findings={findings} validationChecks={validationChecks} uploads={uploads} ruleAnalytics={ruleAnalytics} setActive={setActive} />;
     if (active === "Upload Finance Pack") return <UploadAnalyse analyseUploads={analyseUploads} isAnalysing={isAnalysing} uploadMessage={uploadMessage} uploadJob={uploadJob} validationChecks={validationChecks} uploads={uploads} importProfiles={importProfiles} confirmImportProfile={confirmImportProfile} findings={findings} recommendations={recommendations} onDelete={deleteUpload} onClear={clearCurrentReview} setActive={setActive} />;
     if (active === "Compatibility") return <CompatibilityPanel setActive={setActive} />;
-    if (active === "Close Review") return <MonthEndClose findings={findings} recommendations={recommendations} completeRecommendation={completeRecommendation} updateFindingStatus={updateFindingStatus} />;
+    if (active === "Close Review") return <MonthEndClose findings={findings} recommendations={recommendations} validationChecks={validationChecks} completeRecommendation={completeRecommendation} updateFindingStatus={updateFindingStatus} />;
     if (active === "Cash Intelligence") return <CashflowPanel findings={findings} uploads={uploads} collectionCases={collectionCases} statements={companySnapshots[currentCompany.id]?.statements} tenantId={tenant.id} companyId={currentCompany.id} openCollections={() => setActive("Collections Intelligence")} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : 1);
       setFocusedFindingId(findingId);
@@ -8062,7 +8063,7 @@ function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uploadJob, 
   );
 }
 
-function MonthEndClose({ findings, recommendations, completeRecommendation, updateFindingStatus }: { findings: Finding[]; recommendations: Recommendation[]; completeRecommendation: (value: Recommendation) => void; updateFindingStatus: (findingId: string, status: FindingStatus, reason?: string) => void }) {
+function MonthEndClose({ findings, recommendations, validationChecks, completeRecommendation, updateFindingStatus }: { findings: Finding[]; recommendations: Recommendation[]; validationChecks: ValidationCheck[]; completeRecommendation: (value: Recommendation) => void; updateFindingStatus: (findingId: string, status: FindingStatus, reason?: string) => void }) {
   const counts = findingLifecycleCounts(findings);
   const allOpen = findings.filter(isOpenFinding);
   const decided = counts.resolved + counts.closed;
@@ -8071,6 +8072,7 @@ function MonthEndClose({ findings, recommendations, completeRecommendation, upda
 
   return (
     <div className="grid gap-4">
+      <CloseInsightsPanel findings={findings} recommendations={recommendations} validationChecks={validationChecks} />
       {/* HITL metrics */}
       <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
         <div className="mb-4 flex items-center justify-between">
@@ -9537,6 +9539,59 @@ function OverviewInsightBanner({ statements, findings, setActive }: { statements
         {find.available && <button className="rounded-lg border border-line px-3 py-2 text-xs font-black" onClick={() => setActive("Findings")}>Review findings</button>}
       </div>
     </section>
+  );
+}
+
+// Month-end close adviser — outstanding tasks, failed reconciliations and open
+// exceptions blocking a clean close, plus an on-demand grounded AI narrative.
+function CloseInsightsPanel({ findings, recommendations, validationChecks }: { findings: Finding[]; recommendations: Recommendation[]; validationChecks: ValidationCheck[] }) {
+  const insights = useMemo(() => buildCloseInsights(findings, recommendations, validationChecks), [findings, recommendations, validationChecks]);
+  const [ai, setAi] = useState<{ narrative: string; aiGenerated: boolean } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  if (!insights.available) return null;
+
+  const explain = async () => {
+    setLoading(true); setError("");
+    try {
+      const response = await fetch("/api/insight-narrative", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ factSheet: insights.factSheet, headline: insights.headline, role: "close" }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not generate the narrative.");
+      setAi({ narrative: data.narrative, aiGenerated: data.aiGenerated });
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not generate the narrative."); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <Panel title="Month-End Close Insights">
+      <p className="text-base font-bold text-ink">{insights.headline}</p>
+      {ai ? (
+        <div className="mt-3 rounded-xl border border-brand/20 bg-brand/5 p-4">
+          <p className="text-[11px] font-black uppercase tracking-wide text-brand">{ai.aiGenerated ? "AI-drafted — review before relying on it" : "Summary"}</p>
+          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-ink">{ai.narrative}</p>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white disabled:opacity-60" disabled={loading} onClick={explain}>{loading ? "Thinking…" : "Explain with AI"}</button>
+          {error && <span className="text-sm text-red-700">{error}</span>}
+        </div>
+      )}
+      <div className="mt-4 grid gap-2">
+        {insights.signals.map((signal, index) => (
+          <div key={index} className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-line p-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ring-1 ring-inset ${INSIGHT_SEV_CHIP[signal.severity] ?? INSIGHT_SEV_CHIP.info}`}>{signal.severity}</span>
+                <span className="text-sm font-bold text-ink">{signal.title}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted">{signal.detail}</p>
+              <p className="mt-1 text-xs font-semibold text-ink">→ {signal.action}</p>
+            </div>
+            <span className="shrink-0 text-[11px] font-bold uppercase text-muted">{signal.area}</span>
+          </div>
+        ))}
+      </div>
+    </Panel>
   );
 }
 
