@@ -45,7 +45,7 @@ export function buildFinanceInsights(statements: SyncStatements): FinanceInsight
 
   // Covenants — solvency ratios only (liquidity/cash covered above).
   for (const covenant of covenants.covenants.filter((c) => c.status === "breach" && !/cash/i.test(c.name))) {
-    signals.push({ severity: "high", area: "Covenant", title: `${covenant.name} below covenant`, detail: covenant.detail, action: "Address before the next reporting date, or engage the lender early." });
+    signals.push({ severity: "high", area: "Benchmark", title: `${covenant.name} below benchmark`, detail: covenant.detail, action: "Review — this is a configured liquidity benchmark, not a loaded lender covenant. If a facility applies, load its actual covenant terms." });
   }
 
   // Working capital.
@@ -53,9 +53,11 @@ export function buildFinanceInsights(statements: SyncStatements): FinanceInsight
     signals.push({ severity: "medium", area: "Working capital", title: `${Math.round(wc.ccc)} days of cash tied up in the cycle`, detail: `DSO ${Math.round(wc.dso ?? 0)} + DIO ${Math.round(wc.dio ?? 0)} − DPO ${Math.round(wc.dpo ?? 0)} days.`, action: `Cutting debtor days by 5 would release about ${gbp(wc.cashPerDsoDay * 5)}.` });
   }
 
-  // Customer concentration.
-  if (concentration.available && concentration.level !== "low") {
-    signals.push({ severity: concentration.level === "high" ? "high" : "medium", area: "Concentration", title: `${concentration.customers[0]?.name} is ${(concentration.top1Share * 100).toFixed(0)}% of receivables`, detail: `The top 3 customers are ${(concentration.top3Share * 100).toFixed(0)}% of the book.`, action: "Set credit limits or take deposits on key accounts, and broaden the customer base." });
+  // Customer concentration — only claim top customers when the book is attributed.
+  if (concentration.available && !concentration.attributable && concentration.unattributedShare > 0.5) {
+    signals.push({ severity: "medium", area: "Concentration", title: `${(concentration.unattributedShare * 100).toFixed(0)}% of receivables not matched to a customer`, detail: "Customer concentration can't be assessed while most of the book is unattributed.", action: "Match aged debtors to customers to assess concentration and target collections." });
+  } else if (concentration.available && concentration.attributable && concentration.level !== "low") {
+    signals.push({ severity: concentration.level === "high" ? "high" : "medium", area: "Concentration", title: `${concentration.customers[0]?.name} is ${(concentration.top1Share * 100).toFixed(0)}% of matched receivables`, detail: `The top 3 customers are ${(concentration.top3Share * 100).toFixed(0)}% of the matched book.`, action: "Set credit limits or take deposits on key accounts, and broaden the customer base." });
   }
 
   // Performance (variance) — a positive to protect, or a drop to investigate.

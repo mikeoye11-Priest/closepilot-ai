@@ -15,6 +15,18 @@ test("measures customer concentration from aged debtors (pilot is high)", () => 
   assert.equal(report.level, "high", "one customer at ~45% → high dependency");
 });
 
+test("a mostly-unattributed book is not assessable and reports no top customer", () => {
+  const report = buildConcentration({ agedDebtors: [
+    { customer: "Acme", amount: "100" },
+    { amount: "9000" }, // no customer → unattributed, dominates
+  ] });
+  assert.equal(report.available, true);
+  assert.equal(report.attributable, false, "cannot assess when >50% unattributed");
+  assert.equal(report.level, "low", "does not claim high concentration");
+  assert.ok(Math.abs(report.unattributedShare - 9000 / 9100) < 0.001);
+  assert.equal(report.unattributed, 9000);
+});
+
 test("aggregates duplicate customer rows and handles empty input", () => {
   const dup = buildConcentration({ agedDebtors: [
     { customer: "Acme", amount: "100" },
