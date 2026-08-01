@@ -205,6 +205,46 @@ export function buildDebtorLedger(inputs: DebtorLedgerInputs): DebtorLedger {
   };
 }
 
+// The single canonical debtor exposure summary every module reads. Derived
+// entirely from the reconciled bridge so Collections, the recovery view and the
+// cash-flow screen show ONE debtor total — never a per-finding double-count.
+//   exposure     = de-duplicated outstanding receivables (one invoice once)
+//   supported    = balance matched to a customer (has evidence)
+//   unattributed = balance with no customer row (isolated, not netted in)
+//   coverage     = supported / exposure, capped at 100%
+//   overmatch    = any supported balance exceeding exposure (a reconciliation exception)
+export type DebtorExposure = {
+  exposure: number;
+  supported: number;
+  unattributed: number;
+  disputed: number;
+  promised: number;
+  eligible: number;
+  duplicatesExcluded: number;
+  coverage: number;
+  overmatch: number;
+  hasData: boolean;
+};
+
+export function debtorExposure(ledger: DebtorLedger): DebtorExposure {
+  const b = ledger.bridge;
+  const exposure = b.uniqueInvoiceBalance;
+  const supported = b.customerAttributed;
+  const coverage = exposure > 0 ? Math.min(100, Math.round((supported / exposure) * 100)) : supported > 0 ? 100 : 0;
+  return {
+    exposure,
+    supported,
+    unattributed: b.unattributed,
+    disputed: b.disputed,
+    promised: b.promised,
+    eligible: b.eligible,
+    duplicatesExcluded: b.duplicatesExcluded,
+    coverage,
+    overmatch: Math.max(0, supported - exposure),
+    hasData: exposure > 0 || b.tbControl != null,
+  };
+}
+
 // Weeks 1..13 relative to the current week (Monday-aligned), matching the 13-week
 // forecast so receipts line up.
 function weekIndexFromDaysOverdue(daysOverdue: number, termDays = 30): number {
