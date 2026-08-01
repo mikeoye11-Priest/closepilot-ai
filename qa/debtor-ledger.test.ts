@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildDebtorLedger, forecastRecovery } from "../apps/web/lib/debtor-ledger";
+import { buildDebtorLedger, forecastRecovery, debtorExposure } from "../apps/web/lib/debtor-ledger";
 
 // Pre-pilot acceptance criteria for the canonical debtor bridge (engine level).
 
@@ -99,4 +99,33 @@ test("canonical key confidence + TB mismatch blocker", () => {
   assert.equal(mismatch.bridge.reconciled, false);
   assert.equal(mismatch.bridge.difference, 200);
   assert.ok(mismatch.validationBlockers.some((b) => /does not agree/i.test(b)));
+});
+
+test("debtorExposure is the one canonical summary every module reads (de-duplicated)", () => {
+  const l = buildDebtorLedger({ tenantId: "t", companyId: "c", sourceProvider: "xero", agedDebtors: [
+    { customer: "Acme", invoice_id: "1", amount: "1000", days_overdue: "10" },
+    { customer: "Acme", invoice_id: "1", amount: "1000", days_overdue: "10" }, // duplicate — same invoice cited twice
+    { customer: "Beta", invoice_id: "2", amount: "500", days_overdue: "5" },
+  ], tbControl: 1500 });
+  const e = debtorExposure(l);
+  // exposure counts each invoice once (£1,500), not the raw £2,500 with the duplicate.
+  assert.equal(e.exposure, 1500);
+  assert.equal(e.supported, 1500); // both customers attributed
+  assert.equal(e.unattributed, 0);
+  assert.equal(e.coverage, 100);
+  assert.equal(e.overmatch, 0);
+  assert.ok(e.duplicatesExcluded > 0, "the duplicate is excluded, not added to exposure");
+});
+
+test("debtorExposure isolates unattributed balance and never reports coverage above 100%", () => {
+  const l = buildDebtorLedger({ agedDebtors: [
+    { customer: "Named Ltd", invoice_id: "1", amount: "800", days_overdue: "10" },
+    { customer: "", reference: "misc", amount: "200", days_overdue: "10" }, // no customer → unattributed
+  ] });
+  const e = debtorExposure(l);
+  assert.equal(e.exposure, 1000);
+  assert.equal(e.supported, 800);
+  assert.equal(e.unattributed, 200);
+  assert.equal(e.coverage, 80);
+  assert.ok(e.coverage <= 100);
 });

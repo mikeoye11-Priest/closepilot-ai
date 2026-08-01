@@ -6,7 +6,7 @@ import { evidenceGroundedAnswer, type GroundedAnswerSections } from "@/lib/ask-c
 import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompany, pilotTenant, tenant as seededTenant } from "@/lib/data";
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateMtdReadiness, calculateMtdReadinessDrivers, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type MtdReadinessDriver, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, num as cashNum, type CashflowScenario, type StatementsForCashflow } from "@/lib/cashflow-13week";
-import { buildDebtorLedger, forecastRecovery, type DebtorLedger } from "@/lib/debtor-ledger";
+import { buildDebtorLedger, forecastRecovery, debtorExposure, type DebtorLedger } from "@/lib/debtor-ledger";
 import { checkInvariants } from "@/lib/invariants";
 import { buildWorkingCapital } from "@/lib/working-capital";
 import { buildRunway } from "@/lib/runway";
@@ -3001,7 +3001,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setFocusedFindingId(findingId);
       setActive("Findings");
     }} />;
-    if (active === "Collections Intelligence") return <CollectionsPanel findings={findings} collectionCases={collectionCases} saveCollectionCase={(nextCase) => setCollectionCases((items) => [nextCase, ...items.filter((item) => item.id !== nextCase.id)])} actor={userName || "Collections Team"} openFindingEvidence={(findingId) => {
+    if (active === "Collections Intelligence") return <CollectionsPanel findings={findings} collectionCases={collectionCases} statements={companySnapshots[currentCompany.id]?.statements} saveCollectionCase={(nextCase) => setCollectionCases((items) => [nextCase, ...items.filter((item) => item.id !== nextCase.id)])} actor={userName || "Collections Team"} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
       setFocusedFindingId(findingId);
       setActive("Findings");
@@ -8806,13 +8806,20 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
   }), [statements, collectionCases]);
   const accounts = collectionAccounts(findings);
   const arFindings = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
-  const totalExposure = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
-  const sourceLinked = accounts.reduce((sum, account) => sum + account.balance, 0);
-  const residual = Math.max(0, totalExposure - sourceLinked);
+  // Debtor totals read from the canonical ledger when it has data, so this screen,
+  // Collections and the Debtor Bridge all show ONE reconciled debtor figure. The
+  // per-finding lens is the fallback only when no aged-debtor statement is loaded.
+  const exposureSummary = debtorExposure(debtorLedger);
+  const useCanonicalExposure = exposureSummary.hasData;
+  const findingsSupported = accounts.reduce((sum, account) => sum + account.balance, 0);
+  const findingsExposure = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
+  const totalExposure = useCanonicalExposure ? exposureSummary.exposure : findingsExposure;
+  const sourceLinked = useCanonicalExposure ? exposureSummary.supported : findingsSupported;
+  const residual = useCanonicalExposure ? exposureSummary.unattributed : Math.max(0, findingsExposure - findingsSupported);
   // Coverage is capped at 100%; evidence exceeding the exposure is an overmatch
   // (a reconciliation exception), reported separately — never shown as >100%.
-  const overmatch = Math.max(0, sourceLinked - totalExposure);
-  const coverage = totalExposure ? Math.min(100, Math.round(sourceLinked / totalExposure * 100)) : (sourceLinked > 0 ? 100 : 0);
+  const overmatch = useCanonicalExposure ? exposureSummary.overmatch : Math.max(0, findingsSupported - findingsExposure);
+  const coverage = useCanonicalExposure ? exposureSummary.coverage : (findingsExposure ? Math.min(100, Math.round(findingsSupported / findingsExposure * 100)) : (findingsSupported > 0 ? 100 : 0));
   const caseFor = (account: CollectionAccount) => collectionCases.find((collectionCase) => collectionCase.findingId === account.findingId && collectionCase.customer === account.customer);
   const promised = collectionCases.filter((collectionCase) => collectionCase.status === "promised").reduce((sum, collectionCase) => sum + (collectionCase.promiseAmount ?? 0), 0);
   const disputed = accounts.filter((account) => caseFor(account)?.status === "disputed").reduce((sum, account) => sum + account.balance, 0);
@@ -8907,7 +8914,7 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
 
         <Panel title="Recovery Bridge">
           <div className="grid gap-3">
-            <ReportFormulaRow label="Total AR exposure" value={totalExposure} formula="Exposure supported by review findings" />
+            <ReportFormulaRow label="Total AR exposure" value={totalExposure} formula={useCanonicalExposure ? "Canonical debtor ledger — each invoice once" : "Exposure supported by review findings"} />
             <ReportFormulaRow label="Customer balances with evidence" value={sourceLinked} formula={`${coverage}% matched to customer rows`} />
             <ReportFormulaRow label="Promise-backed cash" value={promised} formula="Dated customer commitments" />
             <ReportFormulaRow label="Disputed balance" value={disputed} formula="Recovery varies by selected scenario" />
@@ -8983,9 +8990,15 @@ function collectionAction(finding: Finding, ageDays: number) {
   return "Contact the customer and record the promised payment date.";
 }
 
+const collectionSeverityRank: Record<RiskLevel, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+
 function collectionAccounts(findings: Finding[]) {
   const relevant = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
-  const raw = new Map<string, Omit<CollectionAccount, "priorityScore" | "recoveryRate">>();
+  // Keyed by CANONICAL invoice identity (source row + customer), not by finding, so
+  // one aged-debtor invoice contributes its balance ONCE even when several findings
+  // cite it. This mirrors the canonical debtor ledger and keeps INV-05 (one invoice
+  // once) green — the strongest finding drives the workflow metadata (owner/action).
+  const raw = new Map<string, { rank: number; account: Omit<CollectionAccount, "priorityScore" | "recoveryRate"> }>();
 
   relevant.forEach((finding) => {
     (finding.evidence.rows ?? []).forEach((row, index) => {
@@ -8994,24 +9007,38 @@ function collectionAccounts(findings: Finding[]) {
       const balance = Math.abs(row.amount ?? (Number.isFinite(parsedBalance) ? parsedBalance : 0));
       if (!customer || !balance) return;
       const age = collectionAge(row.sourceRow, finding);
-      const id = `${finding.id}:${row.sourceFile}:${row.rowIndex ?? index}:${customer}`;
-      raw.set(id, {
-        id,
-        findingId: finding.id,
-        customer,
-        balance,
-        ageDays: age.days,
-        ageLabel: age.label,
-        risk: finding.severity,
-        owner: findingOwner(finding),
-        dueDate: findingDueDate(finding),
-        action: collectionAction(finding, age.days),
-        sourceFile: row.sourceFile || finding.evidence.sourceFile,
-        rowIndex: row.rowIndex,
-        acceptedRisk: finding.status === "accepted_risk",
+      const sourceFile = row.sourceFile || finding.evidence.sourceFile;
+      const identity = row.rowIndex != null
+        ? `${sourceFile.toLowerCase()}|r${row.rowIndex}|${customer.toLowerCase()}`
+        : `${sourceFile.toLowerCase()}|${customer.toLowerCase()}|${Math.round(balance)}`;
+      const rank = collectionSeverityRank[finding.severity];
+      const existing = raw.get(identity);
+      if (existing && existing.rank >= rank) return; // already represented by an equal-or-stronger finding
+      raw.set(identity, {
+        rank,
+        account: {
+          id: `${finding.id}:${sourceFile}:${row.rowIndex ?? index}:${customer}`,
+          findingId: finding.id,
+          customer,
+          balance,
+          ageDays: age.days,
+          ageLabel: age.label,
+          risk: finding.severity,
+          owner: findingOwner(finding),
+          dueDate: findingDueDate(finding),
+          action: collectionAction(finding, age.days),
+          sourceFile,
+          rowIndex: row.rowIndex,
+          acceptedRisk: finding.status === "accepted_risk",
+        },
       });
     });
   });
+  const deduped = new Map(Array.from(raw.values()).map((entry) => [entry.account.id, entry.account]));
+  return finaliseCollectionAccounts(deduped);
+}
+
+function finaliseCollectionAccounts(raw: Map<string, Omit<CollectionAccount, "priorityScore" | "recoveryRate">>) {
 
   const maxBalance = Math.max(...Array.from(raw.values()).map((account) => account.balance), 1);
   const severityPoints: Record<RiskLevel, number> = { critical: 45, high: 35, medium: 24, low: 12 };
@@ -9045,21 +9072,34 @@ function promiseIsOverdue(collectionCase?: CollectionCase) {
   return new Date(`${collectionCase.promiseDate}T23:59:59`).getTime() < Date.now();
 }
 
-function CollectionsPanel({ findings, collectionCases, saveCollectionCase, actor, openFindingEvidence }: {
+function CollectionsPanel({ findings, collectionCases, saveCollectionCase, actor, openFindingEvidence, statements }: {
   findings: Finding[];
   collectionCases: CollectionCase[];
   saveCollectionCase: (collectionCase: CollectionCase) => void;
   actor: string;
   openFindingEvidence: (findingId: string) => void;
+  statements?: SyncStatements;
 }) {
   const [emailAccount, setEmailAccount] = useState<CollectionAccount | null>(null);
   const [managedAccount, setManagedAccount] = useState<CollectionAccount | null>(null);
   const arFindings = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
   const accounts = collectionAccounts(findings);
-  const sourceLinked = accounts.reduce((sum, account) => sum + account.balance, 0);
-  const totalExposure = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
-  const residual = Math.max(0, totalExposure - sourceLinked);
-  const coverage = totalExposure ? Math.min(100, Math.round((sourceLinked / totalExposure) * 100)) : 0;
+  // Same canonical debtor ledger as the Cash Intelligence screen, so Collections
+  // shows the SAME reconciled debtor total (never a per-finding double-count).
+  const debtorLedger = useMemo(() => buildDebtorLedger({
+    agedDebtors: statements?.agedDebtors as Record<string, string>[] | undefined,
+    tbControl: statements ? ((statements.balanceSheet ?? []).filter((row) => /debtor|receivable/i.test(String((row as Record<string, string>).item ?? ""))).reduce((sum, row) => sum + cashNum((row as Record<string, string>).amount), 0) || null) : null,
+    collectionCases: collectionCases.map((c) => ({ customer: c.customer, status: c.status, promiseAmount: c.promiseAmount, promiseDate: c.promiseDate })),
+    currency: "GBP",
+  }), [statements, collectionCases]);
+  const exposureSummary = debtorExposure(debtorLedger);
+  const useCanonicalExposure = exposureSummary.hasData;
+  const findingsSupported = accounts.reduce((sum, account) => sum + account.balance, 0);
+  const findingsExposure = arFindings.reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
+  const sourceLinked = useCanonicalExposure ? exposureSummary.supported : findingsSupported;
+  const totalExposure = useCanonicalExposure ? exposureSummary.exposure : findingsExposure;
+  const residual = useCanonicalExposure ? exposureSummary.unattributed : Math.max(0, findingsExposure - findingsSupported);
+  const coverage = useCanonicalExposure ? exposureSummary.coverage : (findingsExposure ? Math.min(100, Math.round((findingsSupported / findingsExposure) * 100)) : 0);
   const caseFor = (account: CollectionAccount) => collectionCases.find((collectionCase) => collectionCase.findingId === account.findingId && collectionCase.customer === account.customer);
   const expectedRecovery = accounts.reduce((sum, account) => {
     const collectionCase = caseFor(account);
@@ -9088,7 +9128,7 @@ function CollectionsPanel({ findings, collectionCases, saveCollectionCase, actor
             <h2 className="mt-1 text-2xl font-black">Turn aged debt into a prioritised cash plan</h2>
             <p className="mt-1 text-sm text-muted">Customer balances are supported by uploaded records; any balance without a customer row stays clearly separate.</p>
           </div>
-          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Balances supported by evidence</span>
+          <span className={`rounded-full px-3 py-1 text-xs font-black ${useCanonicalExposure ? "bg-cyan-100 text-cyan-900" : "bg-emerald-100 text-emerald-800"}`}>{useCanonicalExposure ? "Reconciled to the canonical debtor ledger" : "Balances supported by evidence"}</span>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <Metric title="AR Exposure" value={totalExposure ? `£${Math.round(totalExposure).toLocaleString("en-GB")}` : "—"} detail={`${acceptedRisks} accepted risk${acceptedRisks === 1 ? "" : "s"}`} tone={totalExposure ? "high" : "low"} />
