@@ -145,6 +145,11 @@ export const pilotStatements: SyncStatements = {
     { category: "Capital and reserves", item: "Called-up share capital", amount: "100000", prior_amount: "100000" },
     { category: "Capital and reserves", item: "Retained earnings", amount: "946800", prior_amount: "837700" },
   ],
+  // Statement of Changes in Equity: opening reserves £837,700 + profit £162,000 −
+  // dividends £52,900 = closing reserves £946,800, so the accounts reconcile.
+  equityMovements: [
+    { description: "Dividends paid", amount: "-52900" },
+  ],
   agedDebtors: [
     { customer: "Delphi Retail Group", amount: "120000", days_overdue: "0" },
     { customer: "Halcyon Interiors", amount: "78000", days_overdue: "18" },

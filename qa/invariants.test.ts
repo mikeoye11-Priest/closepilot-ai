@@ -6,14 +6,21 @@ import { pilotStatements } from "../apps/web/lib/data";
 
 const get = (report: ReturnType<typeof checkInvariants>, id: string) => report.invariants.find((i) => i.id === id);
 
-test("pilot statements: balance sheet, creditors, cash pass; profit↔reserves needs an equity bridge", () => {
+test("pilot statements reconcile across all accounts invariants (incl. the modelled dividend)", () => {
   const report = checkInvariants({ statements: pilotStatements });
   assert.equal(get(report, "INV-01")?.status, "pass", "balance sheet balances");
   assert.equal(get(report, "INV-04")?.status, "pass", "trade creditors = aged creditors");
   assert.equal(get(report, "INV-06")?.status, "pass", "bank = balance-sheet cash");
-  // pilot reserves move £109,100 vs £162,000 profit → £52,900 needs an equity bridge.
+  // £837,700 opening + £162,000 profit − £52,900 dividends = £946,800 closing → reconciles.
+  assert.equal(get(report, "INV-02")?.status, "pass");
+  assert.match(get(report, "INV-02")!.detail, /distributions/i);
+});
+
+test("an unexplained reserves movement (no modelled distribution) trips INV-02 to review", () => {
+  const noBridge = { ...pilotStatements, equityMovements: [] };
+  const report = checkInvariants({ statements: noBridge });
   assert.equal(get(report, "INV-02")?.status, "review");
-  assert.match(get(report, "INV-02")!.detail, /equity bridge/i);
+  assert.match(get(report, "INV-02")!.detail, /not explained|confirm the equity/i);
 });
 
 test("a mis-signed / out-of-balance sheet fails INV-01", () => {
