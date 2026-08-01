@@ -5,6 +5,7 @@
 // the route and passed to the renderer — the pack never invents numbers.
 
 import { screenShell, wordShell } from "./doc-shell";
+import { signedNumber } from "./num";
 
 type Row = Record<string, string>;
 
@@ -32,12 +33,18 @@ type Note = { title: string; body?: string; rows?: { label: string; value: numbe
 type Line = { name: string; amount: number; prior: number };
 type Section = { title: string; lines: Line[]; total: number; priorTotal: number };
 
-const num = (value: unknown): number => {
-  const parsed = Number(String(value ?? "").replace(/[£$,\s]/g, "").replace(/^\((.*)\)$/, "-$1"));
-  return Number.isFinite(parsed) ? parsed : 0;
-};
+const num = signedNumber;
 const sumSections = (sections: Section[]) => sections.reduce((total, section) => total + section.total, 0);
 const sumPrior = (sections: Section[]) => sections.reduce((total, section) => total + section.priorTotal, 0);
+// Negate every line/total in a set of sections — used to normalise a credit-signed
+// balance-sheet source (liabilities/equity presented as negatives) to magnitudes.
+const flipSections = (sections: Section[]): Section[] =>
+  sections.map((section) => ({
+    ...section,
+    lines: section.lines.map((line) => ({ ...line, amount: -line.amount, prior: -line.prior })),
+    total: -section.total,
+    priorTotal: -section.priorTotal,
+  }));
 
 const esc = (value: string) => value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
 const money = (value: number) => {
@@ -89,8 +96,18 @@ function buildBalanceSheet(rows: Row[]) {
   const sections = groupSections(rows, "category", "item");
   const fixedAssets = sections.filter((s) => classifyBalance(s.title) === "fixed");
   const currentAssets = sections.filter((s) => classifyBalance(s.title) === "currentAsset");
-  const liabilities = sections.filter((s) => classifyBalance(s.title) === "liability");
-  const equity = sections.filter((s) => classifyBalance(s.title) === "equity");
+  const rawLiabilities = sections.filter((s) => classifyBalance(s.title) === "liability");
+  const rawEquity = sections.filter((s) => classifyBalance(s.title) === "equity");
+  // Sign-convention normalisation. Liabilities and equity are credit balances; a
+  // source that presents them as negatives (credit-signed, e.g. straight from a
+  // trial balance) would otherwise inflate net assets. Detect that convention
+  // from the liabilities sign (a liability is never genuinely negative — that
+  // would be a debtor) and flip both to positive magnitudes. When liabilities are
+  // already positive we leave equity untouched, preserving GENUINE negative equity
+  // (accumulated losses). INV-01 is the safety net if a source is inconsistent.
+  const creditSigned = sumSections(rawLiabilities) < 0;
+  const liabilities = creditSigned ? flipSections(rawLiabilities) : rawLiabilities;
+  const equity = creditSigned ? flipSections(rawEquity) : rawEquity;
   const totalFixed = sumSections(fixedAssets);
   const totalCurrentAssets = sumSections(currentAssets);
   const totalAssets = totalFixed + totalCurrentAssets;
