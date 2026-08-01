@@ -7,6 +7,7 @@ import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompan
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateMtdReadiness, calculateMtdReadinessDrivers, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type MtdReadinessDriver, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, num as cashNum, type CashflowScenario, type StatementsForCashflow } from "@/lib/cashflow-13week";
 import { buildDebtorLedger, forecastRecovery, type DebtorLedger } from "@/lib/debtor-ledger";
+import { checkInvariants } from "@/lib/invariants";
 import { buildWorkingCapital } from "@/lib/working-capital";
 import { buildRunway } from "@/lib/runway";
 import { buildVariance } from "@/lib/variance";
@@ -8254,6 +8255,39 @@ function DebtorBridgePanel({ ledger }: { ledger: DebtorLedger }) {
   );
 }
 
+// Cross-module invariants — the reconciliations that must hold across accounts,
+// debtors and evidence. Surfaces contradictions as pass/review/fail rather than
+// letting two modules quietly disagree. Mirrors lib/invariants.ts.
+function InvariantsPanel({ statements, ledger, coverage }: { statements?: SyncStatements; ledger?: DebtorLedger; coverage?: { sourceLinked: number; totalExposure: number } }) {
+  const report = useMemo(() => checkInvariants({ statements, debtorLedger: ledger, coverage }), [statements, ledger, coverage]);
+  if (!report.invariants.length) return null;
+  const chip: Record<string, string> = {
+    pass: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+    review: "bg-amber-50 text-amber-700 ring-amber-600/20",
+    fail: "bg-red-50 text-red-700 ring-red-600/20",
+    not_applicable: "bg-slate-100 text-slate-500 ring-slate-500/20",
+  };
+  const label: Record<string, string> = { pass: "Pass", review: "Review", fail: "Fail", not_applicable: "N/A" };
+  return (
+    <Panel title="Cross-Module Invariants · integrity guardrails">
+      <p className="max-w-2xl text-sm text-muted">Automated reconciliations that must hold across accounts, debtors and evidence. A <strong>fail</strong> is a hard integrity breach (signs, duplication, overmatch); a <strong>review</strong> is a reconciliation needing an explicit bridge before reliance.</p>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
+        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700 ring-1 ring-inset ring-emerald-600/20">{report.passed} pass</span>
+        {report.review > 0 && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700 ring-1 ring-inset ring-amber-600/20">{report.review} review</span>}
+        {report.failed > 0 && <span className="rounded-full bg-red-50 px-2.5 py-1 text-red-700 ring-1 ring-inset ring-red-600/20">{report.failed} fail</span>}
+      </div>
+      <ul className="mt-3 grid gap-2">
+        {report.invariants.map((inv) => (
+          <li key={inv.id} className={`flex flex-wrap items-start justify-between gap-2 rounded-xl border p-3 ${inv.status === "fail" ? "border-red-200 bg-red-50/50" : inv.status === "review" ? "border-amber-200 bg-amber-50/50" : "border-line"}`}>
+            <div className="min-w-0"><p className="text-sm font-bold text-ink">{inv.name}</p><p className="text-xs text-muted">{inv.detail}</p></div>
+            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase ring-1 ring-inset ${chip[inv.status]}`}>{label[inv.status]}</span>
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
+}
+
 // 13-week cash flow — a weekly liquidity projection from the company's aged
 // ledgers + bank + P&L run-rate. Shows the low point and any week cash turns
 // negative, with the assumptions made explicit for the finance manager to refine.
@@ -8834,6 +8868,7 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
 
       {cashTab === "forecast" && (<>
         <DebtorBridgePanel ledger={debtorLedger} />
+        <InvariantsPanel statements={statements} ledger={debtorLedger} coverage={{ sourceLinked, totalExposure }} />
         <ThirteenWeekCashflow statements={statements} ledger={debtorLedger} />
         <WhatIfPlanner statements={statements} />
       </>)}
