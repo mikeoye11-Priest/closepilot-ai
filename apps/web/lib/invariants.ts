@@ -43,17 +43,17 @@ export function checkInvariants(input: InvariantInputs): InvariantReport {
       Math.abs(bsDiff) <= TOLERANCE ? "pass" : "fail",
       Math.abs(bsDiff) <= TOLERANCE ? `Net assets ${gbp(bs.netAssets)} = capital & reserves ${gbp(bs.totalEquity)}` : `Out of balance by ${gbp(bsDiff)} — check the sign handling of negative equity / net assets.`);
 
-    // INV-02 — P&L profit reconciles to the reserves (equity) movement; an
-    // unexplained difference needs an equity bridge (dividends/capital) before sign-off.
-    if (pack.prior.hasComparatives) {
-      const equityMovement = Math.round(bs.totalEquity - bs.priorEquity);
-      const netProfit = Math.round(pack.pl.netProfit);
-      const unexplained = equityMovement - netProfit;
+    // INV-02 — P&L profit reconciles to the reserves (equity) movement via the
+    // Statement of Changes in Equity: opening + profit + distributions + capital =
+    // closing. A residual is a movement not yet modelled and needs confirming.
+    const eq = pack.equity;
+    if (eq.hasComparatives) {
+      const reconciledDetail = `Opening reserves ${gbp(eq.opening)} + profit ${gbp(eq.profit)}${eq.distributions ? ` ${eq.distributions < 0 ? "−" : "+"} distributions ${gbp(Math.abs(eq.distributions))}` : ""}${eq.capital ? ` + capital ${gbp(eq.capital)}` : ""}${eq.other ? ` + other ${gbp(eq.other)}` : ""} = closing reserves ${gbp(eq.actualClosing)}`;
       add("INV-02", "P&L profit reconciles to the reserves movement", "accounts",
-        Math.abs(unexplained) <= TOLERANCE ? "pass" : "review",
-        Math.abs(unexplained) <= TOLERANCE
-          ? `Profit ${gbp(netProfit)} = reserves movement ${gbp(equityMovement)}`
-          : `${gbp(Math.abs(unexplained))} unexplained — profit ${gbp(netProfit)} vs reserves movement ${gbp(equityMovement)}. Add an equity bridge (distributions / capital) to reconcile.`);
+        eq.reconciled ? "pass" : "review",
+        eq.reconciled
+          ? reconciledDetail
+          : `${gbp(Math.abs(eq.residual))} of the reserves movement is not explained by profit ${gbp(eq.profit)} and modelled distributions / capital — confirm the equity movements to reconcile.`);
     }
 
     // INV-04 — TB trade creditors agree to the aged creditors report.

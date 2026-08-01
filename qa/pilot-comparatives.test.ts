@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { pilotStatements, pilotAnalysisResult } from "../apps/web/lib/data";
-import { buildManagementAccounts } from "../apps/web/lib/management-accounts";
+import { buildManagementAccounts, buildEquityReconciliation, renderManagementAccountsHtml } from "../apps/web/lib/management-accounts";
 import { buildStatutoryAccounts } from "../apps/web/lib/statutory-accounts";
 import { VAT_ENGINE_VERSION } from "../apps/web/lib/vat-engine";
 
@@ -29,6 +29,36 @@ test("pilot statements produce management-accounts comparatives (YoY, both years
     pack.observations.some((o) => /grew 10% from £1,890,000 to £2,080,000/.test(o)),
     "comparative growth observation is generated",
   );
+});
+
+test("pilot equity reconciles via the Statement of Changes in Equity (profit − dividends)", () => {
+  const pack = buildManagementAccounts(pilotStatements);
+  const eq = pack.equity;
+  assert.equal(eq.opening, 937_700, "opening = prior capital & reserves");
+  assert.equal(eq.profit, 162_000);
+  assert.equal(eq.distributions, -52_900, "modelled dividend");
+  assert.equal(eq.actualClosing, 1_046_800);
+  assert.equal(eq.residual, 0);
+  assert.equal(eq.reconciled, true);
+  // The pack renders the SOCE.
+  const html = renderManagementAccountsHtml(pack);
+  assert.match(html, /Statement of Changes in Equity/);
+  assert.match(html, /Dividends and distributions/);
+});
+
+test("buildEquityReconciliation: capital introduced reconciles; an unexplained gap surfaces a residual", () => {
+  const base = buildManagementAccounts(pilotStatements);
+  // Same numbers but the movement is capital, not dividends → residual until modelled.
+  const noMovement = buildEquityReconciliation({ ...pilotStatements, equityMovements: [] }, base.pl, base.bs);
+  assert.equal(noMovement.reconciled, false);
+  assert.equal(noMovement.residual, -52_900, "unexplained reserves movement is surfaced, not plugged");
+
+  const withCapital = buildEquityReconciliation(
+    { ...pilotStatements, equityMovements: [{ description: "Dividends paid", amount: "-52900" }, { description: "Shares issued", amount: "0" }] },
+    base.pl, base.bs,
+  );
+  assert.equal(withCapital.reconciled, true);
+  assert.equal(withCapital.capital, 0);
 });
 
 test("pilot statements drive statutory + full FRS 102 packs with comparatives, balanced", () => {

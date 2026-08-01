@@ -21,6 +21,10 @@ export type SyncStatements = {
   agedCreditors: Row[];
   bank: Row[];
   trialBalance: Row[];
+  // Statement of Changes in Equity movements outside profit — dividends /
+  // distributions (negative), shares issued / capital introduced (positive),
+  // prior-year adjustments. Each row: { description, amount } (signed).
+  equityMovements?: Row[];
 };
 
 export type ManagementAccountsFinding = { severity?: string; title?: string; category?: string; description?: string; expectedImpact?: string };
@@ -123,6 +127,56 @@ type BS = ReturnType<typeof buildBalanceSheet>;
 type Aged = ReturnType<typeof aging>;
 type Kpis = { grossMargin: number | null; netMargin: number | null; currentRatio: number | null; debtorDays: number | null; creditorDays: number | null };
 
+export type EquityMovement = { label: string; amount: number; kind: "distribution" | "capital" | "other" };
+export type EquityReconciliation = {
+  hasComparatives: boolean;
+  opening: number;         // opening capital & reserves (prior-year closing equity)
+  profit: number;          // profit for the financial period
+  distributions: number;   // dividends / distributions (normally negative)
+  capital: number;         // shares issued / capital introduced or redeemed
+  other: number;           // other explicit movements (prior-year adjustments etc.)
+  movements: EquityMovement[];
+  expectedClosing: number; // opening + profit + distributions + capital + other
+  actualClosing: number;   // closing capital & reserves per the balance sheet
+  residual: number;        // actualClosing − expectedClosing (unexplained by modelled movements)
+  reconciled: boolean;     // residual within tolerance
+};
+
+function classifyEquityMovement(label: string): EquityMovement["kind"] {
+  const t = label.toLowerCase();
+  if (/dividend|distribution|drawing/.test(t)) return "distribution";
+  if (/share|capital|premium|redemption/.test(t)) return "capital";
+  return "other";
+}
+
+// The Statement of Changes in Equity bridge: opening reserves + profit for the
+// period + explicitly modelled movements (dividends / capital) should equal the
+// closing reserves on the balance sheet. Any residual is the movement we cannot
+// yet explain — surfaced (never silently plugged) so it can be confirmed.
+export function buildEquityReconciliation(statements: SyncStatements, pl: PL, bs: BS): EquityReconciliation {
+  const movements: EquityMovement[] = (statements.equityMovements ?? [])
+    .map((row) => {
+      const label = String(row.description ?? row.item ?? row.name ?? "Equity movement").trim() || "Equity movement";
+      return { label, amount: num(row.amount), kind: classifyEquityMovement(label) };
+    })
+    .filter((m) => Math.abs(m.amount) > 0.005);
+  const sumKind = (kind: EquityMovement["kind"]) => movements.filter((m) => m.kind === kind).reduce((sum, m) => sum + m.amount, 0);
+  const distributions = sumKind("distribution");
+  const capital = sumKind("capital");
+  const other = sumKind("other");
+  const opening = bs.priorEquity;
+  const profit = pl.netProfit;
+  const expectedClosing = opening + profit + distributions + capital + other;
+  const actualClosing = bs.totalEquity;
+  const residual = Math.round(actualClosing - expectedClosing);
+  return {
+    hasComparatives: (statements.priorProfitLoss?.length ?? 0) > 0 || Math.abs(bs.priorNetAssets) > 0.5,
+    opening, profit, distributions, capital, other, movements,
+    expectedClosing, actualClosing, residual,
+    reconciled: Math.abs(residual) <= 1,
+  };
+}
+
 function buildObservations(pl: PL, bs: BS, debtors: Aged, creditors: Aged, cashBalance: number, kpis: Kpis, findings: ManagementAccountsFinding[], prior: { hasComparatives: boolean; revenue: number; netProfit: number }): string[] {
   const obs: string[] = [];
   obs.push(`Revenue for the period was ${money(pl.revenue)}, producing a gross profit of ${money(pl.grossProfit)} (${pct(kpis.grossMargin)} margin) and a net ${pl.netProfit >= 0 ? "profit" : "loss"} of ${money(pl.netProfit)} (${pct(kpis.netMargin)}).`);
@@ -185,9 +239,11 @@ export function buildManagementAccounts(statements: SyncStatements, findings: Ma
     netAssets: bs.priorNetAssets, totalEquity: bs.priorEquity,
   };
 
+  const equity = buildEquityReconciliation(statements, pl, bs);
+
   return {
     meta: { companyName: statements.companyName ?? "Company", asOfDate: statements.asOfDate, periodStart: statements.periodStart ?? `${statements.asOfDate.slice(0, 4)}-01-01`, currency: statements.currency ?? "GBP" },
-    pl, bs, debtors, creditors, cashBalance, unreconciled, kpis, prior,
+    pl, bs, debtors, creditors, cashBalance, unreconciled, kpis, prior, equity,
     observations: buildObservations(pl, bs, debtors, creditors, cashBalance, kpis, findings, prior),
     notes: buildNotes(pl, bs, debtors, creditors, cashBalance),
   };
@@ -230,7 +286,7 @@ function statementRows(sections: Section[]): string {
 const totalRow = (label: string, value: number, cls = "total") => `<tr class="${cls}"><td>${esc(label)}</td><td class="num">${money(value)}</td></tr>`;
 
 export function renderManagementAccountsHtml(pack: ReturnType<typeof buildManagementAccounts>, options: { autoPrint?: boolean; aiCommentary?: string; word?: boolean } = {}): string {
-  const { meta, pl, bs, debtors, creditors, kpis, observations, notes } = pack;
+  const { meta, pl, bs, debtors, creditors, kpis, observations, notes, equity } = pack;
   const asOf = new Date(meta.asOfDate).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   const kpiCard = (label: string, value: string) => `<div class="kpi"><span class="kpi-label">${label}</span><span class="kpi-value">${value}</span></div>`;
   const agingTable = (title: string, data: Aged) => `
@@ -337,6 +393,18 @@ export function renderManagementAccountsHtml(pack: ReturnType<typeof buildManage
     ${totalRow("Total equity", bs.totalEquity, "total")}
   </table>
   ${Math.abs(bs.netAssets - bs.totalEquity) > 1 ? `<p class="note">Note: net assets ${money(bs.netAssets)} and total equity ${money(bs.totalEquity)} differ by ${money(bs.netAssets - bs.totalEquity)} — review before finalising.</p>` : ""}
+
+  ${equity.hasComparatives ? `<h2>Statement of Changes in Equity</h2>
+  <table>
+    ${totalRow("Equity at start of period", equity.opening, "headline")}
+    ${totalRow("Profit for the financial period", equity.profit, "subtotal")}
+    ${equity.distributions ? totalRow("Dividends and distributions", equity.distributions, "subtotal") : ""}
+    ${equity.capital ? totalRow("Shares issued / capital movements", equity.capital, "subtotal") : ""}
+    ${equity.other ? totalRow("Other equity movements", equity.other, "subtotal") : ""}
+    ${!equity.reconciled ? totalRow("Unexplained movement (to confirm)", equity.residual, "subtotal") : ""}
+    ${totalRow("Equity at end of period", equity.actualClosing, "total")}
+  </table>
+  <p class="note">${equity.reconciled ? `Reconciled: opening reserves ${money(equity.opening)} + profit ${money(equity.profit)}${equity.distributions ? ` ${equity.distributions < 0 ? "−" : "+"} distributions ${money(Math.abs(equity.distributions))}` : ""}${equity.capital ? ` + capital ${money(equity.capital)}` : ""} = closing reserves ${money(equity.actualClosing)}.` : `Note: ${money(Math.abs(equity.residual))} of the reserves movement is not explained by modelled profit, dividends or capital — confirm the equity movements for the period before finalising.`}</p>` : ""}
 
   <h2>Cash &amp; working capital</h2>
   ${agingTable("Aged debtors", debtors)}
