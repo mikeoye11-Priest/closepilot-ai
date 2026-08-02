@@ -17,15 +17,13 @@ export const isOpenFinding = (finding: Finding): boolean => !isDecided(finding);
 export const isCriticalOpenFinding = (finding: Finding): boolean =>
   isOpenFinding(finding) && (finding.severity === "critical" || finding.severity === "high");
 
-// Scoreable = contributes to the risk score. Excludes dispositioned findings and
-// advisory (indicator-only) findings. NB: intentionally does NOT exclude "approved"
-// — kept identical to the historical scoring definition so the score is unchanged;
-// aligning this with isDecided is a deliberate follow-on that will move scores.
-export const SCOREABLE_EXCLUDED_STATUSES: FindingStatus[] = [
-  "resolved", "closed", "false_positive", "accepted_risk", "accepted", "rejected", "not_applicable",
-];
+// Scoreable = contributes to the risk score. A decided finding (including one a
+// reviewer has "approved") no longer penalises the score — consistent with
+// isOpenFinding — and advisory (indicator-only) findings never score. (Score-
+// neutral on current data, which carries no "approved" findings; the alignment
+// matters once a reviewer approves a finding's disposition.)
 export const isScoreableFinding = (finding: Finding): boolean =>
-  !SCOREABLE_EXCLUDED_STATUSES.includes(finding.status) && finding.evidenceStrength !== "advisory";
+  !isDecided(finding) && finding.evidenceStrength !== "advisory";
 
 const lifecycleStatuses = ["open", "under_review", "evidence_requested", "evidence_received", "resolved", "approved", "closed"] as const;
 export type LifecycleStatus = (typeof lifecycleStatuses)[number];
