@@ -3003,7 +3003,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setFocusedFindingId(findingId);
       setActive("Findings");
     }} setActive={setActive} />;
-    if (active === "Accounts") return <AccountsWorkspace tenantId={tenant.id} companyId={currentCompany.id} companyName={currentCompany.name} />;
+    if (active === "Accounts") return <AccountsWorkspace tenantId={tenant.id} companyId={currentCompany.id} companyName={currentCompany.name} provider={companySnapshots[currentCompany.id]?.statements?.sourceProvider} />;
     if (active === "Review Pack") return <ReviewPack company={currentCompany} tenant={tenant} userName={userName} score={score} risk={risk} findings={findings} findingEvidence={findingEvidence} findingComments={findingComments} findingActivities={findingActivities} partnerSignOff={partnerSignOff} reviewLocked={reviewLocked} recommendations={recommendations} validationChecks={validationChecks} uploads={uploads} financialExposure={financialExposure} cashAtRisk={cashAtRisk} timeSavedHours={timeSavedHours} timeSavedValue={timeSavedValue} statements={companySnapshots[currentCompany.id]?.statements} onCreateNewReviewCycle={() => clearCurrentReview(`${currentCompany.name} locked review archived. Upload a new finance pack to start a new review cycle.`)} setActive={setActive} />;
     if (active === "Change Intelligence") return <ChangeIntelligence findings={findings} findingActivities={findingActivities} partnerSignOff={partnerSignOff} validationChecks={validationChecks} uploads={uploads} openFindingEvidence={(findingId) => {
       if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
@@ -6396,7 +6396,7 @@ function ReadinessTimeline({ uploads, findings, recommendations, validationCheck
 
 // One "Accounts" screen for the three production outputs (they share a component,
 // differing only by variant) — a segmented selector instead of three nav entries.
-function AccountsWorkspace({ tenantId, companyId, companyName }: { tenantId: string; companyId: string; companyName: string }) {
+function AccountsWorkspace({ tenantId, companyId, companyName, provider }: { tenantId: string; companyId: string; companyName: string; provider?: string }) {
   const [variant, setVariant] = useState<"management" | "statutory" | "full">("management");
   const tabs: Array<{ id: "management" | "statutory" | "full"; label: string }> = [
     { id: "management", label: "Management" },
@@ -6416,7 +6416,7 @@ function AccountsWorkspace({ tenantId, companyId, companyName }: { tenantId: str
           </button>
         ))}
       </div>
-      <ManagementAccountsPanel tenantId={tenantId} companyId={companyId} companyName={companyName} variant={variant} />
+      <ManagementAccountsPanel tenantId={tenantId} companyId={companyId} companyName={companyName} variant={variant} provider={provider} />
     </div>
   );
 }

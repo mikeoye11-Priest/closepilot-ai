@@ -12,7 +12,7 @@ const CONFIG: Record<Variant, { eyebrow: string; title: string; route: string; e
     eyebrow: "Accounts Production",
     title: "Management Accounts",
     route: "/api/reports/management-accounts",
-    blurb: "A client-ready management accounts pack, generated directly from the connected Xero ledger — no re-keying. Built from the latest completed sync.",
+    blurb: "A client-ready management accounts pack, generated directly from the connected ledger — no re-keying. Built from the latest completed sync.",
     contents: [
       "AI-drafted commentary, grounded in the figures (review before issuing)",
       "Profit & loss with gross and net profit",
@@ -26,7 +26,7 @@ const CONFIG: Record<Variant, { eyebrow: string; title: string; route: string; e
     eyebrow: "Accounts Production",
     title: "Financial Accounts (Statutory)",
     route: "/api/reports/financial-accounts",
-    blurb: "Draft statutory financial statements in FRS 102 Section 1A (small company) format from the connected Xero ledger — for review before filing.",
+    blurb: "Draft statutory financial statements in FRS 102 Section 1A (small company) format from the connected ledger — for review before filing.",
     contents: [
       "Statement of Financial Position + Income Statement (with prior-year comparatives)",
       "Directors' report and accounting policies (FRS 102 Section 1A)",
@@ -68,9 +68,14 @@ function FormatCard({ title, sub, onClick, tone = "default" }: { title: string; 
   );
 }
 
-export function ManagementAccountsPanel({ tenantId, companyId, companyName, variant = "management" }: { tenantId: string; companyId: string; companyName: string; variant?: Variant }) {
+export function ManagementAccountsPanel({ tenantId, companyId, companyName, variant = "management", provider }: { tenantId: string; companyId: string; companyName: string; variant?: Variant; provider?: string }) {
   const config = CONFIG[variant];
-  const base = `${config.route}?${new URLSearchParams({ tenantId, companyId }).toString()}${config.extra ?? ""}`;
+  // `provider` scopes the report to the ledger currently in view, so a company
+  // connected to more than one accounting system never renders another provider's
+  // figures in its accounts pack.
+  const params = new URLSearchParams({ tenantId, companyId });
+  if (provider) params.set("provider", provider);
+  const base = `${config.route}?${params.toString()}${config.extra ?? ""}`;
 
   // Reporting-period override — sets the accounts' "as at" date (year-to-date
   // basis). "auto" uses the period from the latest sync / uploaded documents.
@@ -142,7 +147,7 @@ export function ManagementAccountsPanel({ tenantId, companyId, companyName, vari
             {variant !== "management"
               ? "Draft statutory statements for review. Tax, directors'/strategic report, audit and full disclosures remain the preparer's responsibility before filing; the iXBRL must be validated against a filing checker."
               : "Prepared for internal management purposes; any AI-drafted narrative is grounded in the figures and must be reviewed before issue."}
-            {" "}Reflects the most recent Xero sync — if it looks out of date, run <span className="font-semibold">Settings → Sync now</span> first.
+            {" "}Reflects the most recent sync of the connected ledger — if it looks out of date, run <span className="font-semibold">Settings → Sync now</span> first.
           </p>
         </div>
       </div>

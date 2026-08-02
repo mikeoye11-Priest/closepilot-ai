@@ -49,12 +49,13 @@ export async function GET(request: Request) {
   const syncId = url.searchParams.get("syncId") ?? "";
   const tenantId = url.searchParams.get("tenantId") ?? "";
   const companyId = url.searchParams.get("companyId") ?? "";
+  const provider = url.searchParams.get("provider") ?? "";
   const format = url.searchParams.get("format") ?? "html";
   const autoPrint = url.searchParams.get("print") === "1";
   const aiEnabled = url.searchParams.get("ai") !== "0";
 
   const supabase = await createClient();
-  const loaded = await loadReportStatements(supabase, { userId: session.userId, syncId, tenantId, companyId });
+  const loaded = await loadReportStatements(supabase, { userId: session.userId, syncId, tenantId, companyId, provider });
   if (!loaded) return htmlPage("No accounts data found for this company. Run a Xero sync (Settings → Sync now) or upload a trial balance, P&L and balance sheet, then reopen this page.", 404);
 
   const statements = withReportingPeriod(loaded.statements, url.searchParams.get("asOfDate"));
