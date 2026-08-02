@@ -18,12 +18,18 @@ export const REAUTH_REQUIRED = "reauth_required";
 export function isReauthError(error: unknown): boolean {
   const e = error as {
     message?: unknown; error?: unknown; error_description?: unknown; code?: unknown;
-    statusCode?: unknown; status?: unknown; response?: { statusCode?: unknown; status?: unknown };
+    statusCode?: unknown; status?: unknown;
+    response?: { statusCode?: unknown; status?: unknown; data?: { error?: unknown; error_description?: unknown; Detail?: unknown } };
   } | null | undefined;
   const status = [e?.statusCode, e?.status, e?.response?.statusCode, e?.response?.status].find((s) => typeof s === "number");
   if (status === 401) return true;
   const bits: string[] = [];
-  for (const value of [e?.message, e?.error, e?.error_description, e?.code]) if (typeof value === "string") bits.push(value);
+  // Include the provider's response body — an OAuth token-refresh failure returns
+  // HTTP 400 with { error: "invalid_grant" } nested in response.data, so the
+  // top-level message is only the opaque "Request failed with status code 400".
+  for (const value of [e?.message, e?.error, e?.error_description, e?.code, e?.response?.data?.error, e?.response?.data?.error_description, e?.response?.data?.Detail]) {
+    if (typeof value === "string") bits.push(value);
+  }
   if (!bits.length) bits.push(String(error ?? ""));
   const text = bits.join(" ").toLowerCase();
   return /invalid_grant|invalid[_ ]?token|token (has |is )?expired|expired[_ ]token|unauthori[sz]ed|\b401\b|revoked|consent|refresh[_ ]?token/.test(text);

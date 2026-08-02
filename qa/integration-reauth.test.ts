@@ -13,6 +13,13 @@ test("revoked / expired grant errors are classified as needing reconnect", () =>
   assert.equal(isReauthError({ error: "invalid_grant", error_description: "Token revoked" }), true, "QuickBooks token endpoint shape");
   assert.equal(isReauthError({ statusCode: 401, message: "Unauthorized" }), true, "status-code shape");
   assert.equal(isReauthError({ response: { status: 401 } }), true, "nested response status");
+  // Xero token refresh: axios throws HTTP 400 with invalid_grant nested in the body
+  // and only "Request failed with status code 400" at the top level.
+  assert.equal(
+    isReauthError({ message: "Request failed with status code 400", status: 400, response: { status: 400, data: { error: "invalid_grant", error_description: "The refresh token has expired" } } }),
+    true,
+    "Xero token-refresh 400 with nested invalid_grant",
+  );
 });
 
 // Transient / data problems must NOT be misclassified — a retry can clear these,
@@ -22,6 +29,8 @@ test("transient and data errors are NOT classified as needing reconnect", () => 
   assert.equal(isReauthError(new Error("Network timeout while contacting Xero")), false);
   assert.equal(isReauthError(new Error("Could not persist refreshed Xero tokens: database unavailable")), false);
   assert.equal(isReauthError({ statusCode: 503, message: "Service Unavailable" }), false);
+  // A bare 400 with no invalid_grant/token signal is a data/report problem, not reauth.
+  assert.equal(isReauthError({ message: "Request failed with status code 400", status: 400, response: { status: 400, data: { Detail: "Invalid report date" } } }), false, "generic 400 is not reauth");
   assert.equal(isReauthError(undefined), false);
   assert.equal(isReauthError(null), false);
 });
