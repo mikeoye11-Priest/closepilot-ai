@@ -6,6 +6,7 @@ import { evidenceGroundedAnswer, type GroundedAnswerSections } from "@/lib/ask-c
 import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompany, pilotTenant, tenant as seededTenant } from "@/lib/data";
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateMtdReadiness, calculateMtdReadinessDrivers, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type MtdReadinessDriver, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, num as cashNum, type CashflowScenario, type StatementsForCashflow } from "@/lib/cashflow-13week";
+import { isOpenFinding, isCriticalOpenFinding, lifecycleStatus, type LifecycleStatus } from "@/lib/finding-ledger";
 import { buildDebtorLedger, forecastRecovery, debtorExposure, type DebtorLedger } from "@/lib/debtor-ledger";
 import { checkInvariants } from "@/lib/invariants";
 import { buildWorkingCapital } from "@/lib/working-capital";
@@ -84,25 +85,10 @@ function pageLabel(value: string) {
 }
 
 const storageKey = "closepilot.workspace.v2";
-const lifecycleStatuses = ["open", "under_review", "evidence_requested", "evidence_received", "resolved", "approved", "closed"] as const;
-type LifecycleStatus = (typeof lifecycleStatuses)[number];
+const lifecycleStatuses = ["open", "under_review", "evidence_requested", "evidence_received", "resolved", "approved", "closed"] as const satisfies readonly LifecycleStatus[];
 const reviewedFindingStatuses: FindingStatus[] = ["under_review", "evidence_requested", "evidence_received", "resolved", "approved", "closed", "false_positive", "accepted_risk", "in_review", "accepted", "rejected", "needs_investigation", "not_applicable"];
-
-function lifecycleStatus(status: FindingStatus): LifecycleStatus {
-  if (status === "in_review") return "under_review";
-  if (status === "needs_investigation") return "evidence_requested";
-  if (status === "accepted") return "approved";
-  if (status === "rejected" || status === "not_applicable" || status === "false_positive" || status === "accepted_risk") return "closed";
-  return status;
-}
-
-function isOpenFinding(finding: Finding) {
-  return !["resolved", "approved", "closed", "false_positive", "accepted_risk", "accepted", "rejected", "not_applicable"].includes(finding.status);
-}
-
-function isCriticalOpenFinding(finding: Finding) {
-  return isOpenFinding(finding) && (finding.severity === "critical" || finding.severity === "high");
-}
+// isOpenFinding, isCriticalOpenFinding and lifecycleStatus now come from the
+// canonical finding service (@/lib/finding-ledger) — one definition app-wide.
 
 function isReadyForManagerReview(finding: Finding) {
   return ["evidence_received", "resolved", "approved", "accepted_risk", "false_positive", "closed"].includes(finding.status);
@@ -8258,8 +8244,8 @@ function DebtorBridgePanel({ ledger }: { ledger: DebtorLedger }) {
 // Cross-module invariants — the reconciliations that must hold across accounts,
 // debtors and evidence. Surfaces contradictions as pass/review/fail rather than
 // letting two modules quietly disagree. Mirrors lib/invariants.ts.
-function InvariantsPanel({ statements, ledger, coverage }: { statements?: SyncStatements; ledger?: DebtorLedger; coverage?: { sourceLinked: number; totalExposure: number } }) {
-  const report = useMemo(() => checkInvariants({ statements, debtorLedger: ledger, coverage }), [statements, ledger, coverage]);
+function InvariantsPanel({ statements, ledger, coverage, findings }: { statements?: SyncStatements; ledger?: DebtorLedger; coverage?: { sourceLinked: number; totalExposure: number }; findings?: Finding[] }) {
+  const report = useMemo(() => checkInvariants({ statements, debtorLedger: ledger, coverage, findings }), [statements, ledger, coverage, findings]);
   if (!report.invariants.length) return null;
   const chip: Record<string, string> = {
     pass: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
@@ -8875,7 +8861,7 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
 
       {cashTab === "forecast" && (<>
         <DebtorBridgePanel ledger={debtorLedger} />
-        <InvariantsPanel statements={statements} ledger={debtorLedger} coverage={{ sourceLinked, totalExposure }} />
+        <InvariantsPanel statements={statements} ledger={debtorLedger} coverage={{ sourceLinked, totalExposure }} findings={findings} />
         <ThirteenWeekCashflow statements={statements} ledger={debtorLedger} />
         <WhatIfPlanner statements={statements} />
       </>)}

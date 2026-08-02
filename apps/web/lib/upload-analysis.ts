@@ -7,6 +7,7 @@ import { runReconciliationEngine } from "./reconciliation-engine";
 import { runVatEngine } from "./vat-engine";
 import { buildInventoryReview } from "./inventory-engine";
 import { buildStatementsFromUploads } from "./upload-statements";
+import { dedupeFindings } from "./finding-ledger";
 import {
   normaliseFinanceRows,
   type Creditor,
@@ -124,7 +125,7 @@ export function analyseParsedFiles(parsed: ParsedFile[], options: AnalyseOptions
     : [];
 
   // Deduplicate by category+severity+file to avoid noise
-  const allFindings = prioritiseReviewFindings(deduplicateFindings([...reconciliation.findings, ...codeFindings, ...ruleFindings, ...statFindingsConverted]));
+  const allFindings = prioritiseReviewFindings(dedupeFindings([...reconciliation.findings, ...codeFindings, ...ruleFindings, ...statFindingsConverted]));
 
   const inventoryReview = buildInventoryReviewFromFiles(canonicalParsed);
   // Accounts-production statements from uploaded TB/P&L/BS documents, so the
@@ -231,17 +232,6 @@ function buildImportProfiles(files: ParsedFile[]): ImportMappingProfile[] {
     lastUsedAt: new Date().toISOString(),
   }] : []);
   return Array.from(new Map(profiles.map((profile) => [profile.id, profile])).values());
-}
-
-function deduplicateFindings(findings: Finding[]): Finding[] {
-  const seen = new Set<string>();
-  return findings.filter((f) => {
-    // Create a key based on title similarity and source file
-    const key = `${f.category}_${f.severity}_${f.evidence.sourceFile}_${f.title.slice(0, 40).toLowerCase().replace(/\W+/g, "_")}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
 const PARTNER_REVIEW_RULES = new Set([
