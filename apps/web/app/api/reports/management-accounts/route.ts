@@ -56,9 +56,11 @@ export async function GET(request: Request) {
 
   const supabase = await createClient();
   const loaded = await loadReportStatements(supabase, { userId: session.userId, syncId, tenantId, companyId, provider });
-  if (!loaded) return htmlPage("No accounts data found for this company. Run a Xero sync (Settings → Sync now) or upload a trial balance, P&L and balance sheet, then reopen this page.", 404);
+  if (!loaded) return htmlPage("No accounts data found for this company. Run a sync (Settings → Sync now) or upload a trial balance, P&L and balance sheet, then reopen this page.", 404);
 
-  const statements = withReportingPeriod(loaded.statements, url.searchParams.get("asOfDate"));
+  // Bind the authoritative source onto the statements so the pack's provenance
+  // wording ("prepared from the … ledger") is always the real provider.
+  const statements = withReportingPeriod({ ...loaded.statements, sourceProvider: loaded.source }, url.searchParams.get("asOfDate"));
   const findings = loaded.findings;
   const pack = buildManagementAccounts(statements, findings);
 

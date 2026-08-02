@@ -61,6 +61,21 @@ test("buildEquityReconciliation: capital introduced reconciles; an unexplained g
   assert.equal(withCapital.capital, 0);
 });
 
+test("accounts packs name the real source provider, never a hardcoded Xero", () => {
+  const qbo = { ...pilotStatements, sourceProvider: "quickbooks" as const };
+  const maHtml = renderManagementAccountsHtml(buildManagementAccounts(qbo));
+  assert.match(maHtml, /the QuickBooks ledger/);
+  assert.doesNotMatch(maHtml, /the Xero ledger|maintained in Xero/);
+
+  const statHtml = renderStatutoryAccountsHtml(buildStatutoryAccounts(qbo));
+  assert.match(statHtml, /the QuickBooks ledger/);
+  assert.doesNotMatch(statHtml, /the Xero ledger/);
+
+  // A genuine Xero set still reads "the Xero ledger"; an uploaded set is neutral.
+  assert.match(renderManagementAccountsHtml(buildManagementAccounts({ ...pilotStatements, sourceProvider: "xero" as const })), /the Xero ledger/);
+  assert.match(renderManagementAccountsHtml(buildManagementAccounts({ ...pilotStatements, sourceProvider: "upload" as const })), /the uploaded accounting records/);
+});
+
 test("pilot statements drive statutory + full FRS 102 packs with comparatives, balanced", () => {
   const statutory = buildStatutoryAccounts(pilotStatements);
   assert.equal(statutory.hasComparatives, true);
