@@ -16,6 +16,18 @@ test("pilot statements reconcile across all accounts invariants (incl. the model
   assert.match(get(report, "INV-02")!.detail, /distributions/i);
 });
 
+test("INV-09 attributes figures to a known source; an unattributed set is flagged for review", () => {
+  // The pilot statements are stamped "demo".
+  const pilot = checkInvariants({ statements: pilotStatements }).invariants.find((i) => i.id === "INV-09");
+  assert.equal(pilot?.status, "pass");
+  assert.match(pilot!.detail, /Demo data/);
+
+  const unattributed = { ...pilotStatements, sourceProvider: undefined };
+  const inv = checkInvariants({ statements: unattributed }).invariants.find((i) => i.id === "INV-09");
+  assert.equal(inv?.status, "review");
+  assert.match(inv!.detail, /not attributed/i);
+});
+
 test("an unexplained reserves movement (no modelled distribution) trips INV-02 to review", () => {
   const noBridge = { ...pilotStatements, equityMovements: [] };
   const report = checkInvariants({ statements: noBridge });

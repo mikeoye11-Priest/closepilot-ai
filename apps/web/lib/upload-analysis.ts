@@ -1,5 +1,6 @@
 import { company, tenant } from "./data";
 import type { AnalysisResult, Company, Finding, FindingEvidenceRow, Recommendation, Tenant, Upload, ValidationCheck } from "./types";
+import type { SourceProvider } from "./management-accounts";
 import { runRuleEngine } from "./rule-engine";
 import { ALL_RULES } from "./rules/index";
 import { runStatisticalAnalysis, convertStatisticalFindings } from "./statistical-detection";
@@ -301,7 +302,7 @@ function parseCurrencyFromText(text: string): number {
   }, 0);
 }
 
-export function scopeAnalysisResult(result: AnalysisResult, scopeTenant: Tenant, scopeCompany: Company): AnalysisResult {
+export function scopeAnalysisResult(result: AnalysisResult, scopeTenant: Tenant, scopeCompany: Company, sourceProvider?: SourceProvider): AnalysisResult {
   return {
     uploads: result.uploads.map((u) => ({ ...u, tenantId: scopeTenant.id, companyId: scopeCompany.id })),
     validationChecks: result.validationChecks.map((v) => ({ ...v, tenantId: scopeTenant.id, companyId: scopeCompany.id })),
@@ -310,8 +311,10 @@ export function scopeAnalysisResult(result: AnalysisResult, scopeTenant: Tenant,
     recommendations: result.recommendations.map((r) => ({ ...r, tenantId: scopeTenant.id, companyId: scopeCompany.id })),
     vatReview: result.vatReview,
     inventoryReview: result.inventoryReview,
+    // Bind the real source provider so the analysis is attributed to the connector
+    // it came from (not the "upload" stamp of the shared parsed-files pipeline).
     statements: result.statements
-      ? { ...result.statements, companyName: scopeCompany.name, companyIndustry: scopeCompany.industry, currency: scopeCompany.currency }
+      ? { ...result.statements, companyName: scopeCompany.name, companyIndustry: scopeCompany.industry, currency: scopeCompany.currency, ...(sourceProvider ? { sourceProvider } : {}) }
       : undefined,
   };
 }

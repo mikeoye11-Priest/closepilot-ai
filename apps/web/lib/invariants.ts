@@ -13,7 +13,9 @@ import { buildFindingLedger } from "./finding-ledger";
 import type { Finding } from "./types";
 
 export type InvariantStatus = "pass" | "review" | "fail" | "not_applicable";
-export type InvariantCategory = "accounts" | "debtors" | "evidence" | "findings";
+export type InvariantCategory = "accounts" | "debtors" | "evidence" | "findings" | "source";
+
+const PROVIDER_LABELS: Record<string, string> = { xero: "Xero", quickbooks: "QuickBooks", sage: "Sage", upload: "Upload", demo: "Demo data" };
 export type Invariant = { id: string; name: string; category: InvariantCategory; status: InvariantStatus; detail: string };
 export type InvariantReport = { invariants: Invariant[]; passed: number; review: number; failed: number };
 
@@ -38,6 +40,14 @@ export function checkInvariants(input: InvariantInputs): InvariantReport {
   if (input.statements) {
     const pack = buildManagementAccounts(input.statements);
     const bs = pack.bs;
+
+    // INV-09 — figures are attributed to a single known source (provenance
+    // binding), so multi-provider data never blends silently or lands unattributed.
+    const provider = input.statements.sourceProvider;
+    const known = provider ? provider in PROVIDER_LABELS : false;
+    add("INV-09", "Figures are attributed to a known source", "source",
+      known ? "pass" : "review",
+      known ? `Source: ${PROVIDER_LABELS[provider!]}.` : "Source not attributed — confirm which connector or upload produced these figures.");
 
     // INV-01 — balance sheet balances with SIGNED equity (catches negative-equity
     // sign errors that report a balanced sheet as out of balance).

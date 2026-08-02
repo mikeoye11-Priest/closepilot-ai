@@ -9,12 +9,19 @@ import { signedNumber } from "./num";
 
 type Row = Record<string, string>;
 
+// Where a set of figures originated. Bound to the statements so every downstream
+// figure (accounts, debtor ledger, invariants) can be attributed to one source and
+// multi-provider data never blends silently. "upload" = CSV/Excel import,
+// "demo" = the built-in pilot dataset.
+export type SourceProvider = "xero" | "quickbooks" | "sage" | "upload" | "demo";
+
 export type SyncStatements = {
   asOfDate: string;
   periodStart?: string;
   currency?: string;
   companyName?: string;
   companyIndustry?: string;
+  sourceProvider?: SourceProvider;
   profitLoss: Row[];
   priorProfitLoss?: Row[];
   balanceSheet: Row[];

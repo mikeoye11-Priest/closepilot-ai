@@ -33,6 +33,7 @@ test("explicit P&L + BS files → balancing pack with correct revenue/net profit
   ];
   const statements = buildStatementsFromUploads(files as never, { companyName: "Uploadco Ltd" });
   assert.ok(statements, "statements built");
+  assert.equal(statements!.sourceProvider, "upload", "uploaded figures are attributed to the upload source");
   const ma = buildManagementAccounts(statements!);
   assert.equal(ma.pl.revenue, 200000);
   assert.equal(ma.pl.cogs, -80000);
