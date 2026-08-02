@@ -102,13 +102,13 @@ async function runQuickBooksSync({ supabase, connection, syncId, sessionUserId, 
     const parsedFiles = accountingParsedFiles(sync, { source: connection.external_tenant_name ?? "QuickBooks", vendor: "QuickBooks", basis: "Direct QuickBooks Online API sync" }, asOfDate);
     const tenant: Tenant = { id: tenantId, name: stringValue(body.tenantName) || "ClosePilot Workspace", type: body.tenantType === "company" ? "company" : "accounting_practice", plan: stringValue(body.tenantPlan) || "practice" };
     const company: Company = { id: companyId, tenantId, name: stringValue(body.companyName) || connection.external_tenant_name || "QuickBooks Company", industry: stringValue(body.companyIndustry), accountingSystem: "QuickBooks", currency: stringValue(body.currency) || "GBP", country: stringValue(body.country) || "United Kingdom" };
-    const analysis = scopeAnalysisResult(analyseParsedFiles(parsedFiles), tenant, company);
+    const analysis = scopeAnalysisResult(analyseParsedFiles(parsedFiles), tenant, company, "quickbooks");
     if (analysis.vatReview) {
       const vatWarnings = sync.warnings.filter((warning) => /vat/i.test(warning));
       if (vatWarnings.length) analysis.vatReview.syncDiagnostics = vatWarnings;
     }
     const completedAt = new Date().toISOString();
-    const statements = { asOfDate, periodStart: sync.periodStart, vatPeriodStart: sync.vatPeriodStart, vatPeriodEnd: sync.vatPeriodEnd, currency: company.currency, companyName: company.name, companyIndustry: company.industry, profitLoss: sync.profitLossRows, priorProfitLoss: sync.priorProfitLossRows, balanceSheet: sync.balanceSheetRows, agedDebtors: sync.agedDebtorRows, agedCreditors: sync.agedCreditorRows, bank: sync.bankReconRows, trialBalance: sync.trialBalanceRows };
+    const statements = { asOfDate, periodStart: sync.periodStart, vatPeriodStart: sync.vatPeriodStart, vatPeriodEnd: sync.vatPeriodEnd, currency: company.currency, companyName: company.name, companyIndustry: company.industry, sourceProvider: "quickbooks" as const, profitLoss: sync.profitLossRows, priorProfitLoss: sync.priorProfitLossRows, balanceSheet: sync.balanceSheetRows, agedDebtors: sync.agedDebtorRows, agedCreditors: sync.agedCreditorRows, bank: sync.bankReconRows, trialBalance: sync.trialBalanceRows };
     await supabase.from("accounting_sync_runs").update({ status: "completed", records_imported: imported, result_summary: { counts: sync.counts, warnings: sync.warnings, statements, analysis }, completed_at: completedAt }).eq("id", syncId);
     // A successful sync self-heals the connection status (e.g. after a reconnect).
     await supabase.from("accounting_integrations").update({ status: "connected", last_synced_at: completedAt, updated_at: completedAt }).eq("id", connection.id);

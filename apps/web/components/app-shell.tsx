@@ -8788,8 +8788,9 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
     agedDebtors: statements?.agedDebtors as Record<string, string>[] | undefined,
     tbControl: statements ? ((statements.balanceSheet ?? []).filter((row) => /debtor|receivable/i.test(String((row as Record<string, string>).item ?? ""))).reduce((sum, row) => sum + cashNum((row as Record<string, string>).amount), 0) || null) : null,
     collectionCases: collectionCases.map((c) => ({ customer: c.customer, status: c.status, promiseAmount: c.promiseAmount, promiseDate: c.promiseDate })),
+    tenantId, companyId, sourceProvider: statements?.sourceProvider,
     currency: "GBP",
-  }), [statements, collectionCases]);
+  }), [statements, collectionCases, tenantId, companyId]);
   const accounts = collectionAccounts(findings);
   const arFindings = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
   // Debtor totals read from the canonical ledger when it has data, so this screen,
@@ -9076,6 +9077,7 @@ function CollectionsPanel({ findings, collectionCases, saveCollectionCase, actor
     agedDebtors: statements?.agedDebtors as Record<string, string>[] | undefined,
     tbControl: statements ? ((statements.balanceSheet ?? []).filter((row) => /debtor|receivable/i.test(String((row as Record<string, string>).item ?? ""))).reduce((sum, row) => sum + cashNum((row as Record<string, string>).amount), 0) || null) : null,
     collectionCases: collectionCases.map((c) => ({ customer: c.customer, status: c.status, promiseAmount: c.promiseAmount, promiseDate: c.promiseDate })),
+    sourceProvider: statements?.sourceProvider,
     currency: "GBP",
   }), [statements, collectionCases]);
   const exposureSummary = debtorExposure(debtorLedger);

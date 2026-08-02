@@ -127,6 +127,7 @@ export const pilotStatements: SyncStatements = {
   currency: "GBP",
   companyName: pilotCompany.name,
   companyIndustry: pilotCompany.industry,
+  sourceProvider: "demo",
   profitLoss: pilotProfitLoss,
   // Prior-year P&L as its own period (prior figures carried in `amount`), which
   // drives the pack's summary comparatives and the year-on-year narrative.

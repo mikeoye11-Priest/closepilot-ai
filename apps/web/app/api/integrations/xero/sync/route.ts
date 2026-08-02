@@ -106,7 +106,7 @@ async function runXeroSync({ supabase, connection, syncId, sessionUserId, body, 
     const parsedFiles = xeroParsedFiles(sync, connection.external_tenant_name ?? "Xero", asOfDate);
     const tenant: Tenant = { id: tenantId, name: stringValue(body.tenantName) || "ClosePilot Workspace", type: body.tenantType === "company" ? "company" : "accounting_practice", plan: stringValue(body.tenantPlan) || "practice" };
     const company: Company = { id: companyId, tenantId, name: stringValue(body.companyName) || connection.external_tenant_name || "Xero Company", industry: stringValue(body.companyIndustry), accountingSystem: "Xero", currency: stringValue(body.currency) || "GBP", country: stringValue(body.country) || "United Kingdom" };
-    const analysis = scopeAnalysisResult(analyseParsedFiles(parsedFiles), tenant, company);
+    const analysis = scopeAnalysisResult(analyseParsedFiles(parsedFiles), tenant, company, "xero");
     // Definitive VAT diagnostic: when VAT rows were synced but the engine still
     // produced an empty review, capture the actual shape of the first few rows
     // (amounts/codes/type only — no party or description) so we can see whether
@@ -127,7 +127,7 @@ async function runXeroSync({ supabase, connection, syncId, sessionUserId, body, 
     const completedAt = new Date().toISOString();
     // Persist the statement line items (not just analysis metadata) so the
     // management-accounts pack can render P&L / balance sheet / aged / cash.
-    const statements = { asOfDate, periodStart: sync.periodStart, vatPeriodStart: sync.vatPeriodStart, vatPeriodEnd: sync.vatPeriodEnd, currency: company.currency, companyName: company.name, companyIndustry: company.industry, profitLoss: sync.profitLossRows, priorProfitLoss: sync.priorProfitLossRows, balanceSheet: sync.balanceSheetRows, agedDebtors: sync.agedDebtorRows, agedCreditors: sync.agedCreditorRows, bank: sync.bankReconRows, trialBalance: sync.trialBalanceRows };
+    const statements = { asOfDate, periodStart: sync.periodStart, vatPeriodStart: sync.vatPeriodStart, vatPeriodEnd: sync.vatPeriodEnd, currency: company.currency, companyName: company.name, companyIndustry: company.industry, sourceProvider: "xero" as const, profitLoss: sync.profitLossRows, priorProfitLoss: sync.priorProfitLossRows, balanceSheet: sync.balanceSheetRows, agedDebtors: sync.agedDebtorRows, agedCreditors: sync.agedCreditorRows, bank: sync.bankReconRows, trialBalance: sync.trialBalanceRows };
     await supabase.from("accounting_sync_runs").update({ status: "completed", records_imported: imported, result_summary: { counts: sync.counts, warnings: sync.warnings, statements, analysis }, completed_at: completedAt }).eq("id", syncId);
     // A successful sync self-heals the connection status (e.g. after a reconnect).
     await supabase.from("accounting_integrations").update({ status: "connected", last_synced_at: completedAt, updated_at: completedAt }).eq("id", connection.id);

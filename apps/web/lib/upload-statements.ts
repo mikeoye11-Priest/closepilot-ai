@@ -208,6 +208,7 @@ export function buildStatementsFromUploads(
     currency: meta.currency,
     companyName: meta.companyName,
     companyIndustry: meta.companyIndustry,
+    sourceProvider: "upload",
     profitLoss,
     balanceSheet,
     agedDebtors: arFile ? mapAged(arFile.rows) : [],
