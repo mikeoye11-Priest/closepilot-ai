@@ -8015,7 +8015,19 @@ function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uploadJob, 
       <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Finance pack readiness">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div><p className="text-xs font-bold uppercase text-muted">Prepared Accounts Intake</p><h2 className="mt-1 text-2xl font-black">Import prepared accounts, then follow the exceptions</h2><p className="mt-2 max-w-3xl text-sm text-muted">ClosePilot identifies each exported schedule, checks whether the accounts agree, and creates findings linked to the original rows.</p></div>
-          <Pill level={!uploads.length || mappingIssues || failedChecks ? "medium" : "low"}>{intakeStatus}</Pill>
+          <div className="flex shrink-0 items-center gap-2">
+            <Pill level={!uploads.length || mappingIssues || failedChecks ? "medium" : "low"}>{intakeStatus}</Pill>
+            {/* Available whenever a review exists — uploaded OR synced — so a Xero/
+                QuickBooks review can be cleared even though it has no uploaded files. */}
+            {(uploads.length > 0 || findings.length > 0 || validationChecks.length > 0) && (
+              <button
+                className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-700 transition-colors hover:bg-red-50"
+                onClick={() => { if (confirm("Clear this review? This removes the findings, scores, VAT review, recommendations, statements and any uploaded files for this client. (Provider connections are not affected.)")) onClear(); }}
+              >
+                Clear Review
+              </button>
+            )}
+          </div>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <Metric title="Core File Coverage" value={`${coverage}%`} detail={`${requiredPresent}/${requiredFiles.length} required files`} tone={coverage === 100 ? "low" : "medium"} />
