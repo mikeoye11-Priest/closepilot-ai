@@ -9,9 +9,11 @@
 import { buildManagementAccounts, type SyncStatements } from "./management-accounts";
 import { num } from "./cashflow-13week";
 import type { DebtorLedger } from "./debtor-ledger";
+import { buildFindingLedger } from "./finding-ledger";
+import type { Finding } from "./types";
 
 export type InvariantStatus = "pass" | "review" | "fail" | "not_applicable";
-export type InvariantCategory = "accounts" | "debtors" | "evidence";
+export type InvariantCategory = "accounts" | "debtors" | "evidence" | "findings";
 export type Invariant = { id: string; name: string; category: InvariantCategory; status: InvariantStatus; detail: string };
 export type InvariantReport = { invariants: Invariant[]; passed: number; review: number; failed: number };
 
@@ -26,6 +28,7 @@ export type InvariantInputs = {
   statements?: SyncStatements;
   debtorLedger?: DebtorLedger;
   coverage?: { sourceLinked: number; totalExposure: number };
+  findings?: Finding[];
 };
 
 export function checkInvariants(input: InvariantInputs): InvariantReport {
@@ -97,6 +100,18 @@ export function checkInvariants(input: InvariantInputs): InvariantReport {
     add("INV-07", "Evidence coverage ≤ 100% (overmatches are exceptions)", "evidence",
       overmatch <= TOLERANCE ? "pass" : "fail",
       overmatch <= TOLERANCE ? "Coverage within 100%." : `${gbp(overmatch)} of evidence exceeds the exposure — reconcile the overmatch.`);
+  }
+
+  if (input.findings) {
+    // INV-08 — one issue counts once. The active finding set must carry no
+    // canonical duplicates (an issue surfaced by several rules), mirroring INV-05
+    // for receivables. Duplicates skew the score, counts and cash-at-risk.
+    const ledger = buildFindingLedger(input.findings);
+    add("INV-08", "One issue counts once (no duplicate findings)", "findings",
+      ledger.duplicatesExcluded === 0 ? "pass" : "review",
+      ledger.duplicatesExcluded === 0
+        ? `${ledger.unique.length} distinct finding(s); no duplicates.`
+        : `${ledger.duplicatesExcluded} duplicate finding(s) collapsed — the raw set counts an issue more than once.`);
   }
 
   return {

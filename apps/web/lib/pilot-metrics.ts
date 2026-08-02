@@ -5,12 +5,10 @@
 // Longitudinal cross-session trends would need a persisted usage_events table.
 
 import type { AnalysisResult, Finding } from "./types";
-import { estimateTimeSaved, parseImpactAmount } from "./finance";
+import { estimateTimeSaved } from "./finance";
+import { isOpenFinding, parseImpactAmount } from "./finding-ledger";
 
 export const PILOT_HOURLY_RATE = 80;
-
-const DECIDED_STATUSES = ["resolved", "closed", "false_positive", "accepted_risk", "accepted", "rejected", "not_applicable"];
-const isOpenFinding = (finding: Finding) => !DECIDED_STATUSES.includes(finding.status);
 
 const CATEGORY_LABELS: Record<string, string> = {
   vat: "VAT", ar: "Aged debtors", ap: "Aged creditors", controls: "Controls", data_quality: "Data quality",

@@ -1,4 +1,8 @@
 import type { CashForecastPoint, FinanceScoreBreakdown, Finding, Recommendation, RiskLevel, ValidationCheck } from "./types";
+import { isScoreableFinding, parseImpactAmount } from "./finding-ledger";
+
+// Re-exported from the canonical finding service so existing importers keep working.
+export { parseImpactAmount };
 
 export const FINDING_CATEGORIES = {
   MONTH_END: "month_end",
@@ -184,15 +188,6 @@ export function calculateScoreBreakdown(findings: Finding[], validationChecks: V
   };
 }
 
-export function parseImpactAmount(impact: string): number {
-  if (!impact) return 0;
-  const match = impact.match(/(?:£|GBP\s*)([\d,]+(?:\.\d+)?)([km]?)/i);
-  if (!match) return 0;
-  const num = Number(match[1].replace(/,/g, ""));
-  const multiplier = match[2].toLowerCase() === "k" ? 1000 : match[2].toLowerCase() === "m" ? 1_000_000 : 1;
-  return num * multiplier;
-}
-
 export function estimateTimeSaved(findings: Finding[]) {
   const open = findings.filter((item) => !["resolved", "closed", "false_positive", "accepted_risk", "accepted", "rejected", "not_applicable"].includes(item.status)).length;
   if (!open) return 0;
@@ -345,10 +340,6 @@ function scorePenaltyForCategory(findings: Finding[], category: Finding["categor
   return findings
     .filter((finding) => finding.category === category && isScoreableFinding(finding))
     .reduce((sum, finding) => sum + findingRiskPenalty(finding), 0);
-}
-
-function isScoreableFinding(finding: Finding) {
-  return !["resolved", "closed", "false_positive", "accepted_risk", "accepted", "rejected", "not_applicable"].includes(finding.status) && finding.evidenceStrength !== "advisory";
 }
 
 function materialityWeight(finding: Finding) {
