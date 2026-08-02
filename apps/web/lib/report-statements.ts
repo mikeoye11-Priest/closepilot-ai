@@ -35,11 +35,29 @@ export async function loadReportStatements(
   // provider's sync runs — a company connected to more than one ledger (e.g. Xero
   // and QuickBooks) must never surface the wrong provider's data in its accounts.
   const scopedProvider = SYNC_PROVIDERS.has(provider as SourceProvider) ? (provider as SourceProvider) : undefined;
+  const explicitRun = UUID_RE.test(syncId);
+
+  // The user's workspace snapshot reflects their CURRENT review. Read it once so it
+  // can (a) act as a TOMBSTONE — a snapshot that exists but carries no statements
+  // means the review was cleared or erased, so the preview must NOT resurrect a
+  // stale sync run that survived disconnect — and (b) supply the fallback statements
+  // for an uploaded review. A specific syncId is an explicit request and bypasses this.
+  let snapshot: { statements?: SyncStatements; findings?: ManagementAccountsFinding[] } | undefined;
+  let snapshotCleared = false;
+  if (companyId && !explicitRun) {
+    const { data: ws } = await supabase.from("user_workspaces").select("data").eq("user_id", userId).limit(1);
+    const snapshots = (ws?.[0]?.data as { companySnapshots?: Record<string, { statements?: SyncStatements; findings?: ManagementAccountsFinding[] }> } | undefined)?.companySnapshots;
+    if (snapshots && Object.prototype.hasOwnProperty.call(snapshots, companyId)) {
+      snapshot = snapshots[companyId];
+      snapshotCleared = !hasRows(snapshot?.statements);
+    }
+  }
+  if (snapshotCleared) return null;
 
   // 1. Latest completed sync for this company (or a specific sync run), scoped to
   //    the requested provider when one is given.
   let query = supabase.from("accounting_sync_runs").select("id,provider,result_summary").order("started_at", { ascending: false }).limit(1);
-  if (UUID_RE.test(syncId)) query = query.eq("id", syncId);
+  if (explicitRun) query = query.eq("id", syncId);
   else {
     query = query.eq("status", "completed");
     if (tenantId) query = query.eq("tenant_id", tenantId);
@@ -56,14 +74,9 @@ export async function loadReportStatements(
     return { statements, findings: run!.result_summary!.analysis?.findings ?? [], source };
   }
 
-  // 2. Fall back to statements assembled from uploads, held in the user's
-  //    workspace snapshot for this company.
-  if (companyId) {
-    const { data: ws } = await supabase.from("user_workspaces").select("data").eq("user_id", userId).limit(1);
-    const snapshot = (ws?.[0]?.data as { companySnapshots?: Record<string, { statements?: SyncStatements; findings?: ManagementAccountsFinding[] }> } | undefined)?.companySnapshots?.[companyId];
-    if (hasRows(snapshot?.statements)) {
-      return { statements: snapshot!.statements!, findings: snapshot!.findings ?? [], source: "upload" };
-    }
+  // 2. Fall back to the review held in the workspace snapshot (typically uploaded).
+  if (hasRows(snapshot?.statements)) {
+    return { statements: snapshot!.statements!, findings: snapshot!.findings ?? [], source: (snapshot!.statements!.sourceProvider ?? "upload") };
   }
 
   return null;

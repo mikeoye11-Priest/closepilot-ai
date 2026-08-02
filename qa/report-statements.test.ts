@@ -6,7 +6,7 @@ import { loadReportStatements } from "../apps/web/lib/report-statements";
 // the latest (started_at desc) matching accounting_sync_runs row; user_workspaces
 // resolves empty so the sync-run path is what's under test.
 type Run = { tenant_id: string; company_id: string; provider: string; status: string; started_at: string; result_summary: unknown };
-function stub(runs: Run[]) {
+function stub(runs: Run[], workspace?: unknown) {
   const state = { table: "", filters: {} as Record<string, unknown> };
   const builder: Record<string, unknown> = {
     from(t: string) { state.table = t; state.filters = {}; return builder; },
@@ -15,6 +15,7 @@ function stub(runs: Run[]) {
     limit() { return builder; },
     eq(col: string, val: unknown) { state.filters[col] = val; return builder; },
     then(resolve: (v: { data: unknown[] }) => void) {
+      if (state.table === "user_workspaces") return resolve({ data: workspace ? [{ data: workspace }] : [] });
       if (state.table !== "accounting_sync_runs") return resolve({ data: [] });
       const matched = runs
         .filter((r) => Object.entries(state.filters).every(([k, v]) => (r as Record<string, unknown>)[k] === v))
@@ -53,6 +54,31 @@ test("a provider with no completed run does not fall through to another provider
   // Request QuickBooks — there is no QuickBooks run, so it must NOT return the Xero one.
   const loaded = await loadReportStatements(stub(runs), { ...opts, provider: "quickbooks" });
   assert.equal(loaded, null, "no QuickBooks data → null, never the Xero run");
+});
+
+test("a cleared review (empty workspace snapshot) shows no preview, even if a sync run survives", async () => {
+  const runs: Run[] = [
+    { tenant_id: "t", company_id: "c", provider: "xero", status: "completed", started_at: "2026-06-02", result_summary: bs("xero") },
+  ];
+  // The company snapshot exists but has no statements — the review was cleared/erased.
+  const workspace = { companySnapshots: { c: { statements: {}, findings: [] } } };
+  const loaded = await loadReportStatements(stub(runs, workspace), opts);
+  assert.equal(loaded, null, "cleared snapshot is a tombstone — the stale sync run is not resurrected");
+});
+
+test("a populated workspace snapshot does not falsely tombstone the sync run", async () => {
+  const runs: Run[] = [
+    { tenant_id: "t", company_id: "c", provider: "quickbooks", status: "completed", started_at: "2026-06-02", result_summary: bs("quickbooks") },
+  ];
+  const workspace = { companySnapshots: { c: { statements: { balanceSheet: [{ item: "Cash", amount: "1" }], profitLoss: [] }, findings: [] } } };
+  const loaded = await loadReportStatements(stub(runs, workspace), { ...opts, provider: "quickbooks" });
+  assert.equal(loaded?.source, "quickbooks", "a review with data still resolves the sync run");
+});
+
+test("an uploaded review with no sync run still produces its accounts (no connection needed)", async () => {
+  const workspace = { companySnapshots: { c: { statements: { balanceSheet: [{ item: "Cash", amount: "1" }], profitLoss: [], sourceProvider: "upload" }, findings: [] } } };
+  const loaded = await loadReportStatements(stub([], workspace), opts);
+  assert.equal(loaded?.source, "upload");
 });
 
 test("source falls back to the run's provider column when statements carry no provenance", async () => {
