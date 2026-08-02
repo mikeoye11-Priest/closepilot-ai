@@ -27,8 +27,9 @@ export async function GET(request: Request) {
 
   const supabase = await createClient();
   const loaded = await loadReportStatements(supabase, { userId: session.userId, syncId, tenantId, companyId, provider });
-  if (!loaded) return htmlPage("No accounts data found for this company. Run a Xero sync (Settings → Sync now) or upload a trial balance, P&L and balance sheet, then reopen this page.", 404);
-  const statements = withReportingPeriod(loaded.statements, url.searchParams.get("asOfDate"));
+  if (!loaded) return htmlPage("No accounts data found for this company. Run a sync (Settings → Sync now) or upload a trial balance, P&L and balance sheet, then reopen this page.", 404);
+  // Bind the authoritative source so the pack's provenance wording is the real provider.
+  const statements = withReportingPeriod({ ...loaded.statements, sourceProvider: loaded.source }, url.searchParams.get("asOfDate"));
 
   const full = url.searchParams.get("basis") === "full";
   const pack = buildStatutoryAccounts(statements, { full });
