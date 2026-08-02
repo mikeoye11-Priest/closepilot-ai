@@ -37,6 +37,7 @@ test("classification: open excludes decided; scoreable excludes advisory + decid
   assert.equal(isScoreableFinding(finding({ status: "open" })), true);
   assert.equal(isScoreableFinding(finding({ status: "open", evidenceStrength: "advisory" })), false, "advisory never scores");
   assert.equal(isScoreableFinding(finding({ status: "accepted_risk" })), false);
+  assert.equal(isScoreableFinding(finding({ status: "approved" })), false, "an approved (decided) finding no longer scores");
   assert.equal(lifecycleStatus("in_review"), "under_review");
   assert.equal(lifecycleStatus("accepted"), "approved");
 });

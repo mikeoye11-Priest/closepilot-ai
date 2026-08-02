@@ -3,6 +3,8 @@
 // produce this shape; downstream (accountingParsedFiles → analyseParsedFiles →
 // statements/accounts) consumes it without caring which provider produced it.
 
+import { signedNumber } from "../num";
+
 export type AccountingSyncData = {
   trialBalanceRows: Record<string, string>[];
   profitLossRows: Record<string, string>[];
@@ -21,11 +23,10 @@ export type AccountingSyncData = {
   vatPeriodEnd: string;
 };
 
-export function numberFrom(value: unknown): number {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  const parsed = Number(String(value ?? "").replace(/[£$,\s]/g, "").replace(/^\((.*)\)$/, "-$1"));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
+// The hardened signed-value parser (parentheses / trailing & unicode minus /
+// CR-DR / currency), shared with the accounts engine so synced figures are parsed
+// the same way as uploaded ones. Exported under the historical name.
+export const numberFrom = signedNumber;
 
 // The financial-year start containing asOfDate, from the FY-end day/month: the
 // day after the FY end that precedes asOfDate. (Same rule as the Xero sync.)
