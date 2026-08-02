@@ -18,6 +18,16 @@ const money = (value: number) => {
 const flat = (sections: { lines: Line[] }[]): Line[] => sections.flatMap((s) => s.lines);
 const sum = (lines: Line[], key: "amount" | "prior" = "amount") => lines.reduce((total, line) => total + line[key], 0);
 
+// FRS 102 current-asset class from a line's item name. Stocks and cash are
+// distinct primary-statement lines; everything else (trade/other debtors,
+// prepayments, accrued income) is presented within debtors.
+function classifyCurrentAsset(name: string): "stock" | "cash" | "debtor" {
+  const t = name.toLowerCase();
+  if (/stock|inventor|work[\s-]*in[\s-]*progress|\bwip\b|raw material|finished goods/.test(t)) return "stock";
+  if (/cash|bank|petty|deposit/.test(t)) return "cash";
+  return "debtor";
+}
+
 // UK corporation tax with marginal relief (post-April 2023). Limits are
 // pro-rated for periods shorter than 12 months; associated companies are assumed
 // to be nil (a draft estimate the preparer confirms). `grossTax` is the charge
@@ -57,13 +67,18 @@ export function buildStatutoryAccounts(statements: SyncStatements, opts: { full?
   const ma = buildManagementAccounts(statements);
   const { pl, bs, prior } = ma;
 
-  const cashSections = bs.currentAssets.filter((s) => /bank|cash/i.test(s.title));
-  const debtorSections = bs.currentAssets.filter((s) => !/bank|cash/i.test(s.title));
-  const cashLines = flat(cashSections);
-  const debtorLines = flat(debtorSections);
+  // Current assets are classified per LINE (by item name), not by section title —
+  // sources often lump stocks, debtors and cash under one "Current Assets" heading,
+  // which otherwise reported stock and cash as debtors (and cash as nil). FRS 102
+  // requires Stocks, Debtors and Cash as distinct balance-sheet lines.
+  const currentAssetLines = flat(bs.currentAssets);
+  const stockLines = currentAssetLines.filter((l) => classifyCurrentAsset(l.name) === "stock");
+  const cashLines = currentAssetLines.filter((l) => classifyCurrentAsset(l.name) === "cash");
+  const debtorLines = currentAssetLines.filter((l) => classifyCurrentAsset(l.name) === "debtor");
 
   const sofp = {
     tangibleFixedAssets: bs.totalFixed, priorTangible: bs.priorFixed,
+    stocks: sum(stockLines), priorStocks: sum(stockLines, "prior"),
     debtors: sum(debtorLines), priorDebtors: sum(debtorLines, "prior"),
     cash: sum(cashLines), priorCash: sum(cashLines, "prior"),
     currentAssetsTotal: bs.totalCurrentAssets, priorCurrentAssets: bs.priorCurrentAssets,
@@ -91,6 +106,7 @@ export function buildStatutoryAccounts(statements: SyncStatements, opts: { full?
     { title: "Accounting policies", body: `Basis of preparation — These financial statements have been prepared ${basisOfPreparation}, under the historical cost convention. They have been drafted by ClosePilot from the accounting records maintained in Xero and are subject to the accountant's review and the directors' approval. Turnover represents amounts receivable for goods and services, net of VAT. Tangible fixed assets are stated at cost less accumulated depreciation. Debtors and creditors are recognised at amortised cost.` },
     { title: "Turnover", body: "Turnover recognised in the period, analysed by class.", rows: flat(pl.income).map((l) => ({ label: l.name, value: l.amount, prior: l.prior })) },
     ...(bs.fixedAssets.length ? [{ title: "Tangible fixed assets", body: "Net book value by class of asset.", rows: [...flat(bs.fixedAssets).map((l) => ({ label: l.name, value: l.amount, prior: l.prior })), { label: "Net book value", value: bs.totalFixed, prior: bs.priorFixed, strong: true }] }] : []),
+    ...(sofp.stocks ? [{ title: "Stocks", body: "Stocks and work in progress, stated at the lower of cost and net realisable value.", rows: [{ label: "Stocks and work in progress", value: sofp.stocks, prior: sofp.priorStocks, strong: true }] }] : []),
     { title: "Debtors: amounts falling due within one year", rows: [{ label: "Trade and other debtors", value: sofp.debtors, prior: sofp.priorDebtors, strong: true }] },
     { title: "Creditors: amounts falling due within one year", rows: [...flat(bs.liabilities).map((l) => ({ label: l.name, value: l.amount, prior: l.prior })), { label: "", value: bs.totalLiabilities, prior: bs.priorLiabilities, strong: true }] },
     { title: "Capital and reserves", rows: [...sofp.equityLines.map((l) => ({ label: l.name, value: l.amount, prior: l.prior })), { label: "Shareholders' funds", value: bs.totalEquity, prior: bs.priorEquity, strong: true }] },
@@ -222,6 +238,7 @@ export function renderStatutoryAccountsHtml(pack: ReturnType<typeof buildStatuto
     <tr class="head"><td>Fixed assets</td><td></td>${hasComparatives ? "<td></td>" : ""}</tr>
     ${row("Tangible assets", sofp.tangibleFixedAssets, sofp.priorTangible, "indent")}
     <tr class="head"><td>Current assets</td><td></td>${hasComparatives ? "<td></td>" : ""}</tr>
+    ${sofp.stocks ? row("Stocks", sofp.stocks, sofp.priorStocks, "indent") : ""}
     ${row("Debtors", sofp.debtors, sofp.priorDebtors, "indent")}
     ${row("Cash at bank and in hand", sofp.cash, sofp.priorCash, "indent")}
     ${row("Total current assets", sofp.currentAssetsTotal, sofp.priorCurrentAssets, "sub indent")}

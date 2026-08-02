@@ -143,11 +143,13 @@ export function buildStatutoryWorkbook(pack: ReturnType<typeof buildStatutoryAcc
   section(bs, "Fixed assets", cols - 1);
   const tanRow = line(bs, "Tangible assets", vals(sofp.tangibleFixedAssets, sofp.priorTangible));
   section(bs, "Current assets", cols - 1);
+  const firstCaRow = sofp.stocks ? line(bs, "Stocks", vals(sofp.stocks, sofp.priorStocks)) : 0;
   const debRow = line(bs, "Debtors", vals(sofp.debtors, sofp.priorDebtors));
+  const topCaRow = firstCaRow || debRow;
   const cashRow = line(bs, "Cash at bank and in hand", vals(sofp.cash, sofp.priorCash));
   const caRow = line(bs, "Total current assets", hasComparatives
-    ? [{ formula: `SUM(B${debRow}:B${cashRow})`, result: sofp.currentAssetsTotal }, { formula: `SUM(C${debRow}:C${cashRow})`, result: sofp.priorCurrentAssets }]
-    : [{ formula: `SUM(B${debRow}:B${cashRow})`, result: sofp.currentAssetsTotal }], { bold: true, top: true });
+    ? [{ formula: `SUM(B${topCaRow}:B${cashRow})`, result: sofp.currentAssetsTotal }, { formula: `SUM(C${topCaRow}:C${cashRow})`, result: sofp.priorCurrentAssets }]
+    : [{ formula: `SUM(B${topCaRow}:B${cashRow})`, result: sofp.currentAssetsTotal }], { bold: true, top: true });
   const crRow = line(bs, "Creditors: amounts falling due within one year", vals(-sofp.creditorsWithinYear, -sofp.priorCreditors));
   const ncaRow = line(bs, "Net current assets", hasComparatives
     ? [{ formula: `B${caRow}+B${crRow}`, result: sofp.netCurrentAssets }, { formula: `C${caRow}+C${crRow}`, result: sofp.priorNetCurrentAssets }]
