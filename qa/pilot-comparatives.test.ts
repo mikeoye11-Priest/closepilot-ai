@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { pilotStatements, pilotAnalysisResult } from "../apps/web/lib/data";
 import { buildManagementAccounts, buildEquityReconciliation, renderManagementAccountsHtml } from "../apps/web/lib/management-accounts";
-import { buildStatutoryAccounts } from "../apps/web/lib/statutory-accounts";
+import { buildStatutoryAccounts, renderStatutoryAccountsHtml } from "../apps/web/lib/statutory-accounts";
 import { VAT_ENGINE_VERSION } from "../apps/web/lib/vat-engine";
 
 // The pilot demo ships prior-year comparatives so the accounts packs show a real
@@ -69,6 +69,27 @@ test("pilot statements drive statutory + full FRS 102 packs with comparatives, b
   const full = buildStatutoryAccounts(pilotStatements, { full: true });
   assert.equal(full.hasComparatives, true);
   assert.equal(full.balanced, true);
+});
+
+test("current assets map to Stocks / Debtors / Cash even under one 'Current Assets' heading", () => {
+  const s = buildStatutoryAccounts(pilotStatements);
+  // Previously stock and cash were reported as debtors (cash as nil) because the
+  // split keyed off the section title. Now each line is classified by its name.
+  assert.equal(s.sofp.stocks, 310000, "stock is its own line, not debtors");
+  assert.equal(s.sofp.priorStocks, 295000);
+  assert.equal(s.sofp.debtors, 268000, "debtors excludes stock and cash");
+  assert.equal(s.sofp.priorDebtors, 240000);
+  assert.equal(s.sofp.cash, 142000, "cash is recognised, not nil");
+  assert.equal(s.sofp.priorCash, 70000);
+  assert.equal(s.sofp.stocks + s.sofp.debtors + s.sofp.cash, s.sofp.currentAssetsTotal);
+
+  // The cash flow now ties to real cash (opening £70k → closing £142k).
+  const full = buildStatutoryAccounts(pilotStatements, { full: true });
+  assert.equal(full.cashFlow.closingCash, 142000);
+  assert.equal(full.cashFlow.openingCash, 70000);
+
+  const html = renderStatutoryAccountsHtml(s);
+  assert.match(html, /Stocks/);
 });
 
 test("pilot VAT review ships a populated, consistent prior-period comparison", () => {

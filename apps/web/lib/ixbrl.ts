@@ -93,6 +93,7 @@ export function renderIxbrl(pack: Pack, companyNumber = ""): string {
     <tr class="head"><td>Fixed assets</td><td></td>${hasComparatives ? "<td></td>" : ""}</tr>
     ${sofpRow("Tangible assets", "uk-core:PropertyPlantEquipment", sofp.tangibleFixedAssets, sofp.priorTangible)}
     <tr class="head"><td>Current assets</td><td></td>${hasComparatives ? "<td></td>" : ""}</tr>
+    ${sofp.stocks ? sofpRow("Stocks", "uk-core:Stocks", sofp.stocks, sofp.priorStocks) : ""}
     ${sofpRow("Debtors", "uk-core:Debtors", sofp.debtors, sofp.priorDebtors)}
     ${sofpRow("Cash at bank and in hand", "uk-core:CashBankOnHand", sofp.cash, sofp.priorCash)}
     ${sofpRow("Total current assets", "uk-core:CurrentAssets", sofp.currentAssetsTotal, sofp.priorCurrentAssets, "sub")}
