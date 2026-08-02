@@ -2439,7 +2439,8 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     }, ...items]);
   };
 
-  const clearCurrentReview = (message = `${currentCompany.name} review cleared. Upload a new finance pack to start again.`) => {
+  const clearCurrentReview = (message = `${currentCompany.name} review cleared. Upload a new finance pack to start again.`, opts: { navigate?: boolean } = {}) => {
+    const { navigate = true } = opts;
     const emptySnapshot = normaliseSnapshot();
     setUploads([]);
     setValidationChecks([]);
@@ -2457,7 +2458,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     setCompanySnapshots((items) => ({ ...items, [currentCompany.id]: emptySnapshot }));
     setPortfolioClients((items) => items.map((client) => client.id === currentCompany.id ? { ...client, score: 0, risk: "medium", openFindings: 0, closeStatus: "Awaiting upload" } : client));
     setUploadMessage(message);
-    setActive("Upload Finance Pack");
+    if (navigate) setActive("Upload Finance Pack");
   };
   const deleteUpload = (uploadId: string) => {
     const target = uploads.find((u) => u.id === uploadId);
@@ -3016,7 +3017,15 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setActive("Findings");
     }} setActive={setActive} />;
     if (active === "User Guide") return <UserGuide isPilotDemo={isPilotDemo} hasData={hasUploadedData} loadPilotDemo={loadPilotDemo} setActive={setActive} setPilotWalkthroughStep={setPilotWalkthroughStep} />;
-    if (active === "Settings") return <SettingsPanel tenant={tenant} company={currentCompany} userEmail={userEmail} userName={userName} onIntegrationAnalysis={applyIntegrationAnalysis} setActive={setActive} presentationMode={presentationMode} />;
+    if (active === "Settings") return <SettingsPanel tenant={tenant} company={currentCompany} userEmail={userEmail} userName={userName} onIntegrationAnalysis={applyIntegrationAnalysis} onSyncedDataErased={() => {
+      // Erasing synced accounting data must also remove the review DERIVED from it,
+      // to match the erase promise — but only when this company's review came from
+      // a connector sync. Upload-sourced reviews are left untouched.
+      const provider = companySnapshots[currentCompany.id]?.statements?.sourceProvider;
+      if (provider && ["xero", "quickbooks", "sage"].includes(provider)) {
+        clearCurrentReview(`${currentCompany.name} synced data erased — the review built from it has been cleared.`, { navigate: false });
+      }
+    }} setActive={setActive} presentationMode={presentationMode} />;
     if (active === "Inventory & WIP") return <InventoryPanel review={companySnapshots[currentCompany.id]?.inventoryReview} uploads={uploads} companyName={currentCompany.name} setActive={setActive} scheduleCadence={reportSchedules.find((schedule) => schedule.companyId === currentCompany.id && schedule.report === "inventory")?.cadence} onScheduleChange={(cadence) => setInventorySchedule(currentCompany.id, cadence)} />;
     if (active === "Scheduled Reports") return <ScheduledReportsPanel reports={scheduledReports} setActive={setActive} />;
     if (active === "Practice Metrics") {
@@ -11898,7 +11907,7 @@ function integrationActivityLabel(action: string): string {
   return provider ? `${provider} ${event}` : action.replace(/_/g, " ");
 }
 
-function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnalysis, setActive, presentationMode }: { tenant: Tenant; company: Company; userEmail: string; userName: string; onIntegrationAnalysis: (result: AnalysisResult, warnings?: string[]) => void; setActive: (value: string) => void; presentationMode: boolean }) {
+function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnalysis, onSyncedDataErased, setActive, presentationMode }: { tenant: Tenant; company: Company; userEmail: string; userName: string; onIntegrationAnalysis: (result: AnalysisResult, warnings?: string[]) => void; onSyncedDataErased?: () => void; setActive: (value: string) => void; presentationMode: boolean }) {
   const canConnectLiveIntegration = WORKSPACE_UUID_RE.test(tenant.id) && WORKSPACE_UUID_RE.test(company.id);
   const [name, setName] = useState(userName);
   const [email, setEmail] = useState(userEmail);
@@ -12015,6 +12024,9 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Erase failed.");
       await reloadIntegrations();
+      // Also clear the workspace review derived from the synced data (sync-sourced
+      // only) so the erase is complete — the parent decides based on provenance.
+      onSyncedDataErased?.();
       setIntegrationMessage(result.message || "Synced accounting data erased.");
     } catch (error) { setIntegrationMessage(error instanceof Error ? error.message : "Erase failed."); }
     finally { setIntegrationBusy(false); }
