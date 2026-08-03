@@ -10,6 +10,7 @@ export const SAGE_SCOPES = ["full_access"];
 
 const AUTH_URL = "https://www.sageone.com/oauth2/auth/central";
 const TOKEN_URL = "https://oauth.accounting.sage.com/token";
+const REVOKE_URL = "https://oauth.accounting.sage.com/token/revoke";
 export const SAGE_API_BASE = "https://api.accounting.sage.com/v3.1";
 
 export function sageConfigured() {
@@ -63,6 +64,19 @@ export function exchangeCode(code: string) {
 
 export function refreshTokens(refreshToken: string) {
   return tokenRequest(new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }));
+}
+
+// Revoke the OAuth grant at Sage on disconnect (RFC 7009). Callers treat any failure
+// as non-fatal (disconnect still deletes the local connection). NOTE: the revoke
+// endpoint/shape should be confirmed against a Sage sandbox before it's relied upon.
+export async function revokeToken(token: string): Promise<void> {
+  const form = new URLSearchParams({ token, client_id: required("SAGE_CLIENT_ID"), client_secret: required("SAGE_CLIENT_SECRET") });
+  const response = await resilientFetch(REVOKE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    body: form.toString(),
+  });
+  if (!response.ok) throw new Error(`Sage token revoke failed: HTTP ${response.status} — ${redactSecrets((await response.text()).slice(0, 200))}`);
 }
 
 // Authenticated Accounting API GET → JSON. `businessId` scopes the request when
