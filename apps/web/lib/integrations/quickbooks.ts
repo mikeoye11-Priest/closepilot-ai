@@ -10,6 +10,7 @@ export const QUICKBOOKS_SCOPES = ["com.intuit.quickbooks.accounting", "openid", 
 
 const AUTH_URL = "https://appcenter.intuit.com/connect/oauth2";
 const TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
+const REVOKE_URL = "https://developer.api.intuit.com/v2/oauth2/tokens/revoke";
 
 export function quickbooksConfigured() {
   return Boolean(process.env.QUICKBOOKS_CLIENT_ID && process.env.QUICKBOOKS_CLIENT_SECRET && process.env.QUICKBOOKS_REDIRECT_URI && process.env.INTEGRATION_ENCRYPTION_KEY);
@@ -68,6 +69,20 @@ export function exchangeCode(code: string) {
 
 export function refreshTokens(refreshToken: string) {
   return tokenRequest(new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }));
+}
+
+// Revoke the OAuth grant at Intuit on disconnect (RFC 7009). Revoking the refresh
+// token invalidates the whole grant, so ClosePilot stops appearing in the company's
+// connected apps. Callers treat any failure as non-fatal (disconnect still deletes
+// the local connection).
+export async function revokeToken(token: string): Promise<void> {
+  const auth = Buffer.from(`${required("QUICKBOOKS_CLIENT_ID")}:${required("QUICKBOOKS_CLIENT_SECRET")}`).toString("base64");
+  const response = await resilientFetch(REVOKE_URL, {
+    method: "POST",
+    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  if (!response.ok) throw new Error(`QuickBooks token revoke failed: HTTP ${response.status} — ${redactSecrets((await response.text()).slice(0, 200))}`);
 }
 
 // Authenticated Accounting API GET → JSON. Used for reports, entity queries and
