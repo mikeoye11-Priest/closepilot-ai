@@ -10,12 +10,14 @@ This pack supports the first supervised pilot of ClosePilot using one real UK SM
 4. [Feedback form](04-feedback-form.md)
 5. [Support and escalation](05-support.md)
 6. [60-minute walkthrough](06-walkthrough-script.md)
+7. [Connector readiness runbook](07-connector-runbook.md)
 
 ## Complete before sending to a pilot firm
 
 - [ ] Replace every `[COMPLETE BEFORE PILOT]` field.
 - [ ] Deploy the verified build to the private staging URL.
 - [ ] Confirm authentication, tenant isolation, storage, backup and deletion behaviour in staging.
+- [ ] For each connector offered (Xero/QuickBooks/Sage), complete the [connector readiness runbook](07-connector-runbook.md) against the provider's sandbox and record a **ready** verdict.
 - [ ] List the actual hosting, database, authentication, email, monitoring and AI sub-processors.
 - [ ] Have the data-processing terms reviewed by a UK-qualified solicitor.
 - [ ] Obtain signatures before receiving real client data.
