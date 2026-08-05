@@ -6,6 +6,7 @@
 // DSO reduction frees up. Derived from the same statements the accounts use.
 
 import { buildManagementAccounts, type SyncStatements } from "./management-accounts";
+import { canonicalReceivables, type DebtorLedger } from "./debtor-ledger";
 
 export type WorkingCapital = {
   revenue: number;
@@ -28,14 +29,15 @@ function lineTotal(sections: Array<{ lines: Array<{ name: string; amount: number
   return sections.flatMap((section) => section.lines).filter((line) => re.test(line.name)).reduce((sum, line) => sum + Math.abs(line.amount), 0);
 }
 
-export function buildWorkingCapital(statements: SyncStatements): WorkingCapital {
+export function buildWorkingCapital(statements: SyncStatements, ledger?: DebtorLedger): WorkingCapital {
   const pack = buildManagementAccounts(statements);
   const revenue = pack.pl.revenue;
   const cogs = Math.abs(pack.pl.cogs);
 
   // Prefer the aged-ledger totals (what's actually outstanding); fall back to the
-  // balance-sheet lines.
-  const agedDebtors = (statements.agedDebtors ?? []).reduce((sum, row) => sum + Math.abs(numVal(row.amount)), 0);
+  // balance-sheet lines. Debtors come from the CANONICAL de-duplicated ledger (one
+  // invoice once), so a duplicated aged line can't overstate DSO.
+  const agedDebtors = canonicalReceivables(ledger ?? { agedDebtors: statements.agedDebtors }).reduce((sum, r) => sum + r.amount, 0);
   const agedCreditors = (statements.agedCreditors ?? []).reduce((sum, row) => sum + Math.abs(numVal(row.amount)), 0);
   const debtors = agedDebtors || lineTotal(pack.bs.currentAssets, /debtor|receivable/i);
   const creditors = agedCreditors || lineTotal(pack.bs.liabilities, /creditor|payable/i);

@@ -8315,7 +8315,7 @@ function ThirteenWeekCashflow({ statements, ledger }: { statements?: StatementsF
   );
   const result = useMemo(() => {
     if (!hasData) return null;
-    const input = thirteenWeekInputFromStatements(statements as StatementsForCashflow, scenario);
+    const input = thirteenWeekInputFromStatements(statements as StatementsForCashflow, scenario, ledger);
     // When the canonical debtor ledger is available, receipts come straight from
     // its recovery forecast for the selected scenario — so 13-week receipts equal
     // the recovery model, drawn only from eligible unique balances.
@@ -8505,8 +8505,8 @@ function WhatIfPlanner({ statements }: { statements?: SyncStatements }) {
 
 // Customer concentration — how dependent the business is on a few customers,
 // from the aged-debtor mix (share, top-1/top-3, HHI).
-function ConcentrationPanel({ statements }: { statements?: SyncStatements }) {
-  const report = useMemo(() => (statements ? buildConcentration(statements) : null), [statements]);
+function ConcentrationPanel({ statements, ledger }: { statements?: SyncStatements; ledger?: DebtorLedger }) {
+  const report = useMemo(() => (statements ? buildConcentration(statements, ledger) : null), [statements, ledger]);
   if (!report || !report.available) return null;
   const gbp = (value: number) => `£${Math.round(value).toLocaleString("en-GB")}`;
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
@@ -8696,8 +8696,8 @@ function RunwayPanel({ statements }: { statements?: SyncStatements }) {
 
 // Working capital & the cash conversion cycle — how many days of cash are tied
 // up in the operating cycle, and how much each DSO day frees up.
-function WorkingCapitalPanel({ statements }: { statements?: SyncStatements }) {
-  const wc = useMemo(() => (statements ? buildWorkingCapital(statements) : null), [statements]);
+function WorkingCapitalPanel({ statements, ledger }: { statements?: SyncStatements; ledger?: DebtorLedger }) {
+  const wc = useMemo(() => (statements ? buildWorkingCapital(statements, ledger) : null), [statements, ledger]);
   if (!wc || !wc.available) return null;
   const gbp = (value: number) => `${value < 0 ? "−£" : "£"}${Math.abs(Math.round(value)).toLocaleString("en-GB")}`;
   const d = (value: number | null) => (value === null ? "—" : `${Math.round(value)} days`);
@@ -8900,13 +8900,13 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
 
       {cashTab === "liquidity" && (<>
         <RunwayPanel statements={statements} />
-        <WorkingCapitalPanel statements={statements} />
+        <WorkingCapitalPanel statements={statements} ledger={debtorLedger} />
         <CovenantPanel statements={statements} companyId={companyId} />
       </>)}
 
       {cashTab === "performance" && (<>
         <VariancePanel statements={statements} />
-        <ConcentrationPanel statements={statements} />
+        <ConcentrationPanel statements={statements} ledger={debtorLedger} />
       </>)}
 
       {cashTab === "recovery" && (<>

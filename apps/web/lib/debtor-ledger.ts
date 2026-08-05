@@ -226,6 +226,19 @@ export type DebtorExposure = {
   hasData: boolean;
 };
 
+// The ONE de-duplicated receivable population every debtor-derived analysis must
+// read from — customer concentration, the 13-week receipts, covenant liquidity —
+// so their receivables totals reconcile to debtorExposure() and a duplicated aged
+// line can never double-count. Accepts either a pre-built ledger (preferred, so a
+// single ledger drives the whole screen) or raw inputs to build one. `amount` is
+// the positive outstanding balance; one invoice appears once.
+export type ReceivableRow = { name: string; amount: number; daysOverdue: number; attributed: boolean };
+
+export function canonicalReceivables(source: DebtorLedger | DebtorLedgerInputs): ReceivableRow[] {
+  const ledger = "unique" in source ? source : buildDebtorLedger(source);
+  return ledger.unique.map((r) => ({ name: r.customer, amount: r.balance, daysOverdue: r.daysOverdue, attributed: r.attributed }));
+}
+
 export function debtorExposure(ledger: DebtorLedger): DebtorExposure {
   const b = ledger.bridge;
   const exposure = b.uniqueInvoiceBalance;

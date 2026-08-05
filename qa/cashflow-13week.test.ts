@@ -105,6 +105,18 @@ test("weeklyReceipts override makes 13-week receipts equal the supplied recovery
   assert.equal(r.weeks[5].receipts, 500);
 });
 
+test("one invoice once: a duplicated aged-debtor line does not inflate projected receipts", () => {
+  // Two identical un-invoiced lines for the same customer/amount → one is a
+  // canonical duplicate. Receipts must reflect £5,000 outstanding, not £10,000.
+  const statements = { agedDebtors: [
+    { customer: "Acme Ltd", amount: "5000", days_overdue: "10" },
+    { customer: "Acme Ltd", amount: "5000", days_overdue: "10" },
+  ], bank: [{ closing_balance: "0" }] };
+  const result = buildThirteenWeekCashflow(thirteenWeekInputFromStatements(statements, "base"));
+  assert.equal(result.receivables.aged, 5000, "the duplicate line is excluded from the aged basis");
+  assert.equal(result.totalReceipts, 5000, "receipts are not double-counted");
+});
+
 test("derives a full model from pilot statements (opening cash, run-rates, VAT one-off)", () => {
   const input = thirteenWeekInputFromStatements(pilotStatements, "base");
   assert.equal(input.openingCash, 142000, "opening cash = bank closing balances (128k + 14k)");

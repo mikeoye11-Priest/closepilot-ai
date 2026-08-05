@@ -15,6 +15,8 @@
 //  - receivables are split into attributed vs unattributed; scenarios recognise
 //    the unattributed portion at a stated weight (conservative excludes it).
 
+import { canonicalReceivables, type DebtorLedger } from "./debtor-ledger";
+
 type Row = Record<string, string>;
 
 export type CashflowScenario = "conservative" | "base" | "upside";
@@ -245,29 +247,25 @@ export type StatementsForCashflow = {
   asOfDate?: string;
 };
 
-// A receivable row is "attributed" when it is matched to a named customer (not a
-// generic placeholder). Unattributed balances are scenario-weighted.
-function isAttributed(name: string): boolean {
-  const trimmed = name.trim();
-  return trimmed.length > 0 && !/^(unattributed|unallocated|unmatched|various|sundry|other|misc(ellaneous)?|n\/?a|control)$/i.test(trimmed);
-}
-
 // Derive a 13-week model input from a company's statements. Opening cash from the
 // bank (or balance-sheet cash), receipts/payments from aged ledgers, payroll +
 // overhead run-rates from the P&L (annualised → weekly), and the VAT liability as
 // a one-off payment mid-quarter. The forecast starts the current week; the
 // reporting date is retained only as the opening-balance "as at".
-export function thirteenWeekInputFromStatements(statements: StatementsForCashflow, scenario: CashflowScenario = "base"): ThirteenWeekInput {
+//
+// Receivables are drawn from the CANONICAL de-duplicated ledger (one invoice once),
+// so a duplicated aged line never inflates projected receipts. Pass a pre-built
+// `ledger` to share one ledger across the screen; otherwise it is built from the
+// statements' aged debtors.
+export function thirteenWeekInputFromStatements(statements: StatementsForCashflow, scenario: CashflowScenario = "base", ledger?: DebtorLedger): ThirteenWeekInput {
   const s = SCENARIOS[scenario];
   const bank = statements.bank ?? [];
   const bankCash = bank.reduce((sum, row) => sum + num(row.closing_balance), 0);
   const bsCash = (statements.balanceSheet ?? []).filter((row) => /cash|bank/i.test(String(row.item ?? ""))).reduce((sum, row) => sum + num(row.amount), 0);
   const openingCash = bank.length ? bankCash : bsCash;
 
-  const agedReceivables = (statements.agedDebtors ?? []).map((row) => {
-    const name = String(row.customer ?? row.name ?? "");
-    return { amount: num(row.amount), daysOverdue: num(row.days_overdue), name, attributed: isAttributed(name) };
-  });
+  const agedReceivables = canonicalReceivables(ledger ?? { agedDebtors: statements.agedDebtors })
+    .map((r) => ({ amount: r.amount, daysOverdue: r.daysOverdue, name: r.name, attributed: r.attributed }));
   const agedPayables = (statements.agedCreditors ?? []).map((row) => ({ amount: num(row.amount), daysOverdue: num(row.days_overdue), name: String(row.supplier ?? row.name ?? "") }));
 
   // Weekly run-rates from the annual P&L. Payroll = salary/wage lines; overheads =
