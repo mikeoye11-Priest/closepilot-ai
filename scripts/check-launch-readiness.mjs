@@ -16,9 +16,21 @@ if (siteUrl && !/^https:\/\//i.test(siteUrl)) problems.push("NEXT_PUBLIC_SITE_UR
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
 if (supabaseUrl && !/^https:\/\/.+\.supabase\.co\/?$/i.test(supabaseUrl)) problems.push("NEXT_PUBLIC_SUPABASE_URL must be a Supabase HTTPS project URL.");
 
-if (process.env.XERO_CLIENT_ID || process.env.XERO_CLIENT_SECRET || process.env.XERO_REDIRECT_URI) {
-  for (const name of ["XERO_CLIENT_ID", "XERO_CLIENT_SECRET", "XERO_REDIRECT_URI", "INTEGRATION_ENCRYPTION_KEY"]) {
-    if (!process.env[name]?.trim()) problems.push(`${name} is required when Xero is enabled.`);
+// Each live connector is all-or-nothing: if any of its OAuth vars is set, the full
+// set (plus the shared token-encryption key) must be present, or Connect will fail
+// at the provider. Mirrors the per-provider connector runbook (docs/pilot-1).
+const CONNECTORS = [
+  { label: "Xero", vars: ["XERO_CLIENT_ID", "XERO_CLIENT_SECRET", "XERO_REDIRECT_URI"] },
+  { label: "QuickBooks", vars: ["QUICKBOOKS_CLIENT_ID", "QUICKBOOKS_CLIENT_SECRET", "QUICKBOOKS_REDIRECT_URI"] },
+  { label: "Sage", vars: ["SAGE_CLIENT_ID", "SAGE_CLIENT_SECRET", "SAGE_REDIRECT_URI"] },
+];
+const connectorStatus = {};
+for (const { label, vars } of CONNECTORS) {
+  const enabled = vars.some((name) => process.env[name]?.trim());
+  connectorStatus[label] = enabled ? "enabled" : "disabled";
+  if (!enabled) continue;
+  for (const name of [...vars, "INTEGRATION_ENCRYPTION_KEY"]) {
+    if (!process.env[name]?.trim()) problems.push(`${name} is required when ${label} is enabled.`);
   }
 }
 
@@ -32,4 +44,4 @@ console.log("ClosePilot launch readiness: PASSED");
 console.log(`- Site: ${siteUrl}`);
 console.log("- Supabase authentication configured");
 console.log(`- AI commentary: ${process.env.GEMINI_API_KEY ? "enabled" : "deterministic fallback"}`);
-console.log(`- Xero: ${process.env.XERO_CLIENT_ID ? "enabled" : "disabled"}`);
+console.log(`- Connectors: Xero ${connectorStatus.Xero}, QuickBooks ${connectorStatus.QuickBooks}, Sage ${connectorStatus.Sage}`);
