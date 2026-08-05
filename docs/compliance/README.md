@@ -48,7 +48,7 @@ These are implemented and can be cited in the DPA's security annex:
   **AES-256-GCM** (authenticated) before storage.
 - **Right to erasure** implemented (`POST /api/integrations/erase`) — deletes a
   client's synced financial data + connections, with the erasure recorded in an
-  audit trail.
+  audit trail. **Verified** by a rolled-back automated test (`npm run verify:erasure`).
 - **Audit trail** of connect / sync / disconnect / erase actions.
 - **Reconnect-safe disconnect** (revoking a live connection does not silently
   delete retained evidence).
@@ -60,4 +60,8 @@ These are implemented and can be cited in the DPA's security annex:
 - **DPA executed** with each practice, and **sub-processor DPAs** in place.
 - **Retention policy published** and a **privacy notice** live (a `/privacy` page
   exists — confirm it reflects this pack).
+- **Retention periods confirmed** (the `[bracketed]` defaults in the retention
+  policy). The code mechanism is ready (`apps/web/lib/retention.ts`) but stays
+  report-only until `retentionEnforcementEnabled()` is switched on, which requires
+  each confirmed period — so no automated deletion runs against an unconfirmed policy.
 - **Incident-response** owner and process named.
