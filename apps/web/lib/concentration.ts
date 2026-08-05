@@ -6,6 +6,12 @@
 // if the book is largely unattributed, concentration cannot be reliably assessed
 // (you can't identify "top customers" from unnamed balances), and the report says
 // so rather than reporting the unattributed bucket as a customer.
+//
+// Reads the CANONICAL de-duplicated receivable population (one invoice once), so a
+// duplicated aged line can't inflate a customer's share and totalAr reconciles to
+// debtorExposure().exposure.
+
+import { canonicalReceivables, type DebtorLedger } from "./debtor-ledger";
 
 type Row = Record<string, string>;
 
@@ -24,25 +30,17 @@ export type ConcentrationReport = {
   available: boolean;
 };
 
-function numVal(value: unknown): number {
-  const parsed = Number(String(value ?? "").replace(/[£$,\s]/g, "").replace(/^\((.*)\)$/, "-$1"));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-// Matched to a real customer (not a placeholder / control bucket).
-function isAttributed(name: string): boolean {
-  const trimmed = name.trim();
-  return trimmed.length > 0 && !/^(unattributed|unallocated|unmatched|various|sundry|other|misc(ellaneous)?|n\/?a|control)$/i.test(trimmed);
-}
-
-export function buildConcentration(statements: { agedDebtors?: Row[] }): ConcentrationReport {
+// Accepts a pre-built canonical ledger (so one ledger drives the whole screen) or
+// falls back to building it from the statements' aged debtors. Either way the
+// analysis runs on the de-duplicated unique receivables.
+export function buildConcentration(statements: { agedDebtors?: Row[] }, ledger?: DebtorLedger): ConcentrationReport {
   const byName = new Map<string, number>();
   let unattributed = 0;
-  for (const row of statements.agedDebtors ?? []) {
-    const name = String(row.customer ?? row.name ?? "").trim();
-    const balance = Math.abs(numVal(row.amount));
+  const receivables = canonicalReceivables(ledger ?? { agedDebtors: statements.agedDebtors });
+  for (const r of receivables) {
+    const balance = Math.abs(r.amount);
     if (balance <= 0) continue;
-    if (isAttributed(name)) byName.set(name, (byName.get(name) ?? 0) + balance);
+    if (r.attributed) byName.set(r.name, (byName.get(r.name) ?? 0) + balance);
     else unattributed += balance;
   }
   const attributedTotal = [...byName.values()].reduce((sum, value) => sum + value, 0);

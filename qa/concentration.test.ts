@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildConcentration } from "../apps/web/lib/concentration";
+import { buildDebtorLedger, debtorExposure } from "../apps/web/lib/debtor-ledger";
 import { pilotStatements } from "../apps/web/lib/data";
 
 test("measures customer concentration from aged debtors (pilot is high)", () => {
@@ -34,7 +35,36 @@ test("aggregates duplicate customer rows and handles empty input", () => {
     { customer: "Beta", amount: "400" },
   ] });
   assert.equal(dup.customers[0].name, "Acme");
-  assert.equal(dup.customers[0].balance, 400, "duplicate rows summed");
+  assert.equal(dup.customers[0].balance, 400, "distinct invoices for one customer are summed");
   assert.equal(dup.customers.length, 2);
   assert.equal(buildConcentration({ agedDebtors: [] }).available, false);
+});
+
+test("one invoice once: a truly duplicated aged line is excluded, not double-counted", () => {
+  // Same customer, same amount, no invoice id/ref/date → identical canonical
+  // fingerprint → the second is a duplicate and must not inflate the share.
+  const rows = [
+    { customer: "Acme", amount: "300" },
+    { customer: "Acme", amount: "300" }, // duplicate of the row above
+    { customer: "Beta", amount: "200" },
+  ];
+  const report = buildConcentration({ agedDebtors: rows });
+  assert.equal(report.totalAr, 500, "500, not 800 — the duplicate £300 line is excluded");
+  assert.equal(report.customers.find((c) => c.name === "Acme")?.balance, 300, "Acme counted once");
+});
+
+test("concentration totalAr reconciles to the canonical debtor exposure", () => {
+  // The migrated module and debtorExposure() must report ONE debtor total.
+  const rows = [
+    { customer: "Acme", amount: "300", invoice_id: "INV-1" },
+    { customer: "Acme", amount: "300", invoice_id: "INV-1" }, // duplicate invoice
+    { customer: "Beta", amount: "200", invoice_id: "INV-2" },
+    { amount: "150" }, // unattributed
+  ];
+  const ledger = buildDebtorLedger({ agedDebtors: rows });
+  const exposure = debtorExposure(ledger);
+  const report = buildConcentration({ agedDebtors: rows }, ledger);
+  assert.equal(report.totalAr, exposure.exposure, "totalAr == de-duplicated exposure");
+  assert.equal(report.attributedTotal, exposure.supported, "attributed == supported balance");
+  assert.equal(report.unattributed, exposure.unattributed);
 });

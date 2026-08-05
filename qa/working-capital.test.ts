@@ -23,6 +23,17 @@ test("computes DSO/DPO/DIO/CCC + the cash-release lever from pilot statements", 
   approx(wc.cashPerDsoDay, 2_080_000 / 365); // ~£5.7k released per DSO day
 });
 
+test("one invoice once: a duplicated debtor line does not overstate DSO", () => {
+  // Same P&L as pilot, but the aged debtors carry a duplicated £120k line.
+  const withDup = {
+    ...pilotStatements,
+    agedDebtors: [...pilotStatements.agedDebtors!, { customer: "Delphi Retail Group", amount: "120000", days_overdue: "0" }],
+  };
+  const wc = buildWorkingCapital(withDup);
+  assert.equal(wc.debtors, 268_000, "debtors stay at the de-duplicated £268k, not £388k");
+  approx(wc.dso, (268_000 / 2_080_000) * 365, 1);
+});
+
 test("gracefully unavailable with no revenue", () => {
   const wc = buildWorkingCapital({ asOfDate: "2026-12-31", profitLoss: [], balanceSheet: [], agedDebtors: [], agedCreditors: [], bank: [], trialBalance: [] } as never);
   assert.equal(wc.available, false);
