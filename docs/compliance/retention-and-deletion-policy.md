@@ -38,14 +38,24 @@ instruction (recorded in the DPA) prevails over the defaults below.
 - **Right to erasure (per client):** `POST /api/integrations/erase` permanently
   deletes a company's synced financial data and its connections. The **fact** of
   erasure is retained in the audit log; the data itself is removed. RLS scopes the
-  operation to the requesting user's tenant.
+  operation to the requesting user's tenant. **Proven** by a rolled-back automated
+  test — `npm run verify:erasure` (`infra/tests/erasure_proof.sql`) — which seeds a
+  target and a bystander client, erases the target, and asserts the target's
+  financials + payload + connection are gone, the erasure fact is recorded, and the
+  bystander is untouched.
 - **Disconnect (non-destructive):** revoking a live integration stops future
   syncing and removes the stored token, but **retains** already-produced reviews
   and evidence (so a disconnect is not an accidental deletion).
 - **Account / workspace closure:** on closure, associated client data is deleted
   or returned per the DPA within **[30 days]**.
-- **Automated expiry:** categories with a fixed period (audit/operational logs)
-  are pruned on a **[scheduled]** basis.
+- **Automated expiry:** categories with a fixed period are pruned on a
+  **[scheduled]** basis. The mechanism is codified in `apps/web/lib/retention.ts` —
+  each category (§2) is bound to its table + timestamp column and default period,
+  and `planRetention()` computes which rows are past retention. It is a **planner,
+  not an executor**: no scheduled deletion is enabled, and a purge job must gate on
+  `retentionEnforcementEnabled()`, which stays **false until every [bracketed]
+  period above is confirmed** by the Data Protection lead. Until then it is
+  report-only.
 
 ## 4. Backups
 
