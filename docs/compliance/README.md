@@ -34,6 +34,7 @@ Operating entity: **Zequence Digital Ltd** (update if incorrect).
 | Document | Purpose | Owner action |
 |---|---|---|
 | [retention-and-deletion-policy.md](./retention-and-deletion-policy.md) | What data is held, for how long, and how it is deleted | Review + publish |
+| [sub-processors.md](./sub-processors.md) | The client-facing register of sub-processors (canonical; DPA §4 + `/privacy` §7 reference it) | Confirm regions/safeguards + publish |
 | [dpa-outline.md](./dpa-outline.md) | Article 28 data-processing terms to sign with each practice | Legal review + execute per client |
 | [onboarding-compliance-checklist.md](./onboarding-compliance-checklist.md) | The gate to clear before the first real client dataset | Work through + tick off |
 

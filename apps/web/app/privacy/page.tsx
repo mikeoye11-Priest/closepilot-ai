@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   description: "How ClosePilot collects, uses, stores and protects your data, including accounting data connected via Xero and QuickBooks Online.",
 };
 
-const UPDATED = "22 July 2026";
+const UPDATED = "6 August 2026";
 // Placeholders to confirm before this is treated as final: the operating legal
 // entity, registered address, and contact addresses.
 const ENTITY = "Zequence Digital Ltd";
@@ -42,12 +42,13 @@ export default function PrivacyPage() {
         <p className="mt-3 text-sm text-slate-500">Last updated: {UPDATED}</p>
 
         <Section title="1. Who we are">
-          <p>ClosePilot is a review and accounts-production platform for accounting practices and finance teams, operated by {ENTITY} (&ldquo;ClosePilot&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;). We are the data controller for the personal data described in this policy. You can contact us at <a className="font-semibold text-blue-700" href={`mailto:${CONTACT}`}>{CONTACT}</a>.</p>
+          <p>ClosePilot is a review and accounts-production platform for accounting practices and finance teams, operated by {ENTITY} (&ldquo;ClosePilot&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;). You can contact us at <a className="font-semibold text-blue-700" href={`mailto:${CONTACT}`}>{CONTACT}</a>.</p>
+          <p><strong>Our two roles.</strong> For your <strong>account data</strong> (your name, email and workspace details) we are the <strong>data controller</strong>. For the <strong>client financial records</strong> a practice uploads or connects, we act as a <strong>data processor</strong> on that practice&rsquo;s documented instructions — the practice (or the underlying company) is the controller — under a Data Processing Agreement. This notice covers our controller processing; the processor terms are set out in that agreement.</p>
         </Section>
 
         <Section title="2. What data we collect">
           <p><strong>Account data</strong> — your name, email and workspace/company details when you register.</p>
-          <p><strong>Accounting data</strong> — the financial records you connect or upload for review, such as the trial balance, profit &amp; loss, balance sheet, aged debtors and creditors, bank data, and VAT/tax transactions. This data is drawn from files you upload or from accounting systems you connect (for example Xero or QuickBooks Online).</p>
+          <p><strong>Accounting data</strong> — the financial records you connect or upload for review, such as the trial balance, profit &amp; loss, balance sheet, aged debtors and creditors, bank data, and VAT/tax transactions. This data is drawn from files you upload or from accounting systems you connect (Xero, QuickBooks Online or Sage).</p>
           <p><strong>Technical data</strong> — log, device and usage information generated when you use the service, used to keep it secure and reliable.</p>
         </Section>
 
@@ -60,7 +61,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="5. Connected accounting systems">
-          <p>When you connect Xero or QuickBooks Online, you authorise ClosePilot to read the accounting data needed for the review. We request <strong>read-only</strong> access and only the scopes required. Access and refresh tokens are <strong>encrypted at rest</strong> and used only to fetch your data when you run a sync. You can <strong>disconnect at any time</strong> from Settings, which stops further access; we do not modify your accounting records.</p>
+          <p>When you connect Xero, QuickBooks Online or Sage, you authorise ClosePilot to read the accounting data needed for the review. We request <strong>read-only</strong> access and only the scopes required. Access and refresh tokens are <strong>encrypted at rest</strong> and used only to fetch your data when you run a sync. You can <strong>disconnect at any time</strong> from Settings, which stops further access and revokes the connection at the provider; we do not modify your accounting records.</p>
         </Section>
 
         <Section title="6. How we store and protect your data">
@@ -69,7 +70,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="7. Service providers (sub-processors)">
-          <p>We share data only with providers that help us run the service, under appropriate agreements: <strong>Supabase</strong> (database &amp; authentication), <strong>Vercel</strong> (application hosting), <strong>Sentry</strong> (error monitoring), and <strong>Google</strong> (the Gemini model, used only to draft narrative commentary that is grounded strictly in your figures — it does not source or invent numbers). Your accounting data comes from <strong>Xero</strong> and <strong>Intuit (QuickBooks Online)</strong> when you connect them. AI-drafted narrative is always labelled and intended for your review before issue.</p>
+          <p>We share data only with providers that help us run the service, under appropriate agreements: <strong>Supabase</strong> (database, authentication &amp; storage), <strong>Vercel</strong> (application hosting), <strong>Upstash</strong> (rate limiting — request counters only, no financial data), <strong>Sentry</strong> (error monitoring, with personal data scrubbed), and <strong>Google</strong> (the Gemini model, used only to draft narrative commentary that is grounded strictly in your figures — it does not source or invent numbers, and if AI is not configured no data is sent to it). Your accounting data comes from <strong>Xero</strong>, <strong>Intuit (QuickBooks Online)</strong> and <strong>Sage</strong> when you connect them — these are your own source systems. AI-drafted narrative is always labelled and intended for your review before issue. Practices can request our current sub-processor register, which we keep up to date and notify changes to.</p>
         </Section>
 
         <Section title="8. Data retention">

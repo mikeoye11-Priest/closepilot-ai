@@ -60,8 +60,10 @@ ClosePilot shall:
 
 ## 4. Sub-processors
 
-The Customer provides general authorisation for the sub-processors below;
-ClosePilot will give **[30 days]** notice of additions/changes and allow objection.
+The canonical, client-facing list is the **[sub-processor register](./sub-processors.md)**
+(keep this table in step with it). The Customer provides general authorisation for
+the sub-processors below; ClosePilot will give **[30 days]** notice of
+additions/changes and allow objection.
 
 | Sub-processor | Purpose | Location | Notes |
 |---|---|---|---|
