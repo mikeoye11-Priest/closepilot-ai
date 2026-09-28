@@ -113,7 +113,7 @@ export default function UpdatePasswordPage() {
         footer={<><a className="font-bold text-brand" href="/forgot-password">Request a new link</a></>}
       >
         <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700 font-semibold">
-          Open the newest link in the same browser you requested it from.
+          Reset links can only be used once, so open the newest one you were sent.
         </div>
       </AuthShell>
     );

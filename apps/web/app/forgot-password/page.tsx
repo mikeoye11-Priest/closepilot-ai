@@ -92,7 +92,7 @@ export default function ForgotPasswordPage() {
     >
       {sent ? (
         <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-4 text-emerald-800 text-sm font-semibold">
-          The link expires in one hour. Open it in this browser, on this device.
+          The link expires in one hour and can only be used once. You can open it on any device.
         </div>
       ) : (
         <div className="grid gap-4">
