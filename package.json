@@ -66,6 +66,7 @@
     "check:launch": "node scripts/check-launch-readiness.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "verify:isolation": "node scripts/verify-tenant-isolation.mjs",
+    "verify:rls": "node scripts/verify-rls-coverage.mjs",
     "verify:erasure": "node scripts/verify-erasure.mjs"
   },
   "dependencies": {
