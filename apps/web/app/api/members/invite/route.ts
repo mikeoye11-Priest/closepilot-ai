@@ -101,6 +101,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: grantError.message }, { status: 500 });
     }
 
+    // Someone removed from a firm is marked inactive, and both access checks
+    // require an active user - so re-adding them without this would hand them
+    // a grant that grants nothing, and they would be locked out while the
+    // People page listed them as a member.
+    const { error: reactivateError } = await admin
+      .from("users")
+      .update({ status: "active" })
+      .eq("id", existingUserId)
+      .neq("status", "active");
+
+    if (reactivateError) reportError(reactivateError, { step: "reactivate_member", tenantId });
+
     return NextResponse.json({ added: true, existingAccount: true });
   }
 

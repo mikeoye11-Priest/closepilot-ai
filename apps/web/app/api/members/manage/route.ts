@@ -10,6 +10,62 @@ export const runtime = "nodejs";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+
+type Admin = ReturnType<typeof adminClient>;
+
+/**
+ * Removes the account an invitation created, when withdrawing that invitation
+ * leaves it with no purpose.
+ *
+ * Deliberately conservative. It only deletes an account that has never been
+ * signed into and holds no grants anywhere - which is exactly the state
+ * inviteUserByEmail leaves behind and nothing else. Someone who already had an
+ * account, or who accepted and was later removed, is never touched: deleting
+ * either would destroy a real person's access to other firms.
+ */
+async function deleteAccountCreatedByInvitation(admin: NonNullable<Admin>, email: string) {
+  if (!email.trim()) return;
+
+  const { data: userId } = await admin.rpc("lookup_user_id_by_email", { p_email: email.trim() });
+  if (typeof userId !== "string" || !userId) return;
+
+  const { data: account } = await admin.auth.admin.getUserById(userId);
+  if (!account?.user || account.user.last_sign_in_at) return; // used: leave it alone
+
+  const [{ count: scopeCount }, { count: companyCount }] = await Promise.all([
+    admin.from("user_scope_access").select("user_id", { count: "exact", head: true }).eq("user_id", userId),
+    admin.from("user_company_access").select("user_id", { count: "exact", head: true }).eq("user_id", userId)
+  ]);
+  if ((scopeCount ?? 0) > 0 || (companyCount ?? 0) > 0) return;
+
+  const { error } = await admin.auth.admin.deleteUser(userId);
+  if (error) reportError(error, { step: "delete_invited_account", email });
+}
+
+/**
+ * Marks a removed member inactive once they hold no grants in any firm, and
+ * clears a home tenant that no longer means anything.
+ */
+async function deactivateIfNoLongerAMember(admin: NonNullable<Admin>, userId: string, tenantId: string) {
+  const [{ count: scopeCount }, { count: companyCount }] = await Promise.all([
+    admin.from("user_scope_access").select("user_id", { count: "exact", head: true }).eq("user_id", userId),
+    admin.from("user_company_access").select("user_id", { count: "exact", head: true }).eq("user_id", userId)
+  ]);
+
+  if ((scopeCount ?? 0) > 0 || (companyCount ?? 0) > 0) {
+    // Still in another firm: only clear the home tenant if it pointed here.
+    await admin.from("users").update({ tenant_id: null }).eq("id", userId).eq("tenant_id", tenantId);
+    return;
+  }
+
+  const { error } = await admin
+    .from("users")
+    .update({ status: "inactive", tenant_id: null })
+    .eq("id", userId);
+
+  if (error) reportError(error, { step: "deactivate_removed_member", userId, tenantId });
+}
+
 function adminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -37,7 +93,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ error: "Invalid request" }, { status: 400 });
 
-  const { action, tenantId, userId, invitationId, role } = body as Record<string, unknown>;
+  const { action, tenantId, userId, invitationId, role, invitationEmail } = body as Record<string, unknown>;
   if (typeof tenantId !== "string" || !UUID_RE.test(tenantId)) {
     return NextResponse.json({ error: "A valid tenantId is required" }, { status: 400 });
   }
@@ -68,6 +124,14 @@ export async function POST(request: Request) {
       reportError(error, { step: "revoke_invitation", tenantId, invitationId });
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    // inviteUserByEmail creates the auth account immediately, before anyone
+    // accepts. Revoking only marked the invitation dead and left that account
+    // behind: confirmed, able to sign in, and - holding no grants - landing on
+    // onboarding, where it could create a firm of its own. An invitation a
+    // partner has withdrawn must not leave a usable account behind.
+    await deleteAccountCreatedByInvitation(admin, typeof invitationEmail === "string" ? invitationEmail : "");
+
     return NextResponse.json({ success: true });
   }
 
@@ -107,6 +171,17 @@ export async function POST(request: Request) {
       reportError(failure, { step: "remove_member", tenantId, userId });
       return NextResponse.json({ error: failure.message }, { status: 500 });
     }
+
+    // Dropping the grants is not enough on its own. The account stayed
+    // 'active' and could still sign in - with no membership it lands on
+    // onboarding, where a person just removed from a firm can create one of
+    // their own. has_company_access and has_tenant_access both require an
+    // active user, so this is the switch that actually closes the door.
+    //
+    // Only when they belong to no firm at all: membership is many-to-many, and
+    // being removed from one must not lock them out of another.
+    await deactivateIfNoLongerAMember(admin, userId, tenantId);
+
     return NextResponse.json({ success: true });
   }
 

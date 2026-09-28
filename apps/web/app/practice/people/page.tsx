@@ -210,7 +210,7 @@ export default function PeoplePage() {
                   <button
                     className="h-9 rounded-lg border border-line px-3 text-sm font-bold text-red hover:border-red disabled:opacity-60"
                     disabled={busy === invitation.id}
-                    onClick={() => manage({ action: "revoke_invitation", invitationId: invitation.id }, invitation.id)}
+                    onClick={() => manage({ action: "revoke_invitation", invitationId: invitation.id, invitationEmail: invitation.email }, invitation.id)}
                   >
                     Revoke
                   </button>
