@@ -96,7 +96,13 @@ export async function POST(request: Request) {
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3004";
   const { error: inviteError } = await admin.auth.admin.inviteUserByEmail(normalisedEmail, {
-    redirectTo: `${siteUrl}/auth/callback?next=${encodeURIComponent(`/join?invitation=${invitation.id}`)}`
+    // /auth/confirm, not /auth/callback. The invite email uses Supabase's stock
+    // {{ .ConfirmationURL }}, which returns the session in the URL fragment —
+    // and /auth/callback only understands a PKCE code, so it saw a bare path
+    // and bounced every invitation to /login?error=link_missing. /auth/confirm
+    // verifies a token hash and falls back to reading the fragment, which is
+    // the same fix already made for password reset.
+    redirectTo: `${siteUrl}/auth/confirm?next=${encodeURIComponent(`/join?invitation=${invitation.id}`)}`
   });
 
   if (inviteError) {
