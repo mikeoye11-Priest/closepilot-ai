@@ -1786,6 +1786,9 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   // visible where the user is, not only in the Settings sync message.
   const [integrationDiagnostics, setIntegrationDiagnostics] = useState<string[]>([]);
   const [uploadMessage, setUploadMessage] = useState("Upload your finance pack to run a real deterministic review.");
+  // Set when the browser refuses to cache the workspace locally (quota). Work
+  // still saves to the server; only the offline backup stops updating.
+  const [localBackupStale, setLocalBackupStale] = useState(false);
   const [question, setQuestion] = useState("Why is cash getting tighter?");
   const [showExport, setShowExport] = useState(false);
   const [ruleAnalytics, setRuleAnalytics] = useState<RuleAnalyticsReport | null>(null);
@@ -2004,7 +2007,20 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       reportSchedules,
       scheduledReports,
     };
-    window.localStorage.setItem(storageKey, JSON.stringify(workspace));
+    // The local copy is only a backup; the server is the durable store. An
+    // unguarded setItem threw QuotaExceededError once a practice grew past the
+    // browser's ~5MB budget, and because the throw landed before the POST below
+    // nothing saved anywhere while the user carried on working. Keep going: a
+    // full cache must never block the write that actually persists.
+    // A failed setItem leaves the previous value intact, so the older backup
+    // survives and is still worth keeping for an offline restore. Flag it as
+    // stale rather than clearing it.
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(workspace));
+      setLocalBackupStale(false);
+    } catch {
+      setLocalBackupStale(true);
+    }
     fetch("/api/workspace", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3155,6 +3171,12 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
             </div>
           </div>
         </header>
+        {localBackupStale && (
+          <div className="no-print mb-5 rounded-lg border border-amber-300 bg-amber-50 p-4" role="status">
+            <p className="text-sm font-bold text-amber-900">This browser can no longer keep an offline copy of your workspace.</p>
+            <p className="mt-1 text-sm text-amber-800">Your work is still being saved to ClosePilot. Only the local backup used when you are offline has stopped updating.</p>
+          </div>
+        )}
         {nextAction && (
           <NextActionBanner
             title={nextAction.title}
