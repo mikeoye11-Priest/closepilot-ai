@@ -30,6 +30,21 @@ export type Tenant = {
   plan: string;
 };
 
+export type OrgUnitKind = "branch" | "division";
+
+/**
+ * The optional grouping layer between a tenant and its companies: a branch or
+ * office for an accounting practice, a division or region for a multi-entity
+ * group. A single company has none, which is why companies carry a nullable
+ * orgUnitId rather than this being required.
+ */
+export type OrgUnit = {
+  id: string;
+  tenantId: string;
+  name: string;
+  kind: OrgUnitKind;
+};
+
 export type Company = {
   id: string;
   tenantId: string;
@@ -38,6 +53,8 @@ export type Company = {
   accountingSystem: string;
   currency: string;
   country: string;
+  /** Null or absent means the company sits directly under the tenant. */
+  orgUnitId?: string | null;
 };
 
 export type Upload = {
