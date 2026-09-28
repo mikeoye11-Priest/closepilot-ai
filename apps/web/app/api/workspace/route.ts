@@ -29,7 +29,15 @@ export async function GET() {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const stored = data?.data ?? null;
-  if (!stored) return NextResponse.json({ workspace: null });
+  if (!stored) {
+    // No personal workspace row, but the user may already be a member of a
+    // firm through user_company_access. Without this they were sent to
+    // onboarding and would create a second, parallel tenant alongside the one
+    // they belong to. Build their shell from the shared tables instead.
+    const shared = await buildSharedShell(supabase, user.id);
+    if (!shared) return NextResponse.json({ workspace: null });
+    return NextResponse.json({ workspace: { ...shared, orgUnits: await readOrgUnits(supabase, shared) } });
+  }
 
   // Existing rows still carry every company's snapshot inline. Move them to
   // company_snapshots on first read and slim the row, so nobody has to be
@@ -73,6 +81,76 @@ async function readOrgUnits(
     name: String(row.name),
     kind: String(row.kind)
   }));
+}
+
+/**
+ * Builds a workspace shell for a user who has no row of their own, from the
+ * companies they have been granted access to.
+ *
+ * The workspace row is per user, so a second member of a firm previously
+ * loaded nothing and was pushed into onboarding — creating a parallel tenant
+ * rather than joining the one they already had access to. Reading the shared
+ * tables makes membership work: whoever holds an access row sees the firm.
+ *
+ * Returns null when there is genuinely no access, which is a real first-time
+ * user and correctly lands on onboarding.
+ */
+async function buildSharedShell(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string
+): Promise<Record<string, unknown> | null> {
+  const { data: access, error: accessError } = await supabase
+    .from("user_company_access")
+    .select("tenant_id, company_id")
+    .eq("user_id", userId);
+
+  if (accessError || !access?.length) return null;
+
+  // A user could in principle hold access across tenants; the first is used as
+  // their workspace. Switching between firms is a separate feature.
+  const tenantId = stringValue(access[0].tenant_id);
+  if (!UUID_RE.test(tenantId)) return null;
+
+  const companyIds = access
+    .filter((row) => stringValue(row.tenant_id) === tenantId)
+    .map((row) => stringValue(row.company_id))
+    .filter((id) => UUID_RE.test(id));
+  if (!companyIds.length) return null;
+
+  const [{ data: tenantRow }, { data: companyRows }] = await Promise.all([
+    supabase.from("tenants").select("*").eq("id", tenantId).maybeSingle(),
+    supabase.from("companies").select("*").in("id", companyIds).order("name")
+  ]);
+
+  if (!tenantRow || !companyRows?.length) return null;
+
+  const companies = companyRows.map((row) => ({
+    id: String(row.id),
+    tenantId: String(row.tenant_id),
+    name: String(row.name ?? "Company"),
+    industry: String(row.industry ?? ""),
+    accountingSystem: String(row.accounting_system ?? "Unknown"),
+    currency: String(row.currency ?? "GBP"),
+    country: String(row.country ?? "United Kingdom"),
+    // Absent until 0004 is applied; null simply means "no branch".
+    orgUnitId: row.org_unit_id ? String(row.org_unit_id) : null
+  }));
+
+  return {
+    tenant: {
+      id: String(tenantRow.id),
+      name: String(tenantRow.name ?? "ClosePilot Workspace"),
+      type: String(tenantRow.tenant_type ?? "accounting_practice"),
+      plan: String(tenantRow.plan ?? "practice")
+    },
+    companies,
+    currentCompanyId: companies[0].id,
+    // Derived client-side from each snapshot as it loads; a shell built from
+    // the shared tables has no reviews in it yet.
+    portfolioClients: [],
+    reportSchedules: [],
+    scheduledReports: []
+  };
 }
 
 /**
