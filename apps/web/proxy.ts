@@ -16,6 +16,9 @@ export async function proxy(request: NextRequest) {
     "/compatibility",
     "/forgot-password",
     "/auth/callback",
+    // The recipient has no session until verifyOtp runs inside this route, so
+    // gating it would bounce every emailed link to /login before it could work.
+    "/auth/confirm",
     "/update-password"
   ]);
 

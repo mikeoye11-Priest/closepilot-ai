@@ -34,7 +34,11 @@ export default function ForgotPasswordPage() {
     try {
       const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin;
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${siteUrl}/auth/callback?next=/update-password`
+        // /auth/confirm, not /auth/callback: it verifies by token hash, which
+        // needs no browser-bound verifier and so survives the email being
+        // opened on a different device. It still accepts a PKCE code, so this
+        // keeps working before the Supabase email template is updated.
+        redirectTo: `${siteUrl}/auth/confirm?next=/update-password`
       });
       if (error) throw error;
       // Shown whether or not the address has an account, so this page cannot be
