@@ -38,7 +38,12 @@ export default function ForgotPasswordPage() {
         // needs no browser-bound verifier and so survives the email being
         // opened on a different device. It still accepts a PKCE code, so this
         // keeps working before the Supabase email template is updated.
-        redirectTo: `${siteUrl}/auth/confirm?next=/update-password`
+        // No query string here on purpose. The recovery email template appends
+        // ?token_hash=...&type=recovery&next=/update-password, and a redirectTo
+        // that already carried "?next=" would produce two question marks — the
+        // token_hash then parses as part of the next value, the route never
+        // sees it, and every link fails as link_missing.
+        redirectTo: `${siteUrl}/auth/confirm`
       });
       if (error) throw error;
       // Shown whether or not the address has an account, so this page cannot be
