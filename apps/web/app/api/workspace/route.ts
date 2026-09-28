@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase-server";
 import { requireApiSession } from "@/lib/api-auth";
 import { reportError } from "@/lib/logger";
 import { NextResponse } from "next/server";
+import { rolesForTenant } from "@/lib/membership";
 
 export const runtime = "nodejs";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -36,7 +37,15 @@ export async function GET() {
     // they belong to. Build their shell from the shared tables instead.
     const shared = await buildSharedShell(supabase, user.id);
     if (!shared) return NextResponse.json({ workspace: null });
-    return NextResponse.json({ workspace: { ...shared, orgUnits: await readOrgUnits(supabase, shared) } });
+    return NextResponse.json({
+      workspace: {
+        ...shared,
+        orgUnits: await readOrgUnits(supabase, shared),
+        // The client gates controls on these. They are advisory only: every
+        // privileged write is checked again server-side.
+        callerRoles: await callerRolesFor(supabase, user.id, shared)
+      }
+    });
   }
 
   // Existing rows still carry every company's snapshot inline. Move them to
@@ -50,7 +59,24 @@ export async function GET() {
   }
 
   const shell = (migrated ?? stored) as Record<string, unknown>;
-  return NextResponse.json({ workspace: { ...shell, orgUnits: await readOrgUnits(supabase, shell) } });
+  return NextResponse.json({
+    workspace: {
+      ...shell,
+      orgUnits: await readOrgUnits(supabase, shell),
+      callerRoles: await callerRolesFor(supabase, user.id, shell)
+    }
+  });
+}
+
+/** The roles the signed-in user holds over this workspace's tenant. */
+async function callerRolesFor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  shell: Record<string, unknown>
+) {
+  const tenantId = stringValue((shell.tenant as { id?: unknown } | undefined)?.id);
+  if (!UUID_RE.test(tenantId)) return [];
+  return rolesForTenant(supabase, userId, tenantId);
 }
 
 /**

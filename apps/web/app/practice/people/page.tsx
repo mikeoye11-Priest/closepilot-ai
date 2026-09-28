@@ -64,6 +64,34 @@ export default function PeoplePage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const [busy, setBusy] = useState("");
+
+  // Every management action goes through one endpoint, so the UI does not need
+  // to know which of them the server treats as privileged.
+  const manage = async (payload: Record<string, unknown>, busyKey: string) => {
+    if (!tenant) return;
+    setError("");
+    setNotice("");
+    setBusy(busyKey);
+    try {
+      const res = await fetch("/api/members/manage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, tenantId: tenant.id })
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(result.error ?? "That change could not be applied.");
+        return;
+      }
+      await load();
+    } catch {
+      setError("Could not reach ClosePilot.");
+    } finally {
+      setBusy("");
+    }
+  };
+
   const invite = async () => {
     if (!tenant) return;
     setError("");
@@ -122,7 +150,34 @@ export default function PeoplePage() {
                   {member.orgUnitIds.includes(null) && <> · Whole firm</>}
                 </p>
               </div>
-              {member.status !== "active" && <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-muted">{member.status}</span>}
+              <div className="flex items-center gap-2">
+                {member.status !== "active" && <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-muted">{member.status}</span>}
+                {canManage && (
+                  <>
+                    <select
+                      className="h-9 rounded-lg border border-line bg-white px-2 text-sm font-bold"
+                      value={member.roles[0] ?? "preparer"}
+                      disabled={busy === member.userId}
+                      onChange={(event) => manage({ action: "set_role", userId: member.userId, role: event.target.value }, member.userId)}
+                    >
+                      {FIRM_ROLES.map((item) => <option key={item} value={item}>{roleLabel(item, tenantType)}</option>)}
+                    </select>
+                    <button
+                      className="h-9 rounded-lg border border-line px-3 text-sm font-bold text-red hover:border-red disabled:opacity-60"
+                      disabled={busy === member.userId}
+                      onClick={() => {
+                        // Removal revokes access and keeps the person's history,
+                        // but it still signs somebody out of a live engagement.
+                        if (confirm(`Remove ${member.email || "this member"} from ${tenant?.name ?? "the firm"}? Their review history is kept.`)) {
+                          manage({ action: "remove_member", userId: member.userId }, member.userId);
+                        }
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </>
+                )}
+              </div>
             </li>
           ))}
         </ul>
@@ -142,6 +197,15 @@ export default function PeoplePage() {
                     {" · expires "}{new Date(invitation.expiresAt).toLocaleDateString("en-GB")}
                   </p>
                 </div>
+                {canManage && (
+                  <button
+                    className="h-9 rounded-lg border border-line px-3 text-sm font-bold text-red hover:border-red disabled:opacity-60"
+                    disabled={busy === invitation.id}
+                    onClick={() => manage({ action: "revoke_invitation", invitationId: invitation.id }, invitation.id)}
+                  >
+                    Revoke
+                  </button>
+                )}
               </li>
             ))}
           </ul>

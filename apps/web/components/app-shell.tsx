@@ -35,8 +35,9 @@ import { buildPilotMetrics, PILOT_HOURLY_RATE, type PilotMetrics } from "@/lib/p
 import type { InventoryReviewResult } from "@/lib/inventory-engine";
 import { shouldGenerateSnapshot, inventoryFingerprint, financeInsightsFingerprint, latestSnapshotFor, type ReportSchedule, type ScheduledReport, type ReportCadence, type ReportKind } from "@/lib/scheduled-reports";
 import { analyseFinanceFiles, scopeAnalysisResult } from "@/lib/upload-analysis";
-import type { AnalysisResult, CashForecastPoint, ClientCompany, CollectionCase, CollectionStatus, Company, Evidence, EvidenceStatus, FinanceScoreBreakdown, Finding, FindingActivity, FindingComment, FindingEvidenceRow, FindingStatus, ImportMappingProfile, ManagerReviewStatus, OrgUnit, PartnerSignOff, PartnerSignOffGateSnapshot, PartnerSignOffStatus, Recommendation, ReviewPackStatus, RiskLevel, Tenant, TenantType, Upload, ValidationCheck, ValidationStatus } from "@/lib/types";
+import type { AnalysisResult, CashForecastPoint, ClientCompany, CollectionCase, CollectionStatus, Company, Evidence, EvidenceStatus, FinanceScoreBreakdown, Finding, FindingActivity, FindingComment, FindingEvidenceRow, FindingStatus, ImportMappingProfile, FirmRole, ManagerReviewStatus, OrgUnit, PartnerSignOff, PartnerSignOffGateSnapshot, PartnerSignOffStatus, Recommendation, ReviewPackStatus, RiskLevel, Tenant, TenantType, Upload, ValidationCheck, ValidationStatus } from "@/lib/types";
 import { CompanyPicker } from "./company-picker";
+import { can } from "@/lib/permissions";
 import type { VatReviewResult } from "@/lib/vat-engine/types";
 import { VAT_ENGINE_VERSION } from "@/lib/vat-engine";
 import { approveVatFiling, reopenVatFiling } from "@/lib/vat-engine/sign-off";
@@ -146,6 +147,8 @@ type WorkspaceState = {
   companySnapshots?: Record<string, AnalysisResult>;
   /** The tenant's branches or divisions; read from the shared table. */
   orgUnits?: OrgUnit[];
+  /** Roles the signed-in user holds; server-provided, never persisted back. */
+  callerRoles?: FirmRole[];
   reportSchedules?: ReportSchedule[];
   scheduledReports?: ScheduledReport[];
 };
@@ -1825,6 +1828,11 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   // Company whose snapshot is being fetched during a switch, for the picker.
   const [switchingCompanyId, setSwitchingCompanyId] = useState<string | null>(null);
   const [orgUnits, setOrgUnits] = useState<OrgUnit[]>([]);
+  // What this user may do, from /api/workspace. Advisory: every privileged
+  // write is checked again server-side, so a stale or tampered value here
+  // cannot grant anything. When auth is disabled locally the list is empty,
+  // which would gate everything off, so dev keeps full capability.
+  const [callerRoles, setCallerRoles] = useState<FirmRole[]>([]);
   // Companies whose snapshot we have already tried to fetch for a digest, so
   // a company with no review is not refetched on every render.
   const scheduledSnapshotAttempts = useRef<Set<string>>(new Set());
@@ -1858,6 +1866,15 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const assurance = assuranceMetrics(findings, validationChecks, uploads, vatReview);
   const coreQuality = useMemo(() => coreQualityMetrics(uploads, validationChecks, findings, importProfiles, findingEvidence, partnerSignOff, vatReview), [findingEvidence, findings, importProfiles, partnerSignOff, uploads, validationChecks, vatReview]);
   const isPilotDemo = currentCompany.id === pilotCompany.id;
+  const capabilities = useMemo(() => {
+    // The pilot demo's tenant id is not a UUID, so it has no grants to read and
+    // callerRoles comes back empty. Gating on that would lock the demo user out
+    // of the approve and sign-off steps the walkthrough exists to show. Same
+    // for presentation mode and for local dev with auth disabled, where there
+    // is no signed-in user to have roles at all.
+    if (presentationMode || isPilotDemo || !userEmail) return { review: true, signOff: true };
+    return { review: can(callerRoles, "review"), signOff: can(callerRoles, "sign_off") };
+  }, [callerRoles, isPilotDemo, presentationMode, userEmail]);
   const reviewLocked = partnerSignOff?.reviewPackStatus === "LOCKED" || partnerSignOff?.status === "locked" || partnerSignOff?.status === "signed";
   const acceptedRiskExposure = findings.filter((finding) => finding.status === "accepted_risk").reduce((sum, finding) => sum + (finding.amount ?? parseImpactAmount(finding.expectedImpact)), 0);
   const arFindingsForAction = findings.filter((finding) => finding.category === "ar" && finding.evidenceStrength !== "advisory" && !["false_positive", "not_applicable"].includes(finding.status));
@@ -1982,6 +1999,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setCompanies(parsed.companies);
       setPortfolioClients(parsed.portfolioClients);
       setOrgUnits(parsed.orgUnits ?? []);
+      setCallerRoles(parsed.callerRoles ?? []);
       setCompanySnapshots(companySnapshots);
       setReportSchedules(parsed.reportSchedules ?? []);
       setScheduledReports(parsed.scheduledReports ?? []);
@@ -2463,6 +2481,13 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
 
   const updateManagerReview = (findingId: string, status: ManagerReviewStatus, note = "") => {
     if (reviewLocked) return;
+    // Belt and braces with the server check on the snapshot write: stopping it
+    // here means the user gets told, rather than watching the decision appear
+    // and then silently fail to persist.
+    if (!capabilities.review) {
+      setUploadMessage("Only a manager or partner can approve or return a finding.");
+      return;
+    }
     const now = new Date().toISOString();
     const userId = userEmail || userName || "local-manager";
     const cleanNote = note.trim() || (status === "approved" ? "Manager approved finding review." : status === "returned" ? "Manager returned finding to reviewer." : status === "escalated" ? "Manager escalated finding for partner attention." : "Manager review status updated.");
@@ -2544,6 +2569,10 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   };
 
   const recordPartnerSignOff = (gateSnapshot: PartnerSignOffGateSnapshot, note = "") => {
+    if (!capabilities.signOff) {
+      setUploadMessage("Only a partner can sign off a review.");
+      return;
+    }
     if (reviewLocked) return;
     const cleanNote = note.trim();
     const now = new Date().toISOString();
