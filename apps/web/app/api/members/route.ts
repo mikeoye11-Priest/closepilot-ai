@@ -29,10 +29,18 @@ export async function GET(request: Request) {
   const callerRoles = await rolesForTenant(supabase, session.userId, tenantId);
   if (!callerRoles.length) return NextResponse.json({ error: "Not a member of this firm" }, { status: 403 });
 
-  const [{ data: grants }, { data: invitations }] = await Promise.all([
+  const [{ data: grants }, { data: companyGrants }, { data: invitations }] = await Promise.all([
     supabase
       .from("user_scope_access")
       .select("id, user_id, org_unit_id, role, users(email, status)")
+      .eq("tenant_id", tenantId),
+    // Per-company grants count as membership too. Listing only scope grants
+    // meant the page said "no members yet" to a partner who plainly is one -
+    // every existing firm was onboarded through user_company_access, so the
+    // person reading the page was always missing from it.
+    supabase
+      .from("user_company_access")
+      .select("user_id, role, users(email, status)")
       .eq("tenant_id", tenantId),
     supabase
       .from("firm_invitations")
@@ -58,6 +66,23 @@ export async function GET(request: Request) {
     };
     if (isFirmRole(grant.role)) entry.roles.push(grant.role);
     entry.orgUnitIds.push(grant.org_unit_id ? String(grant.org_unit_id) : null);
+    members.set(userId, entry);
+  }
+
+  // A per-company grant covers one company rather than a branch, so it folds
+  // into the same person without adding an org unit. Someone holding both
+  // kinds appears once, with both roles.
+  for (const grant of companyGrants ?? []) {
+    const userId = String(grant.user_id);
+    const user = grant.users as { email?: unknown; status?: unknown } | null;
+    const entry = members.get(userId) ?? {
+      userId,
+      email: String(user?.email ?? ""),
+      status: String(user?.status ?? "active"),
+      roles: [],
+      orgUnitIds: []
+    };
+    if (isFirmRole(grant.role) && !entry.roles.includes(grant.role)) entry.roles.push(grant.role);
     members.set(userId, entry);
   }
 

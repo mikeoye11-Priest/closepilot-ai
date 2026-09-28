@@ -73,6 +73,37 @@ export async function POST(request: Request) {
   // Record the invitation first. If the email then fails to send it can be
   // resent from the People page; if the order were reversed, a delivered
   // invitation could have no row to accept against.
+  // Somebody who already has a ClosePilot account cannot be "invited" —
+  // inviteUserByEmail refuses the address. That is not an error case: with
+  // many-to-many membership, an accountant who uses ClosePilot at one firm and
+  // is added to a second has an account already. Grant them access directly
+  // rather than recording an invitation that can never be delivered or
+  // accepted, which is what happened before and left the invitee with nothing.
+  const { data: existingUserId } = await admin.rpc("lookup_user_id_by_email", { p_email: normalisedEmail });
+
+  if (typeof existingUserId === "string" && existingUserId) {
+    const { error: grantError } = await admin
+      .from("user_scope_access")
+      .upsert(
+        {
+          user_id: existingUserId,
+          tenant_id: tenantId,
+          org_unit_id: typeof orgUnitId === "string" ? orgUnitId : null,
+          role
+        },
+        // Re-adding someone who is already a member updates their role rather
+        // than failing on the partial unique index.
+        { onConflict: typeof orgUnitId === "string" ? "user_id,org_unit_id" : "user_id,tenant_id" }
+      );
+
+    if (grantError) {
+      reportError(grantError, { step: "grant_existing_user", tenantId, role });
+      return NextResponse.json({ error: grantError.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ added: true, existingAccount: true });
+  }
+
   const { data: invitation, error: insertError } = await admin
     .from("firm_invitations")
     .insert({

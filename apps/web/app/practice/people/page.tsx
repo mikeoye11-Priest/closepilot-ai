@@ -108,11 +108,16 @@ export default function PeoplePage() {
         setError(payload.error ?? "That invitation could not be sent.");
         return;
       }
-      // An invitation that was recorded but not emailed is still usable, so
-      // say so plainly rather than reporting a clean success.
-      setNotice(payload.emailed
-        ? `Invitation sent to ${email.trim()}.`
-        : `Invitation created for ${email.trim()}, but the email could not be sent. They can still accept by signing in.`);
+      // Three outcomes, and conflating them misleads: someone added directly
+      // needs no email and is already a member; an invitation that was
+      // recorded but not delivered is still usable but needs explaining.
+      setNotice(
+        payload.added
+          ? `${email.trim()} already had a ClosePilot account and has been added to the firm. They can sign in now.`
+          : payload.emailed
+            ? `Invitation sent to ${email.trim()}.`
+            : `Invitation created for ${email.trim()}, but the email could not be sent. They can still accept by signing in.`
+      );
       setEmail("");
       await load();
     } finally {
@@ -140,7 +145,7 @@ export default function PeoplePage() {
 
       <section className="mt-6 rounded-xl border border-line bg-surface p-5 shadow-card">
         <h2 className="text-lg font-bold">Members</h2>
-        {!members.length && <p className="mt-2 text-sm text-muted">No scope-based members yet.</p>}
+        {!members.length && <p className="mt-2 text-sm text-muted">No one has access to this firm yet.</p>}
         <ul className="mt-3 divide-y divide-line">
           {members.map((member) => (
             <li key={member.userId} className="flex flex-wrap items-center justify-between gap-2 py-3">
