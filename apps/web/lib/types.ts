@@ -30,6 +30,35 @@ export type Tenant = {
   plan: string;
 };
 
+/**
+ * A person's role within one firm. Renamed from "reviewer" to "preparer" in
+ * migration 0006 to match what the review workflow and the pilot pack both
+ * call that person. Capabilities live in lib/permissions.ts.
+ */
+export type FirmRole = "practice_admin" | "manager" | "preparer" | "client_user";
+
+/** One grant: a whole tenant when orgUnitId is null, otherwise one unit. */
+export type ScopeGrant = {
+  id: string;
+  userId: string;
+  tenantId: string;
+  orgUnitId: string | null;
+  role: FirmRole;
+};
+
+export type InvitationStatus = "pending" | "accepted" | "revoked";
+
+export type FirmInvitation = {
+  id: string;
+  tenantId: string;
+  email: string;
+  role: FirmRole;
+  orgUnitId: string | null;
+  status: InvitationStatus;
+  expiresAt: string;
+  createdAt: string;
+};
+
 export type OrgUnitKind = "branch" | "division";
 
 /**
@@ -380,7 +409,7 @@ export type UserCompanyAccess = {
   userId: string;
   tenantId: string;
   companyId: string;
-  role: "practice_admin" | "manager" | "reviewer" | "client_user";
+  role: FirmRole;
 };
 
 export type AnalysisResult = {

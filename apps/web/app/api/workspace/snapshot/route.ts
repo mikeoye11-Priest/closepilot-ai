@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase-server";
 import { requireApiSession } from "@/lib/api-auth";
 import { NextResponse } from "next/server";
+import { rolesForCompany } from "@/lib/membership";
+import { can } from "@/lib/permissions";
 
 export const runtime = "nodejs";
 
@@ -76,6 +78,36 @@ export async function POST(request: Request) {
   const supabase = await createClient();
   const tenantId = await resolveTenantId(supabase, companyId);
   if (!tenantId) return NextResponse.json({ error: "Unknown company" }, { status: 404 });
+
+  // Nothing checked roles before this: any signed-in user with access could
+  // manager-approve findings AND partner sign off, so one person could complete
+  // a workflow whose entire purpose is separating those two acts.
+  // Only null when auth is disabled, which returned above. Without an
+  // identity there is nobody to authorise, so refuse rather than assume.
+  if (!session.userId) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
+
+  const roles = await rolesForCompany(supabase, session.userId, companyId);
+  if (!can(roles, "prepare")) {
+    return NextResponse.json({ error: "You do not have permission to change this review." }, { status: 403 });
+  }
+
+  // Sign-off is written as part of the snapshot rather than through an endpoint
+  // of its own, so the guard has to live on the change rather than the route.
+  const { data: existing } = await supabase
+    .from("company_snapshots")
+    .select("data")
+    .eq("company_id", companyId)
+    .maybeSingle();
+
+  const before = (existing?.data as { partnerSignOff?: unknown } | null)?.partnerSignOff ?? null;
+  const after = (snapshot as { partnerSignOff?: unknown }).partnerSignOff ?? null;
+
+  if (JSON.stringify(before) !== JSON.stringify(after) && !can(roles, "sign_off")) {
+    return NextResponse.json(
+      { error: "Only a partner can sign off or reopen a review." },
+      { status: 403 }
+    );
+  }
 
   const { error } = await supabase
     .from("company_snapshots")
