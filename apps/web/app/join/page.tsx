@@ -39,7 +39,13 @@ export default function JoinPage() {
           setState({ phase: "failed", message: payload.error ?? "That invitation could not be accepted." });
           return;
         }
-        setState({ phase: "joined" });
+        // Supabase generates a password for an invited account; the invitee
+        // never chose one. Landing them in the workspace on the invite session
+        // leaves them with access they cannot get back once it expires - and
+        // no reason to suspect that, since they are plainly signed in. Send
+        // them to set one while the session is live.
+        window.location.replace("/update-password?invited=1");
+        return;
       } catch {
         if (!cancelled) setState({ phase: "failed", message: "Could not reach ClosePilot. Try the link again in a moment." });
       }
@@ -70,9 +76,9 @@ export default function JoinPage() {
           {state.phase === "joined" && (
             <>
               <h1 className="text-2xl font-bold mb-1">You&apos;re in</h1>
-              <p className="text-muted text-sm mb-6">Your access is set up and ready.</p>
-              <a className="inline-flex h-11 items-center rounded-lg bg-brand px-4 font-bold text-white" href="/">
-                Open your workspace
+              <p className="text-muted text-sm mb-6">Your access is set up. Choose a password so you can sign in again later.</p>
+              <a className="inline-flex h-11 items-center rounded-lg bg-brand px-4 font-bold text-white" href="/update-password?invited=1">
+                Choose a password
               </a>
             </>
           )}
