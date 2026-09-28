@@ -3,43 +3,9 @@
 export const dynamic = "force-dynamic";
 
 import { useState } from "react";
-import { createBrowserClient } from "@supabase/ssr";
 import { AuthShell } from "../../components/auth-shell";
 
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createBrowserClient(url, key);
-}
 
-/**
- * Turns a failed reset request into something the reader can act on.
- *
- * Passing err.message straight through put a literal "{}" in front of the user
- * when Supabase returned an error whose message did not survive serialisation.
- * A person cannot do anything with that, and it hides the one useful fact:
- * whether the fault is theirs or ours.
- *
- * Send failures are ours — a misconfigured mail sender, not a bad address — so
- * say so rather than implying they typed something wrong.
- */
-function resetRequestError(err: unknown): string {
-  const raw = err instanceof Error ? err.message : "";
-  const message = raw.trim();
-
-  if (/rate limit/i.test(message)) {
-    return "Too many reset emails have been requested recently. Wait a few minutes and try again.";
-  }
-  if (/sending|smtp|mail/i.test(message)) {
-    return "We could not send the email. This is a problem on our side, not with your address — please let us know.";
-  }
-  // "{}" and "[object Object]" are serialisation leftovers, not messages.
-  if (!message || message === "{}" || message === "[object Object]") {
-    return "Something went wrong sending the reset email. Please try again, and let us know if it keeps happening.";
-  }
-  return message;
-}
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -49,36 +15,33 @@ export default function ForgotPasswordPage() {
 
   const submit = async () => {
     setError("");
-    const supabase = getSupabase();
-    if (!supabase) {
-      setError("Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local.");
-      return;
-    }
     if (!email.trim()) {
       setError("Enter the email address you sign in with.");
       return;
     }
     setLoading(true);
     try {
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin;
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        // /auth/confirm, not /auth/callback: it verifies by token hash, which
-        // needs no browser-bound verifier and so survives the email being
-        // opened on a different device. It still accepts a PKCE code, so this
-        // keeps working before the Supabase email template is updated.
-        // No query string here on purpose. The recovery email template appends
-        // ?token_hash=...&type=recovery&next=/update-password, and a redirectTo
-        // that already carried "?next=" would produce two question marks — the
-        // token_hash then parses as part of the next value, the route never
-        // sees it, and every link fails as link_missing.
-        redirectTo: `${siteUrl}/auth/confirm`
+      // Sent via our own route rather than straight to Supabase, so a send
+      // failure is reported where error tracking runs. Called from the browser
+      // this failed silently for an hour: the visitor saw "check your email"
+      // and nobody else ever knew.
+      const res = await fetch("/api/auth/reset-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() })
       });
-      if (error) throw error;
+      const payload = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError(payload.error ?? "Something went wrong sending the reset email. Please try again.");
+        return;
+      }
+
       // Shown whether or not the address has an account, so this page cannot be
       // used to probe which emails are registered.
       setSent(true);
-    } catch (err: unknown) {
-      setError(resetRequestError(err));
+    } catch {
+      setError("Could not reach ClosePilot. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
