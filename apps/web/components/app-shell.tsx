@@ -3131,7 +3131,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
             <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-wide text-muted">ClosePilot Review</p>
               <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">{pageLabel(active)}</h1>
-              <p className="mt-1 max-w-4xl text-sm font-semibold text-cyan">{tenant.name} · {currentCompany.name} · {uploads.length} finance exports reviewed, {openFindings.length} items to resolve.{timeSavedMins > 0 ? ` · Estimated time saved ${timeSavedHours}h (£${timeSavedValue.toLocaleString("en-GB")} manager capacity).` : ""}</p>
+              <p className="mt-1 max-w-4xl text-sm text-muted">{tenant.name} · {currentCompany.name} · {uploads.length} finance exports reviewed, {openFindings.length} items to resolve.{timeSavedMins > 0 ? ` · Estimated time saved ${timeSavedHours}h (£${timeSavedValue.toLocaleString("en-GB")} manager capacity).` : ""}</p>
             </div>
             <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
               {!presentationMode && (
@@ -3208,18 +3208,18 @@ function UserGuide({ isPilotDemo, hasData, loadPilotDemo, setActive, setPilotWal
       <section className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 p-5 shadow-panel">
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
           <div>
-            <p className="text-xs font-black uppercase tracking-wide text-brand">Getting started</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-brand">Getting started</p>
             <h2 className="mt-1 text-2xl font-black">Prepared accounts in. Consistent partner review out.</h2>
             <p className="mt-2 max-w-3xl text-sm text-muted">Show how an IRIS, CCH, Digita, Xero, Sage or QuickBooks export becomes findings → evidence → resolution → sign-off. Brightlane Manufacturing Ltd contains fictional data and a completed, read-only decision trail.</p>
           </div>
           {!isPilotDemo ? (
-            <button className="shrink-0 rounded-lg bg-emerald-600 px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-emerald-700" onClick={loadPilotDemo}>Load Safe Pilot Demo</button>
+            <button className="shrink-0 rounded-lg bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-emerald-700" onClick={loadPilotDemo}>Load Safe Pilot Demo</button>
           ) : (
             <div className="flex shrink-0 flex-wrap gap-2">
-              <button className="rounded-lg border border-emerald-300 bg-white px-5 py-3 text-sm font-black text-emerald-800 shadow-sm hover:bg-emerald-50" onClick={() => {
+              <button className="rounded-lg border border-emerald-300 bg-white px-5 py-3 text-sm font-bold text-emerald-800 shadow-sm hover:bg-emerald-50" onClick={() => {
                 if (confirm("Reload the original Brightlane demo? This replaces any changes made in the synthetic demo workspace.")) loadPilotDemo();
               }}>Reload Demo Data</button>
-              <button className="rounded-lg bg-brand px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-blue-700" onClick={() => openStep("Finance Review")}>Start Guided Review</button>
+              <button className="rounded-lg bg-brand px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-blue-700" onClick={() => openStep("Finance Review")}>Start Guided Review</button>
             </div>
           )}
         </div>
@@ -3236,7 +3236,7 @@ function UserGuide({ isPilotDemo, hasData, loadPilotDemo, setActive, setPilotWal
             <article key={step.number} className="flex flex-col justify-between rounded-lg border border-line bg-white p-4">
               <div>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="grid h-8 w-8 place-items-center rounded-full bg-blue-100 text-sm font-black text-brand">{step.number}</span>
+                  <span className="grid h-8 w-8 place-items-center rounded-full bg-blue-100 text-sm font-bold text-brand">{step.number}</span>
                   <span className="text-xs font-bold text-muted">{step.time}</span>
                 </div>
                 <h3 className="mt-3 font-black">{step.title}</h3>
@@ -3379,7 +3379,7 @@ function OnboardingPanel({ intent, tenant, createWorkspace, addClient, loadPilot
           <p className="text-xs font-bold uppercase text-emerald-800">Pilot demo</p>
           <strong className="mt-1 block">Brightlane Manufacturing Ltd</strong>
           <p className="mt-1 text-sm text-muted">Load a completed workflow with uploads, findings, evidence, manager review, partner sign-off and export-ready review pack.</p>
-          <button className="mt-3 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-black text-white" onClick={loadPilotDemo}>
+          <button className="mt-3 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white" onClick={loadPilotDemo}>
             Load Pilot Demo
           </button>
         </div>
@@ -3417,14 +3417,14 @@ function CompatibilityPanel({ setActive }: { setActive: (value: string) => void 
   return (
     <div className="grid gap-4">
       <section className="rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-cyan-50 p-6 shadow-panel">
-        <p className="text-xs font-black uppercase tracking-wide text-brand">Integrations and compatibility</p>
+        <p className="text-xs font-bold uppercase tracking-wide text-brand">Integrations and compatibility</p>
         <h2 className="mt-2 max-w-4xl text-3xl font-black">Keep your accounts production software. Add a consistent review layer.</h2>
         <p className="mt-3 max-w-3xl text-muted">Import prepared accounts, turn exceptions into evidence-backed findings, and produce a consistent partner sign-off pack.</p>
-        <div className="mt-5 flex flex-wrap gap-3"><button className="rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white" onClick={() => setActive("Upload Finance Pack")}>Import Prepared Accounts</button><a className="rounded-lg border border-blue-300 bg-white px-4 py-2.5 text-sm font-black text-brand" href="/compatibility" target="_blank" rel="noreferrer">Open Public Compatibility Page</a></div>
+        <div className="mt-5 flex flex-wrap gap-3"><button className="rounded-lg bg-brand px-4 py-2.5 text-sm font-bold text-white" onClick={() => setActive("Upload Finance Pack")}>Import Prepared Accounts</button><a className="rounded-lg border border-blue-300 bg-white px-4 py-2.5 text-sm font-bold text-brand" href="/compatibility" target="_blank" rel="noreferrer">Open Public Compatibility Page</a></div>
       </section>
       <Panel title="Compatible Source Systems">
         <div className="grid gap-3">
-          {systems.map(([name, route, status]) => <article key={name} className="grid gap-2 rounded-lg border border-line p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-center"><strong>{name}</strong><span className="text-sm text-muted">{route}</span><span className="w-fit rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">{status}</span></article>)}
+          {systems.map(([name, route, status]) => <article key={name} className="grid gap-2 rounded-lg border border-line p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-center"><strong>{name}</strong><span className="text-sm text-muted">{route}</span><span className="w-fit rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">{status}</span></article>)}
         </div>
         <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><strong>Compatibility means import support, not vendor endorsement.</strong> Unless a connection is explicitly shown, ClosePilot reviews files exported from the source system. CCH and Digita use guided import and do not yet have vendor-specific regression suites.</p>
       </Panel>
@@ -3441,11 +3441,11 @@ function NextActionBanner({ title, detail, cta, tone, onClick }: { title: string
   return (
     <section className={`mb-5 flex flex-col gap-3 rounded-lg border p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between ${sectionClass}`} aria-label="Next action">
       <div>
-        <p className="text-xs font-black uppercase tracking-wide">Next Action Required</p>
+        <p className="text-xs font-bold uppercase tracking-wide">Next Action Required</p>
         <h2 className="mt-1 text-lg font-black">{title}</h2>
         <p className="mt-1 text-sm">{detail}</p>
       </div>
-      <button className="shrink-0 rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white" onClick={onClick}>{cta}</button>
+      <button className="shrink-0 rounded-lg bg-brand px-4 py-2.5 text-sm font-bold text-white" onClick={onClick}>{cta}</button>
     </section>
   );
 }
@@ -3477,6 +3477,10 @@ function PilotWalkthroughRail({
   findingActivities: FindingActivity[];
   partnerSignOff?: PartnerSignOff;
 }) {
+  // Collapsed by default: on Findings the step grid pushed the findings table
+  // below the fold. The header still names the current step, so the walkthrough
+  // stays followable without costing the page its content.
+  const [showSteps, setShowSteps] = useState(false);
   const currentIndex = Math.min(step, pilotWalkthroughSteps.length - 1);
   const current = pilotWalkthroughSteps[currentIndex];
   const managerApproved = findings.filter((finding) => managerReviewStatus(finding) === "approved").length;
@@ -3492,20 +3496,27 @@ function PilotWalkthroughRail({
     <section className="no-print mb-5 rounded-lg border border-line bg-white p-4 shadow-panel">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="min-w-0">
-          <p className="text-xs font-bold uppercase text-muted">Pilot Walkthrough</p>
-          <h2 className="mt-1 text-lg font-black">{current.label}</h2>
+          <p className="text-xs font-bold uppercase text-muted">Pilot Walkthrough · step {currentIndex + 1} of {pilotWalkthroughSteps.length}</p>
+          <h2 className="mt-1 text-lg font-bold">{current.label}</h2>
           <p className="mt-1 text-sm text-muted">
             {findings.length} finding(s), {findingEvidence.length} evidence file(s), {findingComments.length} comment(s), {findingActivities.length} activity entries, {managerApproved + managerEscalated} manager decision(s), {partnerSignOff ? "partner signed" : "partner sign-off pending"}.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            className="rounded-lg border border-line px-4 py-2 text-sm font-bold"
+            onClick={() => setShowSteps((value) => !value)}
+            aria-expanded={showSteps}
+          >
+            {showSteps ? "Hide steps" : "All steps"}
+          </button>
           <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => goToStep(0)}>Restart</button>
-          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => goToStep(nextStep)}>
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => goToStep(nextStep)}>
             {currentIndex >= pilotWalkthroughSteps.length - 1 ? "Open Export Pack" : "Next Step"}
           </button>
         </div>
       </div>
-      <div className="mt-4 grid gap-2 md:grid-cols-5">
+      <div className={`mt-4 gap-2 md:grid-cols-5 ${showSteps ? "grid" : "hidden"}`}>
         {pilotWalkthroughSteps.map((item, index) => {
           const selected = index === currentIndex;
           const complete = index < currentIndex;
@@ -3516,7 +3527,7 @@ function PilotWalkthroughRail({
               onClick={() => goToStep(index)}
               aria-pressed={selected}
             >
-              <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-black ${complete ? "bg-emerald-600 text-white" : selected ? "bg-brand text-white" : "bg-white text-muted"}`}>
+              <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${complete ? "bg-emerald-600 text-white" : selected ? "bg-brand text-white" : "bg-white text-muted"}`}>
                 {complete ? "✓" : index + 1}
               </span>
               <strong className="mt-2 block text-sm">{item.label}</strong>
@@ -3867,7 +3878,7 @@ function AiPartnerSummaryCard({ companyName, score, risk, findings, recommendati
   return (
     <section className="rounded-xl border border-brand/30 bg-gradient-to-br from-brand/5 to-cyan/5 p-5 shadow-panel">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-black uppercase tracking-wide text-brand">AI Review Summary</p>
+        <p className="text-xs font-bold uppercase tracking-wide text-brand">AI Review Summary</p>
         <span className="rounded-full border border-brand/30 bg-white/70 px-2.5 py-1 text-[11px] font-bold text-brand">Grounded in {total} rule finding{total === 1 ? "" : "s"} · {evidenceTraced}% evidence-traced</span>
       </div>
       <p className="mt-3 text-lg font-black leading-snug">
@@ -3897,11 +3908,11 @@ function AiPartnerSummaryCard({ companyName, score, risk, findings, recommendati
 
       <div className="mt-3 flex flex-wrap gap-2">
         {aiStatus !== "done" && (
-          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white disabled:opacity-60" disabled={aiStatus === "loading" || total === 0} onClick={generate}>
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white disabled:opacity-60" disabled={aiStatus === "loading" || total === 0} onClick={generate}>
             {aiStatus === "loading" ? "Drafting…" : "Draft AI narrative"}
           </button>
         )}
-        <button className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-black" onClick={() => setActive("Findings")}>Review findings</button>
+        <button className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-bold" onClick={() => setActive("Findings")}>Review findings</button>
       </div>
     </section>
   );
@@ -4015,11 +4026,11 @@ function OperationalOverviewDashboard({
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <OverviewMetricCard title="Partner Assurance Score" value={uploads.length ? score : 0} suffix="/100" tone={risk} badge={uploads.length ? "Review complete" : "Awaiting upload"} />
             <OverviewMetricCard title="Audit Readiness" value={uploads.length ? assurance.closeReadiness : 0} suffix="/100" tone={assurance.closeReadiness >= 80 ? "low" : assurance.closeReadiness >= 65 ? "medium" : "high"} badge={assurance.closeReadiness >= 80 ? "Good" : "Fair"} />
-            <article className="rounded-lg border border-line bg-white p-5 shadow-panel"><p className="text-sm font-bold text-muted">Estimated Time Saved</p><strong className="mt-4 block text-3xl font-black text-emerald-700">{timeSavedHours}h</strong><p className="mt-4 text-sm font-black text-emerald-700">£{timeSavedValue.toLocaleString("en-GB")} manager value</p><p className="mt-4 text-sm text-muted">This review cycle</p></article>
+            <article className="rounded-lg border border-line bg-white p-5 shadow-panel"><p className="text-sm font-bold text-muted">Estimated Time Saved</p><strong className="mt-4 block text-3xl font-black text-emerald-700">{timeSavedHours}h</strong><p className="mt-4 text-sm font-bold text-emerald-700">£{timeSavedValue.toLocaleString("en-GB")} manager value</p><p className="mt-4 text-sm text-muted">This review cycle</p></article>
             <article className="rounded-lg border border-line bg-white p-5 shadow-panel">
               <p className="text-sm font-bold text-muted">Est. Exposure</p>
               <strong className="mt-4 block text-3xl font-black text-red-600">£{financialExposure.toLocaleString()}</strong>
-              <p className="mt-4 text-sm font-black text-red-600">{financialExposure ? "High Risk" : "No exposure"}</p>
+              <p className="mt-4 text-sm font-bold text-red-600">{financialExposure ? "High Risk" : "No exposure"}</p>
               <p className="mt-4 text-sm text-muted">{openFindings} open finding(s)</p>
             </article>
           </div>
@@ -4047,7 +4058,7 @@ function OperationalOverviewDashboard({
             {journeySteps.map((step, index) => (
               <li key={step.label}>
                 <button className={`w-full rounded-lg border p-4 text-left transition-colors hover:border-brand ${step.complete ? "border-emerald-200 bg-emerald-50" : "border-line bg-slate-50"}`} onClick={() => setActive(step.page)}>
-                  <span className={`inline-grid h-7 w-7 place-items-center rounded-full text-xs font-black ${step.complete ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700"}`}>{step.complete ? "✓" : index + 1}</span>
+                  <span className={`inline-grid h-7 w-7 place-items-center rounded-full text-xs font-bold ${step.complete ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-700"}`}>{step.complete ? "✓" : index + 1}</span>
                   <strong className="mt-3 block">{step.label}</strong>
                   <span className="mt-1 block text-sm text-muted">{step.detail}</span>
                 </button>
@@ -4092,7 +4103,7 @@ function OperationalOverviewDashboard({
                       <strong className="block text-sm">{driver.label}</strong>
                       <span className="mt-1 block text-xs text-muted">{driver.detail}</span>
                     </span>
-                    <span className={`text-sm font-black ${driver.passed ? "text-emerald-700" : "text-red-600"}`}>{driver.passed ? `+${driver.weight}` : `-${driver.weight}`}</span>
+                    <span className={`text-sm font-bold ${driver.passed ? "text-emerald-700" : "text-red-600"}`}>{driver.passed ? `+${driver.weight}` : `-${driver.weight}`}</span>
                   </button>
                 ))}
               </div>
@@ -4117,7 +4128,7 @@ function OperationalOverviewDashboard({
                 return (
                   <button key={file.type} className="flex items-center justify-between gap-3 rounded-lg px-1 py-1.5 text-left text-sm transition-colors hover:bg-slate-50" onClick={() => setActive(present ? "Audit Readiness" : "Upload Finance Pack")}>
                     <span>{file.label}</span>
-                    <span className={`grid h-5 w-5 place-items-center rounded-full text-xs font-black ${present ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                    <span className={`grid h-5 w-5 place-items-center rounded-full text-xs font-bold ${present ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
                       {present ? "✓" : "!"}
                     </span>
                   </button>
@@ -4284,7 +4295,7 @@ function ForecastLine({ label, from, to }: { label: string; from: number; to: nu
           <strong className="block truncate text-sm">{label}</strong>
           <p className="mt-1 text-xs text-muted">{from}% → {to}% readiness</p>
         </div>
-        <span className={`shrink-0 text-sm font-black ${gain ? "text-emerald-700" : "text-muted"}`}>{gain ? `+${gain}` : "+0"}</span>
+        <span className={`shrink-0 text-sm font-bold ${gain ? "text-emerald-700" : "text-muted"}`}>{gain ? `+${gain}` : "+0"}</span>
       </div>
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
         <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.max(4, to)}%` }} />
@@ -4382,7 +4393,7 @@ function CoreQualityPanel({ quality, compact = false }: { quality: CoreQualityMe
 function QualityMetricGroup({ title, metrics }: { title: string; metrics: CoreQualityMetric[] }) {
   return (
     <div className="rounded-lg border border-line bg-slate-50 p-3">
-      <p className="mb-3 text-xs font-black uppercase text-muted">{title}</p>
+      <p className="mb-3 text-xs font-bold uppercase text-muted">{title}</p>
       <div className="grid gap-2">
         {metrics.map((metric) => (
           <div key={metric.label} className="rounded-lg border border-line bg-white p-3">
@@ -4464,10 +4475,10 @@ function ReviewCommandCenter({
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               <Pill level={statusLevel}>{reviewStatus}</Pill>
-              <button className="rounded-lg border border-line bg-white px-4 py-2.5 text-sm font-black transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Findings")}>
+              <button className="rounded-lg border border-line bg-white px-4 py-2.5 text-sm font-bold transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Findings")}>
                 Open Findings
               </button>
-              <button className="rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-blue-700" onClick={() => setActive(hasData ? "Review Pack" : "Upload Finance Pack")}>
+              <button className="rounded-lg bg-brand px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-blue-700" onClick={() => setActive(hasData ? "Review Pack" : "Upload Finance Pack")}>
                 {hasData ? "Open Review Pack" : "Import Accounts"}
               </button>
             </div>
@@ -4493,7 +4504,7 @@ function ReviewCommandCenter({
                 <p className="text-xs font-bold uppercase text-muted">Why {score}?</p>
                 <h3 className="text-lg font-black">Score contributors</h3>
               </div>
-              <button className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-black transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Audit Readiness")}>Audit Readiness</button>
+              <button className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-bold transition-colors hover:border-brand hover:text-brand" onClick={() => setActive("Audit Readiness")}>Audit Readiness</button>
             </div>
             <div className="grid gap-3 lg:grid-cols-2">
               <div className="grid gap-2">
@@ -4529,7 +4540,7 @@ function ScoreDriverRow({ driver }: { driver: ScoreDriver }) {
   const positive = driver.type === "positive";
   return (
     <div className="grid min-h-12 grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border border-line bg-white px-3 py-2">
-      <span className={`grid h-6 w-6 place-items-center rounded-full text-xs font-black ${positive ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
+      <span className={`grid h-6 w-6 place-items-center rounded-full text-xs font-bold ${positive ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>
         {positive ? "+" : "-"}
       </span>
       <p className="min-w-0 truncate text-sm font-bold">{driver.factor}</p>
@@ -4565,10 +4576,10 @@ function ReadinessDriverRow({ driver }: { driver: ReadinessDriver }) {
   return (
     <div className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-lg border border-line bg-white p-3">
       <div className="min-w-0">
-        <p className="truncate text-sm font-black">{driver.label}</p>
+        <p className="truncate text-sm font-bold">{driver.label}</p>
         <p className="mt-0.5 truncate text-xs text-muted">{driver.detail}</p>
       </div>
-      <span className={`inline-flex h-7 min-w-16 items-center justify-center rounded-full px-3 text-xs font-black ${driver.passed ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+      <span className={`inline-flex h-7 min-w-16 items-center justify-center rounded-full px-3 text-xs font-bold ${driver.passed ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
         {driver.passed ? "Passed" : `${driver.weight}%`}
       </span>
     </div>
@@ -4971,7 +4982,7 @@ function AuditReadiness({ findings, findingEvidence, partnerSignOff, validationC
                   <td className="border-b border-line p-3"><strong className="block">{control.sourceFiles.length ? `${control.sourceFiles.length} source${control.sourceFiles.length === 1 ? "" : "s"}` : "Evidence required"}</strong><span className="mt-1 block max-w-56 text-xs text-muted">{control.sourceFiles.join(" · ") || "No supporting file linked"}</span></td>
                   <td className="border-b border-line p-3"><strong className="block">{control.owner}</strong><span className="text-xs text-muted">{control.dueDate}</span></td>
                   <td className="border-b border-line p-3">{control.passed ? "Control complete; retain evidence for fieldwork." : control.action}</td>
-                  <td className="border-b border-line p-3"><span className={`rounded-full px-3 py-1 text-xs font-black ${control.uplift ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"}`}>{control.uplift ? `+${control.uplift}` : "Complete"}</span></td>
+                  <td className="border-b border-line p-3"><span className={`rounded-full px-3 py-1 text-xs font-bold ${control.uplift ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"}`}>{control.uplift ? `+${control.uplift}` : "Complete"}</span></td>
                   <td className="border-b border-line p-3"><button className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold" onClick={() => control.relatedFinding ? openFindingEvidence(control.relatedFinding.id) : setActive(control.page)}>{control.relatedFinding ? "View Evidence" : "Open Area"}</button></td>
                 </tr>
               ))}
@@ -4985,7 +4996,7 @@ function AuditReadiness({ findings, findingEvidence, partnerSignOff, validationC
           <div className="grid gap-3">
             {actionControls.length ? actionControls.map((control, index) => (
               <div key={control.label} className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-                <div className="flex items-start justify-between gap-3"><div><span className="text-xs font-black uppercase text-amber-800">Action {index + 1}</span><strong className="mt-1 block">{control.label}</strong><p className="mt-1 text-sm text-amber-950">{control.action}</p></div><span className="shrink-0 rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-800">+{control.uplift} points</span></div>
+                <div className="flex items-start justify-between gap-3"><div><span className="text-xs font-bold uppercase text-amber-800">Action {index + 1}</span><strong className="mt-1 block">{control.label}</strong><p className="mt-1 text-sm text-amber-950">{control.action}</p></div><span className="shrink-0 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-800">+{control.uplift} points</span></div>
                 <p className="mt-3 text-xs text-amber-900">Owner {control.owner} · Due {control.dueDate}</p>
               </div>
             )) : <EmptyState title="No readiness actions" detail="All readiness checks are complete." />}
@@ -5002,7 +5013,7 @@ function AuditReadiness({ findings, findingEvidence, partnerSignOff, validationC
           </Panel>
           <Panel title="Prepared-By-Client List">
             <p className="text-sm text-muted">Export the control plan with evidence references, owners, due dates and outstanding requests for the audit team.</p>
-            <button className="mt-3 w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white" onClick={() => exportFile(`${slug(company.name)}_audit_request_list.csv`, pbcCsv, "text/csv;charset=utf-8")}>Download PBC CSV</button>
+            <button className="mt-3 w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-bold text-white" onClick={() => exportFile(`${slug(company.name)}_audit_request_list.csv`, pbcCsv, "text/csv;charset=utf-8")}>Download PBC CSV</button>
           </Panel>
         </div>
       </section>
@@ -5253,13 +5264,13 @@ function ReviewPack({
     <div className="grid gap-4">
       {coverNote && (
         <section className="print-page rounded-xl border border-line bg-white p-6 shadow-card">
-          <p className="text-xs font-black uppercase tracking-wide text-brand">Board Cover Note{coverAi && <span className="font-semibold text-muted"> · AI-drafted, review before issuing</span>}</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand">Board Cover Note{coverAi && <span className="font-semibold text-muted"> · AI-drafted, review before issuing</span>}</p>
           <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-ink">{coverNote}</p>
         </section>
       )}
       {hasExecInsights && (
         <section className="print-page rounded-xl border border-line bg-white p-6 shadow-card">
-          <p className="text-xs font-black uppercase tracking-wide text-brand">Executive Insights</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-brand">Executive Insights</p>
           {execHeadline && <p className="mt-1 text-lg font-extrabold tracking-tight text-ink">{execHeadline}</p>}
           {execSignals.length > 0 && (
             <ul className="mt-3 grid gap-2">
@@ -5360,12 +5371,12 @@ function ReviewPack({
         <section className="print-page rounded-lg border border-slate-900 bg-white p-6 print-cover print:rounded-none print:border-0" aria-label="Partner decision page">
           <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div><p className="text-xs font-black uppercase tracking-wide text-muted">ClosePilot · Partner Decision Page</p><h1 className="mt-2 text-3xl font-black">{company.name}</h1><p className="mt-1 text-sm text-muted">{tenant.name} · Prepared {today} · {uploads.length} files reviewed</p></div>
+              <div><p className="text-xs font-bold uppercase tracking-wide text-muted">ClosePilot · Partner Decision Page</p><h1 className="mt-2 text-3xl font-black">{company.name}</h1><p className="mt-1 text-sm text-muted">{tenant.name} · Prepared {today} · {uploads.length} files reviewed</p></div>
               <div className="text-left sm:text-right"><Pill level={partnerSignOff ? "low" : signOffBlockers ? "medium" : "low"}>{partnerSignOff ? "Locked" : signOffBlockers ? "Action required" : "Ready"}</Pill><p className="mt-2 text-xs font-bold text-muted">{effectiveReviewPackStatus.replaceAll("_", " ")}</p></div>
             </div>
 
             <div className={`rounded-lg border p-5 ${decisionTone}`}>
-              <p className="text-xs font-black uppercase">Partner conclusion</p>
+              <p className="text-xs font-bold uppercase">Partner conclusion</p>
               <h2 className="mt-1 text-2xl font-black">{decisionHeadline}</h2>
               <p className="mt-2 text-sm">{partnerSignOff?.note || partnerConclusion}</p>
             </div>
@@ -5379,7 +5390,7 @@ function ReviewPack({
 
             <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
               <div className="rounded-lg border border-line bg-slate-50 p-4">
-                <p className="text-xs font-black uppercase text-muted">Review outcome</p>
+                <p className="text-xs font-bold uppercase text-muted">Review outcome</p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <SummaryLine label="Findings identified" value={findings.length} />
                   <SummaryLine label="Open items" value={openFindings.length} />
@@ -5390,7 +5401,7 @@ function ReviewPack({
                 </div>
               </div>
               <div className="rounded-lg border border-line bg-slate-50 p-4">
-                <p className="text-xs font-black uppercase text-muted">Items requiring partner awareness</p>
+                <p className="text-xs font-bold uppercase text-muted">Items requiring partner awareness</p>
                 <div className="mt-3 grid gap-2">
                   {[...openCritical, ...openHigh, ...acceptedRiskFindings].length ? [...openCritical, ...openHigh, ...acceptedRiskFindings].slice(0, 4).map((finding) => (
                     <div key={finding.id} className="flex items-start justify-between gap-3 rounded-lg border border-line bg-white p-3"><span><strong className="block text-sm">{finding.title}</strong><span className="mt-1 block text-xs text-muted">{finding.status.replaceAll("_", " ")} · {finding.amount ? `£${Math.round(finding.amount).toLocaleString("en-GB")}` : finding.expectedImpact}</span></span><Pill level={finding.severity}>{finding.severity}</Pill></div>
@@ -5518,13 +5529,13 @@ function ReviewPack({
                     <p className="text-xs font-bold uppercase text-muted">Required Actions</p>
                     <h2 className="mt-1 font-black">What must happen before issue</h2>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{auditRequiredActions.length} action{auditRequiredActions.length !== 1 ? "s" : ""}</span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{auditRequiredActions.length} action{auditRequiredActions.length !== 1 ? "s" : ""}</span>
                 </div>
                 <div className="mt-3 grid gap-2">
                   {auditRequiredActions.length ? auditRequiredActions.map((item, index) => (
                     <div key={`${item.area}-${item.action}-${index}`} className="grid gap-2 rounded-lg bg-slate-50 p-3 lg:grid-cols-[140px_110px_1fr] lg:items-start">
                       <strong className="text-sm">{item.area}</strong>
-                      <span className="text-xs font-black uppercase text-muted">{item.priority}</span>
+                      <span className="text-xs font-bold uppercase text-muted">{item.priority}</span>
                       <div>
                         <p className="text-sm font-semibold">{item.action}</p>
                         <p className="mt-1 text-xs text-muted">{item.reason}</p>
@@ -5547,7 +5558,7 @@ function ReviewPack({
                           <p className="text-xs font-bold uppercase text-muted">{section.area}</p>
                           <h3 className="mt-1 font-black">{section.status}</h3>
                         </div>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-black text-slate-600">{section.area}</span>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">{section.area}</span>
                       </div>
                       <p className="mt-3 text-sm font-semibold">{section.summary}</p>
                       <p className="mt-2 text-xs text-muted">Evidence: {section.evidence}</p>
@@ -5638,7 +5649,7 @@ function ReviewPack({
                           <h3 className="mt-1 font-black">{workpaper.title}</h3>
                           <p className="mt-1 text-sm text-muted">{workpaper.area}</p>
                         </div>
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{workpaper.findings.length} finding{workpaper.findings.length !== 1 ? "s" : ""}</span>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{workpaper.findings.length} finding{workpaper.findings.length !== 1 ? "s" : ""}</span>
                       </div>
                       <div className="mt-3 grid gap-3 lg:grid-cols-2">
                         <SummaryNote label="Objective" value={workpaper.objective} />
@@ -6047,7 +6058,7 @@ function FindingTriageSection({ title, findings, empty, compact = false }: { tit
     <section className="rounded-lg border border-line bg-white p-3">
       <div className="mb-2 flex items-center justify-between gap-3">
         <h3 className="font-bold">{title}</h3>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-black text-slate-600">{findings.length}</span>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">{findings.length}</span>
       </div>
       {findings.length ? (
         <div className="grid gap-2">
@@ -6120,7 +6131,7 @@ function ChangeIntelligence({ findings, findingActivities, partnerSignOff, valid
             <h2 className="mt-1 text-2xl font-black">What changed during review—and what remains.</h2>
             <p className="mt-2 text-muted">Every movement below is derived from findings, evidence rows and reviewer decisions. No comparative financial trend is shown without a prior-period pack.</p>
           </div>
-          <span className={`rounded-full px-3 py-1 text-xs font-black ${hasComparativePeriod ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{hasComparativePeriod ? `${periods.length} periods compared` : "1 financial period loaded"}</span>
+          <span className={`rounded-full px-3 py-1 text-xs font-bold ${hasComparativePeriod ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{hasComparativePeriod ? `${periods.length} periods compared` : "1 financial period loaded"}</span>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <Metric title="Exposure Identified" value={`£${Math.round(exposureIdentified).toLocaleString("en-GB")}`} detail={`${evidenceFindings.length} findings supported by records`} tone={exposureIdentified ? "high" : "low"} />
@@ -6161,7 +6172,7 @@ function ChangeIntelligence({ findings, findingActivities, partnerSignOff, valid
             {materialFindings.length ? materialFindings.map((finding) => (
               <div key={finding.id} className="rounded-lg border border-line bg-slate-50 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Pill level={finding.severity}>{finding.severity}</Pill><span className="rounded-full bg-white px-2 py-1 text-xs font-black text-slate-600">{outcomeFor(finding)}</span></div><strong className="mt-2 block">{finding.title}</strong><p className="mt-1 text-sm text-muted">{finding.reviewReason || finding.resolutionNote || finding.description}</p><p className="mt-2 text-xs text-muted">{finding.evidence.sourceFile} · {finding.ruleId ?? finding.id}</p></div>
+                  <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><Pill level={finding.severity}>{finding.severity}</Pill><span className="rounded-full bg-white px-2 py-1 text-xs font-bold text-slate-600">{outcomeFor(finding)}</span></div><strong className="mt-2 block">{finding.title}</strong><p className="mt-1 text-sm text-muted">{finding.reviewReason || finding.resolutionNote || finding.description}</p><p className="mt-2 text-xs text-muted">{finding.evidence.sourceFile} · {finding.ruleId ?? finding.id}</p></div>
                   <div className="shrink-0 text-right"><strong className="block text-xl">£{Math.round(valueFor(finding)).toLocaleString("en-GB")}</strong><button className="mt-2 rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold" onClick={() => openFindingEvidence(finding.id)}>View Evidence</button></div>
                 </div>
               </div>
@@ -6174,7 +6185,7 @@ function ChangeIntelligence({ findings, findingActivities, partnerSignOff, valid
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-bold uppercase text-muted">Decision Timeline</p><h2 className="mt-1 text-xl font-black">Detected → reviewed → signed off</h2></div>{partnerSignOff && <span className="text-sm font-semibold text-emerald-700">Locked by {partnerSignOff.signedBy}</span>}</div>
         <div className="mt-4 grid gap-3 md:grid-cols-4">
           {materialFindings.map((finding, index) => (
-            <article key={finding.id} className="rounded-lg border border-line p-4"><span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs font-black text-white">{index + 1}</span><p className="mt-3 text-xs font-bold uppercase text-muted">{finding.createdAt ? new Date(finding.createdAt).toLocaleString("en-GB") : finding.evidence.period}</p><strong className="mt-1 block text-sm">{finding.title}</strong><p className="mt-2 text-xs text-muted">{outcomeFor(finding)}{finding.reviewedAt ? ` · reviewed ${new Date(finding.reviewedAt).toLocaleDateString("en-GB")}` : ""}</p></article>
+            <article key={finding.id} className="rounded-lg border border-line p-4"><span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{index + 1}</span><p className="mt-3 text-xs font-bold uppercase text-muted">{finding.createdAt ? new Date(finding.createdAt).toLocaleString("en-GB") : finding.evidence.period}</p><strong className="mt-1 block text-sm">{finding.title}</strong><p className="mt-2 text-xs text-muted">{outcomeFor(finding)}{finding.reviewedAt ? ` · reviewed ${new Date(finding.reviewedAt).toLocaleDateString("en-GB")}` : ""}</p></article>
           ))}
         </div>
       </section>
@@ -6402,7 +6413,7 @@ function ReadinessTimeline({ uploads, findings, recommendations, validationCheck
         {steps.map(([step, status, level], index) => (
           <div key={step} className="rounded-lg border border-line bg-white p-4">
             <div className="mb-3 flex items-center gap-2">
-              <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-100 text-sm font-black">{index + 1}</span>
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-100 text-sm font-bold">{index + 1}</span>
               <Pill level={level}>{status}</Pill>
             </div>
             <strong>{step}</strong>
@@ -6621,9 +6632,9 @@ function ActionRow({ recommendation, complete }: { recommendation: Recommendatio
         <p className="text-sm text-muted">{recommendation.expectedImpact}</p>
       </div>
       {recommendation.completed ? (
-        <span className="inline-flex h-10 items-center justify-center rounded-lg bg-emerald-100 px-3 text-sm font-black text-emerald-800">Done</span>
+        <span className="inline-flex h-10 items-center justify-center rounded-lg bg-emerald-100 px-3 text-sm font-bold text-emerald-800">Done</span>
       ) : (
-        <button className="h-10 rounded-lg bg-brand px-3 text-sm font-black text-white transition-colors hover:bg-blue-700" onClick={complete}>Approve</button>
+        <button className="h-10 rounded-lg bg-brand px-3 text-sm font-bold text-white transition-colors hover:bg-blue-700" onClick={complete}>Approve</button>
       )}
     </div>
   );
@@ -6853,7 +6864,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
             <h2 className="mt-1 text-2xl font-black">Review, evidence, approval and sign-off</h2>
             <p className="mt-1 text-sm text-muted">{findings.length ? `${findings.length} finding(s) tracked through the review workflow.` : "Upload a finance pack to create the first review queue."}</p>
           </div>
-          <button className="rounded-lg bg-brand px-4 py-2.5 text-sm font-black text-white" onClick={() => setActive(uploads.length ? "Review Pack" : "Upload Finance Pack")}>
+          <button className="rounded-lg bg-brand px-4 py-2.5 text-sm font-bold text-white" onClick={() => setActive(uploads.length ? "Review Pack" : "Upload Finance Pack")}>
             {uploads.length ? "Open Review Pack" : "Import Accounts"}
           </button>
         </div>
@@ -6900,7 +6911,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
                 <strong className={`mt-1 block text-2xl ${trafficClasses.text}`}>{traffic.label}</strong>
                 <p className="mt-1 text-sm font-semibold text-muted">{traffic.detail}</p>
               </div>
-              <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${trafficClasses.dot} text-sm font-black text-white`}>
+              <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${trafficClasses.dot} text-sm font-bold text-white`}>
                 {traffic.state === "green" ? "READY" : traffic.state === "amber" ? "RISK" : "STOP"}
               </div>
             </div>
@@ -6952,7 +6963,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
                   onChange={(event) => setPartnerNote(event.target.value)}
                 />
                 <button
-                  className={`rounded-lg px-4 py-2.5 text-sm font-black ${signOffEnabled ? "bg-emerald-600 text-white" : "cursor-not-allowed bg-slate-200 text-muted"}`}
+                  className={`rounded-lg px-4 py-2.5 text-sm font-bold ${signOffEnabled ? "bg-emerald-600 text-white" : "cursor-not-allowed bg-slate-200 text-muted"}`}
                   disabled={!signOffEnabled}
                   onClick={() => {
                     recordPartnerSignOff(signOffSnapshot, partnerNote);
@@ -6986,7 +6997,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
                       <strong className="block truncate text-sm">{finding.title}</strong>
                       <p className="mt-1 text-xs text-muted">{findingOwner(finding)} · {STATUS_CONFIG[finding.status]?.label ?? finding.status}</p>
                     </div>
-                    <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs font-black text-slate-600">{reviewStatus.replaceAll("_", " ")}</span>
+                    <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs font-bold text-slate-600">{reviewStatus.replaceAll("_", " ")}</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300" disabled={reviewLocked} onClick={() => updateManagerReview(finding.id, "approved")}>Manager Approve</button>
@@ -7045,7 +7056,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
                     <strong className="block truncate text-sm">{finding.title}</strong>
                     <p className="mt-1 text-xs text-muted">{linkedEvidence.length || finding.evidenceIds?.length ? `${linkedEvidence.length || finding.evidenceIds?.length} evidence item(s) linked · ${linkedEvidence.filter((item) => item.status === "accepted").length} accepted · ${linkedEvidence.filter((item) => item.status === "rejected").length} rejected · ${linkedEvidence.filter((item) => item.status === "superseded").length} superseded` : finding.evidence.sourceFile}</p>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-black ${STATUS_CONFIG[finding.status]?.color ?? STATUS_CONFIG.open.color}`}>{STATUS_CONFIG[finding.status]?.label ?? "Open"}</span>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${STATUS_CONFIG[finding.status]?.color ?? STATUS_CONFIG.open.color}`}>{STATUS_CONFIG[finding.status]?.label ?? "Open"}</span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-bold disabled:cursor-not-allowed disabled:text-muted" disabled={reviewLocked} onClick={() => updateFindingStatus(finding.id, "evidence_requested")}>Request Evidence</button>
@@ -7145,7 +7156,7 @@ function FindingRegister({
                   <span className="text-xs text-muted">{finding.sourceFile ?? finding.evidence.sourceFile}</span>
                 </td>
                 <td className="border-b border-line p-2 font-semibold">{findingOwner(finding)}</td>
-                <td className="border-b border-line p-2"><span className={`rounded-full px-2 py-0.5 text-xs font-black ${statusCfg.color}`}>{statusCfg.label}</span></td>
+                <td className="border-b border-line p-2"><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${statusCfg.color}`}>{statusCfg.label}</span></td>
                 <td className="border-b border-line p-2 font-semibold">{findingDueDate(finding)}</td>
               </tr>
             );
@@ -7247,13 +7258,13 @@ function FindingDetailDrawer({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <Pill level={finding.severity}>{finding.severity}</Pill>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-black ${statusCfg.color}`}>{statusCfg.label}</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${statusCfg.color}`}>{statusCfg.label}</span>
                 {finding.ruleId && <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-500">{finding.ruleId}</span>}
               </div>
               <h2 className="mt-3 text-xl font-black">{finding.title}</h2>
               <p className="mt-1 text-sm text-muted">{finding.description}</p>
             </div>
-            <button className="rounded-lg border border-line px-3 py-2 text-sm font-black" onClick={onClose}>Close</button>
+            <button className="rounded-lg border border-line px-3 py-2 text-sm font-bold" onClick={onClose}>Close</button>
           </div>
         </div>
 
@@ -7328,7 +7339,7 @@ function FindingDetailDrawer({
                   <p className="text-xs font-bold uppercase text-muted">Evidence Viewer</p>
                   <h3 className="mt-1 font-black">Supporting evidence and why this was flagged</h3>
                 </div>
-                <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-800">{findingEvidenceTier(finding)} evidence</span>
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-bold text-cyan-800">{findingEvidenceTier(finding)} evidence</span>
               </div>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <DrawerField label="Source File" value={evidenceRef.sourceFile} />
@@ -7387,7 +7398,7 @@ function FindingDetailDrawer({
                           <strong className="block truncate">{item.fileName}</strong>
                           <span className="mt-1 block text-xs text-muted">{item.uploadedBy} · {new Date(item.uploadedAt).toLocaleString("en-GB")}</span>
                         </a>
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-black ${item.status === "accepted" || item.status === "not_required" ? "bg-emerald-100 text-emerald-700" : item.status === "rejected" ? "bg-red-100 text-red-700" : item.status === "requested" ? "bg-amber-100 text-amber-800" : item.status === "under_review" ? "bg-cyan-100 text-cyan-800" : item.status === "superseded" ? "bg-slate-100 text-slate-500" : "bg-blue-100 text-blue-700"}`}>{(item.status ?? "uploaded").replaceAll("_", " ")}</span>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${item.status === "accepted" || item.status === "not_required" ? "bg-emerald-100 text-emerald-700" : item.status === "rejected" ? "bg-red-100 text-red-700" : item.status === "requested" ? "bg-amber-100 text-amber-800" : item.status === "under_review" ? "bg-cyan-100 text-cyan-800" : item.status === "superseded" ? "bg-slate-100 text-slate-500" : "bg-blue-100 text-blue-700"}`}>{(item.status ?? "uploaded").replaceAll("_", " ")}</span>
                       </div>
                       {item.notes && <p className="mt-2 text-xs text-muted">{item.notes}</p>}
                       {item.reviewNote && <p className="mt-1 text-xs text-muted">Review: {item.reviewNote}</p>}
@@ -7540,14 +7551,14 @@ function EvidenceDecisionTrace({ finding, partnerSignOff }: { finding: Finding; 
           <p className="text-xs font-bold uppercase text-muted">Review trail</p>
           <h3 className="mt-1 text-lg font-black">From source row to partner sign-off</h3>
         </div>
-        <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800">Fully traceable</span>
+        <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">Fully traceable</span>
       </div>
       <ol className="mt-4 grid gap-2 md:grid-cols-5">
         {stages.map((stage, index) => (
           <li key={stage.label} className={`relative min-w-0 rounded-lg border border-l-4 p-3 ${stage.tone}`}>
             <div className="flex items-center gap-2">
-              <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-black text-white">{index + 1}</span>
-              <span className="text-xs font-black uppercase text-slate-600">{stage.label}</span>
+              <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{index + 1}</span>
+              <span className="text-xs font-bold uppercase text-slate-600">{stage.label}</span>
             </div>
             <strong className="mt-3 block break-words text-sm leading-snug">{stage.value}</strong>
             <span className="mt-2 block break-words text-xs capitalize text-muted">{stage.detail}</span>
@@ -7563,7 +7574,7 @@ function SignOffCheck({ label, passed, warning = false, detail }: { label: strin
   const classes = trafficLightClasses(state);
   return (
     <div className={`rounded-lg border p-4 ${classes.box}`}>
-      <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-sm font-black ${classes.dot} text-white`}>{warning ? "!" : passed ? "✓" : "✕"}</span>
+      <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${classes.dot} text-white`}>{warning ? "!" : passed ? "✓" : "✕"}</span>
       <strong className="mt-3 block">{label}</strong>
       <p className="mt-1 text-xs text-muted">{detail}</p>
     </div>
@@ -7608,7 +7619,7 @@ function FindingCard({ finding, setActive, updateFindingStatus, expanded = false
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <Pill level={finding.severity}>{finding.severity}</Pill>
-            <span className={`rounded-full px-2 py-0.5 text-xs font-black ${statusCfg.color}`}>{statusCfg.label}</span>
+            <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${statusCfg.color}`}>{statusCfg.label}</span>
             <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${strength.color}`}>{strength.label}</span>
             {finding.ruleId && <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-500">{finding.ruleId}</span>}
           </div>
@@ -7618,7 +7629,7 @@ function FindingCard({ finding, setActive, updateFindingStatus, expanded = false
         <div className="flex shrink-0 flex-col items-end gap-1.5 text-right">
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted">Detection</span>
-            <span className={`text-sm font-black ${confidencePct >= 90 ? "text-emerald-700" : confidencePct >= 70 ? "text-amber-700" : "text-red-600"}`}>{confidencePct}%</span>
+            <span className={`text-sm font-bold ${confidencePct >= 90 ? "text-emerald-700" : confidencePct >= 70 ? "text-amber-700" : "text-red-600"}`}>{confidencePct}%</span>
           </div>
           <span className="text-xs font-semibold text-muted">Evidence {evidenceStrengthPct}%</span>
           {finding.expectedImpact && <span className="text-xs font-semibold text-muted">{finding.expectedImpact}</span>}
@@ -7650,7 +7661,7 @@ function FindingCard({ finding, setActive, updateFindingStatus, expanded = false
             {aiStatus === "unavailable" && <p className="mt-2 text-xs text-muted">AI explanation unavailable (no AI key configured). The grounded summary above is deterministic.</p>}
             {aiStatus === "error" && <p className="mt-2 text-xs text-red-600">AI explanation could not be generated.</p>}
             {aiStatus !== "done" && (
-              <button className="mt-3 rounded-lg border border-brand/40 bg-white px-3 py-1.5 text-xs font-black text-brand disabled:opacity-60" disabled={aiStatus === "loading"} onClick={explainFinding}>
+              <button className="mt-3 rounded-lg border border-brand/40 bg-white px-3 py-1.5 text-xs font-bold text-brand disabled:opacity-60" disabled={aiStatus === "loading"} onClick={explainFinding}>
                 {aiStatus === "loading" ? "Explaining…" : "Explain with AI"}
               </button>
             )}
@@ -7831,7 +7842,7 @@ function UploadList({ uploads, onDelete, onClear }: { uploads: Upload[]; onDelet
       {onClear && (
         <div className="flex justify-end">
           <button
-            className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-700 transition-colors hover:bg-red-50"
+            className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-bold text-red-700 transition-colors hover:bg-red-50"
             onClick={() => {
               if (confirm("Clear this review and remove all uploaded data, findings, scores, VAT review and recommendations?")) {
                 onClear();
@@ -7974,7 +7985,7 @@ function ImportMappingProfilesPanel({ profiles, confirmImportProfile }: { profil
                   <div className="flex items-center gap-2">
                     <Pill level={level}>{profile.status.replaceAll("_", " ")}</Pill>
                     {profile.status !== "confirmed" && (
-                      <button className="rounded-lg bg-brand px-3 py-2 text-xs font-black text-white hover:bg-blue-700" onClick={() => confirmImportProfile(profile.id)}>
+                      <button className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-white hover:bg-blue-700" onClick={() => confirmImportProfile(profile.id)}>
                         Confirm
                       </button>
                     )}
@@ -8031,7 +8042,7 @@ function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uploadJob, 
                 QuickBooks review can be cleared even though it has no uploaded files. */}
             {(uploads.length > 0 || findings.length > 0 || validationChecks.length > 0) && (
               <button
-                className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-700 transition-colors hover:bg-red-50"
+                className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-bold text-red-700 transition-colors hover:bg-red-50"
                 onClick={() => { if (confirm("Clear this review? This removes the findings, scores, VAT review, recommendations, statements and any uploaded files for this client. (Provider connections are not affected.)")) onClear(); }}
               >
                 Clear Review
@@ -8079,7 +8090,7 @@ function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uploadJob, 
             <div className="grid gap-2 sm:grid-cols-2">
               {expectedFiles.map((file) => {
                 const present = uploadedTypes.has(file.type);
-                return <div key={file.type} className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${present ? "border-emerald-200 bg-emerald-50" : file.required ? "border-amber-200 bg-amber-50" : "border-line bg-slate-50"}`}><span><strong className="block text-sm">{file.label}</strong><span className="text-xs text-muted">{file.required ? "Core review file" : "Recommended for audit readiness"}</span></span><span className={`grid h-6 w-6 place-items-center rounded-full text-xs font-black ${present ? "bg-emerald-600 text-white" : "bg-white text-muted"}`}>{present ? "✓" : "—"}</span></div>;
+                return <div key={file.type} className={`flex items-center justify-between gap-3 rounded-lg border p-3 ${present ? "border-emerald-200 bg-emerald-50" : file.required ? "border-amber-200 bg-amber-50" : "border-line bg-slate-50"}`}><span><strong className="block text-sm">{file.label}</strong><span className="text-xs text-muted">{file.required ? "Core review file" : "Recommended for audit readiness"}</span></span><span className={`grid h-6 w-6 place-items-center rounded-full text-xs font-bold ${present ? "bg-emerald-600 text-white" : "bg-white text-muted"}`}>{present ? "✓" : "—"}</span></div>;
               })}
             </div>
             {missingRequired.length ? <p className="mt-3 text-sm text-amber-900"><strong>Missing:</strong> {missingRequired.map((file) => file.label).join(", ")}. You can continue, but these areas will have less review coverage.</p> : <p className="mt-3 text-sm font-semibold text-emerald-800">All core review files are present.</p>}
@@ -8087,7 +8098,7 @@ function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uploadJob, 
 
           <Panel title="What To Do Next">
             <div className={`rounded-lg border p-4 ${canContinue ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
-              <p className="text-xs font-black uppercase text-muted">Next action</p>
+              <p className="text-xs font-bold uppercase text-muted">Next action</p>
               <h3 className="mt-1 text-lg font-black">{!uploads.length ? "Import the prepared accounts" : isAnalysing ? "Wait while the review completes" : mappingIssues ? "Confirm the file mapping" : findings.length ? "Work through the findings" : "Open the finance review"}</h3>
               <p className="mt-1 text-sm text-muted">{!uploads.length ? "Start with the six core exports shown in the checklist." : mappingIssues ? "Confirm the suggested columns before relying on the results." : failedChecks ? "The review ran, but failed checks require attention before sign-off." : "The files have been reviewed and the next decision is ready."}</p>
               {canContinue && <button className="mt-4 rounded-lg bg-brand px-4 py-2.5 text-sm font-bold text-white" onClick={() => setActive(findings.length ? "Findings" : "Finance Review")}>{findings.length ? "Open Review Findings" : "Open Finance Review"}</button>}
@@ -8498,7 +8509,7 @@ function WhatIfPlanner({ statements }: { statements?: SyncStatements }) {
           <span className="text-xs text-muted">base: {baseResult.firstNegativeWeek ? `week ${baseResult.firstNegativeWeek}` : "none"}</span>
         </div>
       </div>
-      {dirty ? <button className="mt-3 rounded-lg border border-line px-3 py-2 text-xs font-black" onClick={reset}>Reset to base case</button> : <p className="mt-3 text-xs text-muted">Base case shown — move a lever to model a change.</p>}
+      {dirty ? <button className="mt-3 rounded-lg border border-line px-3 py-2 text-xs font-bold" onClick={reset}>Reset to base case</button> : <p className="mt-3 text-xs text-muted">Base case shown — move a lever to model a change.</p>}
     </Panel>
   );
 }
@@ -8530,7 +8541,7 @@ function ConcentrationPanel({ statements, ledger }: { statements?: SyncStatement
     <Panel title="Customer Concentration">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-xl text-sm text-muted">Dependency on your largest customers, from the matched receivables mix. High concentration is a revenue and bad-debt risk.</p>
-        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase ring-1 ring-inset ${levelChip[report.level]}`}>{report.level} concentration</span>
+        <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ring-1 ring-inset ${levelChip[report.level]}`}>{report.level} concentration</span>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <MetricTile label="Largest customer" value={pct(report.top1Share)} sub={`${report.customers[0]?.name ?? "—"} · ${gbp(report.customers[0]?.balance ?? 0)}`} />
@@ -8596,7 +8607,7 @@ function CovenantPanel({ statements, companyId }: { statements?: SyncStatements;
           {report.breaches > 0 && <span className="rounded-full bg-red-50 px-2.5 py-1 text-red-700 ring-1 ring-inset ring-red-600/20">{report.breaches} below</span>}
           {customised && <span className="rounded-full bg-brand/10 px-2.5 py-1 text-brand ring-1 ring-inset ring-brand/20">custom thresholds</span>}
         </div>
-        <button className="rounded-lg border border-line px-3 py-1.5 text-xs font-black" onClick={() => setEditing((v) => !v)}>{editing ? "Done" : "Edit thresholds"}</button>
+        <button className="rounded-lg border border-line px-3 py-1.5 text-xs font-bold" onClick={() => setEditing((v) => !v)}>{editing ? "Done" : "Edit thresholds"}</button>
       </div>
 
       {editing && (
@@ -8608,7 +8619,7 @@ function CovenantPanel({ statements, companyId }: { statements?: SyncStatements;
             <label className="grid gap-1 text-xs font-semibold"><span>Cash cover (months) ≥</span><input type="number" step={0.5} min={0} value={thresholds.cashCoverMonths} onChange={(e) => update("cashCoverMonths", Number(e.target.value))} className="h-9 rounded-lg border border-line px-2" /></label>
             <label className="grid gap-1 text-xs font-semibold"><span>13-wk min cash (£) ≥</span><input type="number" step={5000} value={thresholds.minForecastCash} onChange={(e) => update("minForecastCash", Number(e.target.value))} className="h-9 rounded-lg border border-line px-2" /></label>
           </div>
-          {customised && <button className="mt-3 rounded-lg border border-line px-3 py-1.5 text-xs font-black" onClick={resetThresholds}>Reset to defaults</button>}
+          {customised && <button className="mt-3 rounded-lg border border-line px-3 py-1.5 text-xs font-bold" onClick={resetThresholds}>Reset to defaults</button>}
         </div>
       )}
 
@@ -8949,7 +8960,7 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
             <tbody>{accounts.map((account) => {
               const collectionCase = caseFor(account);
               const basis = collectionCase?.status === "promised" ? `Promise £${Math.round(collectionCase.promiseAmount ?? account.balance).toLocaleString("en-GB")} by ${collectionCase.promiseDate ?? "undated"}` : collectionCase?.status === "disputed" ? "Expected recovery after dispute" : "Expected recovery based on age";
-              return <tr key={account.id}><td className="border-b border-line p-3 font-bold">{account.customer}</td><td className="border-b border-line p-3">£{Math.round(account.balance).toLocaleString("en-GB")}</td><td className="border-b border-line p-3"><span className={`rounded-full px-2 py-1 text-xs font-black ${collectionStatusClass(collectionCase?.status ?? "not_contacted")}`}>{collectionStatusLabels[collectionCase?.status ?? "not_contacted"]}</span></td><td className="border-b border-line p-3">{basis}</td><td className="border-b border-line p-3"><button className="rounded-lg border border-line px-3 py-2 text-xs font-bold" onClick={() => openFindingEvidence(account.findingId)}>View Source</button></td></tr>;
+              return <tr key={account.id}><td className="border-b border-line p-3 font-bold">{account.customer}</td><td className="border-b border-line p-3">£{Math.round(account.balance).toLocaleString("en-GB")}</td><td className="border-b border-line p-3"><span className={`rounded-full px-2 py-1 text-xs font-bold ${collectionStatusClass(collectionCase?.status ?? "not_contacted")}`}>{collectionStatusLabels[collectionCase?.status ?? "not_contacted"]}</span></td><td className="border-b border-line p-3">{basis}</td><td className="border-b border-line p-3"><button className="rounded-lg border border-line px-3 py-2 text-xs font-bold" onClick={() => openFindingEvidence(account.findingId)}>View Source</button></td></tr>;
             })}</tbody>
           </table>
         </div>
@@ -9147,7 +9158,7 @@ function CollectionsPanel({ findings, collectionCases, saveCollectionCase, actor
             <h2 className="mt-1 text-2xl font-black">Turn aged debt into a prioritised cash plan</h2>
             <p className="mt-1 text-sm text-muted">Customer balances are supported by uploaded records; any balance without a customer row stays clearly separate.</p>
           </div>
-          <span className={`rounded-full px-3 py-1 text-xs font-black ${useCanonicalExposure ? "bg-cyan-100 text-cyan-900" : "bg-emerald-100 text-emerald-800"}`}>{useCanonicalExposure ? "Reconciled to the canonical debtor ledger" : "Balances supported by evidence"}</span>
+          <span className={`rounded-full px-3 py-1 text-xs font-bold ${useCanonicalExposure ? "bg-cyan-100 text-cyan-900" : "bg-emerald-100 text-emerald-800"}`}>{useCanonicalExposure ? "Reconciled to the canonical debtor ledger" : "Balances supported by evidence"}</span>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <Metric title="AR Exposure" value={totalExposure ? `£${Math.round(totalExposure).toLocaleString("en-GB")}` : "—"} detail={`${acceptedRisks} accepted risk${acceptedRisks === 1 ? "" : "s"}`} tone={totalExposure ? "high" : "low"} />
@@ -9191,10 +9202,10 @@ function CollectionsPanel({ findings, collectionCases, saveCollectionCase, actor
                     <td className="border-b border-line p-3 font-black">£{Math.round(account.balance).toLocaleString("en-GB")}</td>
                     <td className="border-b border-line p-3">{account.ageLabel}</td>
                     <td className="border-b border-line p-3">
-                      <span className={`mb-2 inline-flex rounded-full px-2 py-1 text-xs font-black ${collectionStatusClass(caseFor(account)?.status ?? "not_contacted")}`}>{collectionStatusLabels[caseFor(account)?.status ?? "not_contacted"]}</span>
-                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-black ${account.priorityScore >= 80 ? "bg-red-100 text-red-800" : account.priorityScore >= 70 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>{account.priorityScore}/100</span>
+                      <span className={`mb-2 inline-flex rounded-full px-2 py-1 text-xs font-bold ${collectionStatusClass(caseFor(account)?.status ?? "not_contacted")}`}>{collectionStatusLabels[caseFor(account)?.status ?? "not_contacted"]}</span>
+                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${account.priorityScore >= 80 ? "bg-red-100 text-red-800" : account.priorityScore >= 70 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>{account.priorityScore}/100</span>
                       {account.acceptedRisk && <span className="mt-1 block text-xs font-semibold text-violet-700">Accepted risk</span>}
-                      {promiseIsOverdue(caseFor(account)) && <span className="mt-1 block text-xs font-black text-red-700">Promise overdue</span>}
+                      {promiseIsOverdue(caseFor(account)) && <span className="mt-1 block text-xs font-bold text-red-700">Promise overdue</span>}
                       {caseFor(account)?.status === "promised" && <span className="mt-1 block text-xs text-muted">£{Math.round(caseFor(account)?.promiseAmount ?? 0).toLocaleString("en-GB")} · {caseFor(account)?.promiseDate}</span>}
                       {caseFor(account)?.status === "disputed" && <span className="mt-1 block max-w-48 text-xs text-red-700">{caseFor(account)?.disputeReason}</span>}
                     </td>
@@ -9781,7 +9792,7 @@ function OverviewInsightBanner({ statements, findings, setActive }: { statements
 
   return (
     <section className={`rounded-xl border p-5 shadow-card ${alert ? "border-red-200 bg-gradient-to-br from-red-50 to-white" : "border-brand/20 bg-gradient-to-br from-brand/5 to-white"}`}>
-      <p className="text-xs font-black uppercase tracking-wide text-brand">ClosePilot Insights</p>
+      <p className="text-xs font-bold uppercase tracking-wide text-brand">ClosePilot Insights</p>
       {headline && <p className="mt-1 text-lg font-extrabold tracking-tight text-ink">{headline}</p>}
       {merged.length > 0 && (
         <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -9797,8 +9808,8 @@ function OverviewInsightBanner({ statements, findings, setActive }: { statements
         </div>
       )}
       <div className="mt-3 flex flex-wrap gap-2">
-        {fin && <button className="rounded-lg bg-brand px-3 py-2 text-xs font-black text-white" onClick={() => setActive("Cash Intelligence")}>Open cash flow tools</button>}
-        {find.available && <button className="rounded-lg border border-line px-3 py-2 text-xs font-black" onClick={() => setActive("Findings")}>Review findings</button>}
+        {fin && <button className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-white" onClick={() => setActive("Cash Intelligence")}>Open cash flow tools</button>}
+        {find.available && <button className="rounded-lg border border-line px-3 py-2 text-xs font-bold" onClick={() => setActive("Findings")}>Review findings</button>}
       </div>
     </section>
   );
@@ -10216,7 +10227,7 @@ function VatAssuranceModule({ vatReview, findings, validationChecks, uploads, up
                 <strong className="block">{vatDiagnosticTitle}</strong>
                 <p className="mt-1">{vatDiagnosticDetail}</p>
               </div>
-              <button className="shrink-0 rounded-lg bg-amber-600 px-4 py-2 text-sm font-black text-white" onClick={() => setActive(syncedVatUpload ? "Settings" : "Upload Finance Pack")}>{syncedVatUpload ? "Reconnect & sync" : "Upload VAT Evidence"}</button>
+              <button className="shrink-0 rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white" onClick={() => setActive(syncedVatUpload ? "Settings" : "Upload Finance Pack")}>{syncedVatUpload ? "Reconnect & sync" : "Upload VAT Evidence"}</button>
             </div>
           </div>
         )}
@@ -10257,7 +10268,7 @@ function VatAssuranceModule({ vatReview, findings, validationChecks, uploads, up
                 Saved result: {vatReview.engineVersion ?? "legacy VAT-V3"}; current engine: {VAT_ENGINE_VERSION}. Re-run the VAT upload or sync again to apply VAT-inclusive amount normalisation and refreshed workpaper evidence gaps.
               </p>
             </div>
-            <button className="shrink-0 rounded-lg bg-amber-600 px-4 py-2 text-sm font-black text-white" onClick={() => setActive("Upload Finance Pack")}>Re-run VAT Review</button>
+            <button className="shrink-0 rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white" onClick={() => setActive("Upload Finance Pack")}>Re-run VAT Review</button>
           </div>
         </section>
       )}
@@ -10271,7 +10282,7 @@ function VatAssuranceModule({ vatReview, findings, validationChecks, uploads, up
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Pill level={submissionReadiness.tone}>{submissionReadiness.label}</Pill>
-              <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => window.print()}>Print / Save PDF</button>
+              <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => window.print()}>Print / Save PDF</button>
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
@@ -10348,7 +10359,7 @@ function VatAssuranceModule({ vatReview, findings, validationChecks, uploads, up
                   <input className="rounded-lg border border-line bg-white px-3 py-2 text-sm" value={reviewedBy} onChange={(event) => setReviewedBy(event.target.value)} placeholder="Reviewed by" />
                   <input className="rounded-lg border border-line bg-white px-3 py-2 text-sm" value={approvedBy} onChange={(event) => setApprovedBy(event.target.value)} placeholder="Approved by" />
                   <button
-                    className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                    className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                     disabled={filingSignOff.status === "not_ready"}
                     onClick={approveFiling}
                   >
@@ -10378,7 +10389,7 @@ function VatAssuranceModule({ vatReview, findings, validationChecks, uploads, up
                     {filingApproval.snapshotHash && <p className="break-all font-mono text-xs">SHA-256: {filingApproval.snapshotHash}</p>}
                     <p>{filingApproval.evidenceReferences.length} evidence reference(s) linked · {filingApproval.auditTrail.length} audit event(s).</p>
                     {filingApproval.locked && (
-                      <button className="w-fit rounded-lg border border-line bg-white px-3 py-2 text-xs font-black" onClick={() => exportFile("closepilot-approved-vat-snapshot.json", JSON.stringify(filingApproval, null, 2), "application/json;charset=utf-8")}>Approved Snapshot JSON</button>
+                      <button className="w-fit rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold" onClick={() => exportFile("closepilot-approved-vat-snapshot.json", JSON.stringify(filingApproval, null, 2), "application/json;charset=utf-8")}>Approved Snapshot JSON</button>
                     )}
                   </div>
                 )}
@@ -10388,7 +10399,7 @@ function VatAssuranceModule({ vatReview, findings, validationChecks, uploads, up
                   <strong>Controlled reopening</strong>
                   <p className="mt-1 text-sm text-muted">Reopening preserves the approved snapshot and adds a mandatory audit event.</p>
                   <textarea className="mt-3 min-h-20 w-full rounded-lg border border-line bg-white p-3 text-sm" value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} placeholder="Reason for reopening (minimum 10 characters)" />
-                  <button className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-black text-amber-800" onClick={reopenFiling}>Reopen VAT Review</button>
+                  <button className="mt-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-amber-800" onClick={reopenFiling}>Reopen VAT Review</button>
                 </div>
               )}
               {signOffError && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700 sm:col-span-2">{signOffError}</p>}
@@ -10660,7 +10671,7 @@ function VatAssuranceModule({ vatReview, findings, validationChecks, uploads, up
                 : "No transactions contributed to this VAT box."}
             </p>
             {drillThroughUnavailable && (
-              <button className="mt-4 rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => setActive("Upload Finance Pack")}>Upload VAT Transactions</button>
+              <button className="mt-4 rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => setActive("Upload Finance Pack")}>Upload VAT Transactions</button>
             )}
           </div>
         )}
@@ -10691,21 +10702,21 @@ function VatAssuranceModule({ vatReview, findings, validationChecks, uploads, up
             <h3 className="mt-1 text-xl font-black">VAT-V3 review pack ready for sign-off</h3>
             <p className="mt-2 text-sm text-muted">The pack includes scheme profile, Boxes 1-9, grouped investigations, reconciliation results, reviewer decisions, partner conclusion, exception register and evidence appendix.</p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => window.print()}>Print VAT Pack</button>
+              <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => window.print()}>Print VAT Pack</button>
               <button
-                className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-black transition-colors hover:border-brand hover:text-brand"
+                className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-bold transition-colors hover:border-brand hover:text-brand"
                 onClick={downloadVatV3Report}
               >
                 VAT-V3 Report
               </button>
               <button
-                className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-black transition-colors hover:border-brand hover:text-brand"
+                className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-bold transition-colors hover:border-brand hover:text-brand"
                 onClick={downloadVatExceptionRegister}
               >
                 Exception CSV
               </button>
               <button
-                className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-black transition-colors hover:border-brand hover:text-brand"
+                className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-bold transition-colors hover:border-brand hover:text-brand"
                 onClick={downloadVatEvidenceJson}
               >
                 VAT Evidence JSON
@@ -10722,7 +10733,7 @@ function VatAssuranceModule({ vatReview, findings, validationChecks, uploads, up
         </div>
 
         <div className="print-page mt-5 rounded-lg border border-line p-4">
-          <h3 className="text-sm font-black uppercase text-muted">Review Pack Contents</h3>
+          <h3 className="text-sm font-bold uppercase text-muted">Review Pack Contents</h3>
           <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
             <div>
               <strong>Reviewer conclusion</strong>
@@ -10834,7 +10845,7 @@ function ControlsFraudPanel({ findings, validationChecks, uploads, partnerSignOf
             <h2 className="mt-1 text-2xl font-black">Control exceptions requiring professional judgement</h2>
             <p className="mt-2 max-w-3xl text-sm text-muted">Review unusual postings, payment risks and approval exceptions. Each signal remains linked to its source and reviewer decision.</p>
           </div>
-          <span className={`rounded-full px-3 py-1 text-xs font-black ${openExceptions.length || failedChecks ? "bg-red-100 text-red-800" : "bg-emerald-100 text-emerald-800"}`}>{openExceptions.length || failedChecks ? "Action required" : "No open control blocker"}</span>
+          <span className={`rounded-full px-3 py-1 text-xs font-bold ${openExceptions.length || failedChecks ? "bg-red-100 text-red-800" : "bg-emerald-100 text-emerald-800"}`}>{openExceptions.length || failedChecks ? "Action required" : "No open control blocker"}</span>
         </div>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -10846,7 +10857,7 @@ function ControlsFraudPanel({ findings, validationChecks, uploads, partnerSignOf
         </div>
 
         <div className={`mt-4 rounded-lg border p-4 ${topAction ? "border-amber-200 bg-amber-50 text-amber-950" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}>
-          <p className="text-xs font-black uppercase">Next control action</p>
+          <p className="text-xs font-bold uppercase">Next control action</p>
           <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div><strong className="block text-lg">{topAction ? topAction.title : "Retain the reviewed evidence for sign-off"}</strong><p className="mt-1 text-sm">{topAction ? topAction.recommendation || "Assign an owner and document the reviewer conclusion." : "No open control exception remains. Keep the supporting records and decisions available for audit."}</p></div>
             <button className="shrink-0 rounded-lg bg-brand px-4 py-2.5 text-sm font-bold text-white" onClick={() => topAction ? openFindingEvidence(topAction.id) : setActive("Review Pack")}>{topAction ? "Review Exception" : "Open Review Pack"}</button>
@@ -11055,7 +11066,7 @@ function AICopilot({ question, setQuestion, score, findings, findingActivities, 
                   {assistantResult && !loading ? (
                     <div className="mb-3 flex flex-col gap-2 rounded-lg border border-cyan-100 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <p className="text-xs font-black uppercase text-muted">Saved Result</p>
+                        <p className="text-xs font-bold uppercase text-muted">Saved Result</p>
                         <p className="mt-1 text-sm font-semibold">{assistantResult.question}</p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -11074,20 +11085,20 @@ function AICopilot({ question, setQuestion, score, findings, findingActivities, 
                     answerSections ? (
                       <div className="grid gap-3">
                         <div className={`rounded-lg border p-3 ${signOffBlocked ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
-                          <p className={`text-xs font-black uppercase ${signOffBlocked ? "text-amber-800" : "text-emerald-800"}`}>{signOffBlocked ? "Sign-Off Blocked" : "Ready for Sign-Off"}</p>
+                          <p className={`text-xs font-bold uppercase ${signOffBlocked ? "text-amber-800" : "text-emerald-800"}`}>{signOffBlocked ? "Sign-Off Blocked" : "Ready for Sign-Off"}</p>
                           <p className="mt-1 text-sm font-semibold">
                             {criticalOpenCount} critical · {highOpenCount} high · {openCount} open finding{openCount !== 1 ? "s" : ""} · {validationBlockerCount} validation blocker{validationBlockerCount !== 1 ? "s" : ""}
                           </p>
                           {managerApprovalRequired ? <p className="mt-1 text-xs text-muted">Manager approval is still required for one or more reviewed findings.</p> : null}
                         </div>
                         <div className="rounded-lg bg-white p-3">
-                          <p className="text-xs font-black uppercase text-muted">Executive Summary</p>
+                          <p className="text-xs font-bold uppercase text-muted">Executive Summary</p>
                           <p className="mt-1 font-semibold">{answerSections.executiveSummary}</p>
                         </div>
                         <div className="rounded-lg bg-white p-3">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div>
-                              <p className="text-xs font-black uppercase text-muted">Review Progress</p>
+                              <p className="text-xs font-bold uppercase text-muted">Review Progress</p>
                               <p className="mt-1 text-sm font-semibold">Total {findings.length} · Resolved {resolvedCount} · Accepted Risk {acceptedRiskCount} · Open {openCount}</p>
                             </div>
                             <strong className="text-lg">{completionPct}% Complete</strong>
@@ -11117,7 +11128,7 @@ function AICopilot({ question, setQuestion, score, findings, findingActivities, 
                         </div>
                         <div className="grid gap-3 md:grid-cols-2">
                           <div className="rounded-lg bg-white p-3">
-                            <p className="text-xs font-black uppercase text-muted">Audit Readiness Breakdown</p>
+                            <p className="text-xs font-bold uppercase text-muted">Audit Readiness Breakdown</p>
                             <div className="mt-2 grid gap-2">
                               {readinessDrivers.slice(0, 5).map((driver) => (
                                 <div key={driver.label}>
@@ -11133,7 +11144,7 @@ function AICopilot({ question, setQuestion, score, findings, findingActivities, 
                             </div>
                           </div>
                           <div className="rounded-lg bg-white p-3">
-                            <p className="text-xs font-black uppercase text-muted">Activity Trail</p>
+                            <p className="text-xs font-bold uppercase text-muted">Activity Trail</p>
                             {linkedActivities.length ? (
                               <div className="mt-2 grid gap-2">
                                 {linkedActivities.map((activity) => (
@@ -11159,7 +11170,7 @@ function AICopilot({ question, setQuestion, score, findings, findingActivities, 
                         </div>
                         {followUps.length ? (
                           <div className="pt-1">
-                            <p className="text-xs font-black uppercase text-muted">Suggested Follow-Up</p>
+                            <p className="text-xs font-bold uppercase text-muted">Suggested Follow-Up</p>
                             <div className="mt-2 flex flex-wrap gap-2">
                               {followUps.map((item) => (
                                 <button key={item} className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-bold" onClick={() => ask(item)}>{item}</button>
@@ -11208,7 +11219,7 @@ function AICopilot({ question, setQuestion, score, findings, findingActivities, 
 function AssistantAnswerItem({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
     <div className="rounded-lg bg-white p-3">
-      <p className="text-xs font-black uppercase text-muted">{label}</p>
+      <p className="text-xs font-bold uppercase text-muted">{label}</p>
       <p className="mt-1 text-sm font-semibold">{value}</p>
       {detail ? <p className="mt-1 text-xs text-muted">{detail}</p> : null}
     </div>
@@ -11438,7 +11449,7 @@ function ExportModal({
           {reportType === "audit" && (
             <section className="mb-6 grid gap-4">
               <div className="print-page rounded-lg border border-slate-900 bg-white p-6 print-cover print:rounded-none print:border-0">
-                <p className="text-xs font-black uppercase tracking-wide text-muted">ClosePilot Assurance</p>
+                <p className="text-xs font-bold uppercase tracking-wide text-muted">ClosePilot Assurance</p>
                 <h1 className="mt-2 text-3xl font-black">Partner Review Report</h1>
                 <p className="mt-2 text-sm text-muted">{company.name} · {tenant.name} · Prepared {today}</p>
                 <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -11497,7 +11508,7 @@ function ExportModal({
                       <div key={`${item.area}-${index}`} className="rounded-lg bg-slate-50 p-3">
                         <div className="flex items-start justify-between gap-3">
                           <strong className="text-sm">{item.action}</strong>
-                          <span className="text-xs font-black uppercase text-muted">{item.priority}</span>
+                          <span className="text-xs font-bold uppercase text-muted">{item.priority}</span>
                         </div>
                         <p className="mt-1 text-xs text-muted">{item.reason}</p>
                       </div>
@@ -11513,7 +11524,7 @@ function ExportModal({
                       <div key={section.area} className="rounded-lg bg-slate-50 p-3">
                         <div className="flex items-start justify-between gap-3">
                           <strong className="text-sm">{section.area}</strong>
-                          <span className="text-xs font-black text-muted">{section.status}</span>
+                          <span className="text-xs font-bold text-muted">{section.status}</span>
                         </div>
                         <p className="mt-1 text-xs text-muted">{section.summary}</p>
                       </div>
@@ -11536,7 +11547,7 @@ function ExportModal({
                             </p>
                           ) : null}
                         </div>
-                        <span className="text-xs font-black text-muted">{workpaper.findings.length} finding{workpaper.findings.length !== 1 ? "s" : ""}</span>
+                        <span className="text-xs font-bold text-muted">{workpaper.findings.length} finding{workpaper.findings.length !== 1 ? "s" : ""}</span>
                       </div>
                     </div>
                   ))}
@@ -11658,7 +11669,7 @@ function ExportModal({
               <div className="grid gap-2">
                 {reviewQuestions.map((question, index) => (
                   <div key={`${question}-${index}`} className="flex items-start gap-3 rounded-lg bg-slate-50 p-3">
-                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand text-xs font-black text-white">{index + 1}</span>
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand text-xs font-bold text-white">{index + 1}</span>
                     <p className="text-sm font-semibold">{question}</p>
                   </div>
                 ))}
@@ -11787,7 +11798,7 @@ function ExportModal({
                   <div key={label} className="rounded-lg border border-line p-3">
                     <div className="mb-2 flex items-center justify-between">
                       <strong className="text-sm">{label}</strong>
-                      <span className="text-sm font-black">{items.length}</span>
+                      <span className="text-sm font-bold">{items.length}</span>
                     </div>
                     {items.slice(0, 4).map((item) => (
                       <p key={item.id} className="border-t border-line py-2 text-xs font-semibold">{item.title}</p>
@@ -11805,12 +11816,12 @@ function ExportModal({
             <div className="grid gap-2">
               {recommendations.map((r, i) => (
                 <div key={r.id} className="flex items-start gap-3 rounded-lg border border-line p-3">
-                  <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand text-xs font-black text-white">{i + 1}</span>
+                  <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand text-xs font-bold text-white">{i + 1}</span>
                   <div>
                     <strong className="text-sm">{r.action}</strong>
                     <p className="text-xs text-muted">{r.expectedImpact}</p>
                   </div>
-                  <span className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs font-black ${r.completed ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{r.completed ? "Done" : "Pending"}</span>
+                  <span className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${r.completed ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{r.completed ? "Done" : "Pending"}</span>
                 </div>
               ))}
             </div>
@@ -12195,28 +12206,28 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
                         )}
                       </div>
                       <div className="flex gap-2">
-                        {integration.provider === "xero" && !organisation.selected && <button className="rounded-lg border border-line px-3 py-2 text-xs font-black" disabled={integrationBusy} onClick={() => selectXeroOrganisation(organisation.id)}>Select</button>}
+                        {integration.provider === "xero" && !organisation.selected && <button className="rounded-lg border border-line px-3 py-2 text-xs font-bold" disabled={integrationBusy} onClick={() => selectXeroOrganisation(organisation.id)}>Select</button>}
                         {organisation.selected && <>
                           {organisation.stage === "reauth_required" && integration.connectUrl
-                            ? <a className="rounded-lg bg-red-600 px-3 py-2 text-xs font-black text-white" href={integration.connectUrl}>Reconnect</a>
-                            : <button className="rounded-lg bg-brand px-3 py-2 text-xs font-black text-white" disabled={integrationBusy} onClick={() => syncProvider(integration.provider)}>{organisation.stage === "needs_attention" ? "Retry sync" : "Sync now"}</button>}
-                          <button className="rounded-lg border border-red-200 px-3 py-2 text-xs font-black text-red-700" disabled={integrationBusy} onClick={() => disconnectProvider(integration.provider, organisation.id)}>Disconnect</button>
+                            ? <a className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white" href={integration.connectUrl}>Reconnect</a>
+                            : <button className="rounded-lg bg-brand px-3 py-2 text-xs font-bold text-white" disabled={integrationBusy} onClick={() => syncProvider(integration.provider)}>{organisation.stage === "needs_attention" ? "Retry sync" : "Sync now"}</button>}
+                          <button className="rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700" disabled={integrationBusy} onClick={() => disconnectProvider(integration.provider, organisation.id)}>Disconnect</button>
                         </>}
                       </div>
                     </div>
                   ))}
                 </div>
               ) : integration.connectUrl ? (
-                <a className="mt-3 inline-block rounded-lg bg-brand px-3 py-2 text-sm font-black text-white" href={integration.connectUrl}>Connect {integration.label}</a>
+                <a className="mt-3 inline-block rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white" href={integration.connectUrl}>Connect {integration.label}</a>
               ) : integration.configured && !canConnectLiveIntegration ? (
                 <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
                   <p><strong>Create your workspace to connect {integration.label}.</strong> This is the read-only sample workspace, so it can&apos;t hold a live accounting connection. Start your own workspace and its data will sync here.</p>
                   {!presentationMode
-                    ? <button className="mt-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white" onClick={() => setActive("Onboarding")}>Create a workspace</button>
-                    : <a className="mt-2 inline-block rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white" href="/login">Sign in to get started</a>}
+                    ? <button className="mt-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white" onClick={() => setActive("Onboarding")}>Create a workspace</button>
+                    : <a className="mt-2 inline-block rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white" href="/login">Sign in to get started</a>}
                 </div>
               ) : (
-                <button className="mt-3 rounded-lg border border-line bg-white px-3 py-2 text-sm font-black disabled:cursor-not-allowed disabled:text-muted" disabled>{integration.configured ? "Connector unavailable" : "Awaiting credentials"}</button>
+                <button className="mt-3 rounded-lg border border-line bg-white px-3 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:text-muted" disabled>{integration.configured ? "Connector unavailable" : "Awaiting credentials"}</button>
               )}
             </div>
           ))}
@@ -12225,7 +12236,7 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
           {integrationMessage && <p className="rounded-lg border border-line bg-white p-3 text-sm font-semibold">{integrationMessage}</p>}
           {integrationActivity.length > 0 && (
             <div className="rounded-lg border border-line bg-slate-50 p-3">
-              <p className="text-xs font-black uppercase tracking-wide text-muted">Recent activity</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Recent activity</p>
               <ul className="mt-2 grid gap-1">
                 {integrationActivity.map((event, index) => (
                   <li key={`${event.action}-${event.at}-${index}`} className="flex items-center justify-between gap-3 text-xs">
@@ -12239,9 +12250,9 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
           )}
           {canConnectLiveIntegration && integrations.some((integration) => (integration.organisations?.length ?? 0) > 0) && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-              <p className="text-xs font-black uppercase tracking-wide text-red-700">Erase synced data</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-red-700">Erase synced data</p>
               <p className="mt-1 text-xs text-red-950">Permanently delete all accounting data synced for <span className="font-semibold">{company.name}</span> — imported trial balances, VAT evidence and the reviews built from them — and remove its connections. This <span className="font-semibold">cannot be undone</span>. Uploaded files and manual work are not affected. To simply stop syncing while keeping the evidence, use <span className="font-semibold">Disconnect</span> above.</p>
-              <button className="mt-2 rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-black text-red-700 disabled:opacity-50" disabled={integrationBusy} onClick={eraseIntegrationData}>Erase synced data…</button>
+              <button className="mt-2 rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-bold text-red-700 disabled:opacity-50" disabled={integrationBusy} onClick={eraseIntegrationData}>Erase synced data…</button>
             </div>
           )}
         </div>
@@ -12284,7 +12295,7 @@ function InventoryPanel({ review, uploads, companyName, setActive, scheduleCaden
             <p className="text-xs font-bold uppercase text-muted">Stock &amp; WIP review</p>
             <h2 className="mt-2 text-2xl font-black">Upload a stock or WIP report.</h2>
             <p className="mt-2 text-sm text-muted">ClosePilot values inventory, ages it, flags slow-moving, obsolete and negative stock, checks net realisable value (FRS 102 §13), computes stock days from your P&amp;L and reconciles the total to the ledger stock/WIP balance.</p>
-            <button className="mt-4 rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => setActive("Upload Finance Pack")}>Upload stock report</button>
+            <button className="mt-4 rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => setActive("Upload Finance Pack")}>Upload stock report</button>
           </div>
           <div className="grid content-start gap-3">
             <div className="rounded-lg border border-line bg-white p-4">
@@ -12329,7 +12340,7 @@ function InventoryPanel({ review, uploads, companyName, setActive, scheduleCaden
                 <option value="monthly">Monthly</option>
               </select>
             </label>
-            <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => window.print()}>Print / Save PDF</button>
+            <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => window.print()}>Print / Save PDF</button>
           </div>
         </div>
         {scheduleCadence && (
@@ -12421,7 +12432,7 @@ function ScheduledReportsPanel({ reports, setActive }: { reports: ScheduledRepor
       <div className="grid gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button className="text-sm font-bold text-brand" onClick={() => setSelectedId(null)}>← All scheduled reports</button>
-          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => window.print()}>Print / Save PDF</button>
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => window.print()}>Print / Save PDF</button>
         </div>
         <Panel title={`Finance insights digest — ${selected.companyName}`}>
           <p className="text-sm text-muted">{selected.cadence.charAt(0).toUpperCase() + selected.cadence.slice(1)} digest · generated {new Date(selected.generatedAt).toLocaleString("en-GB")} · as at {selected.asOfDate}</p>
@@ -12458,7 +12469,7 @@ function ScheduledReportsPanel({ reports, setActive }: { reports: ScheduledRepor
       <div className="grid gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button className="text-sm font-bold text-brand" onClick={() => setSelectedId(null)}>← All scheduled reports</button>
-          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => window.print()}>Print / Save PDF</button>
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => window.print()}>Print / Save PDF</button>
         </div>
         <Panel title={`Inventory report — ${selected.companyName}`}>
           <p className="text-sm text-muted">{selected.cadence.charAt(0).toUpperCase() + selected.cadence.slice(1)} management report · generated {new Date(selected.generatedAt).toLocaleString("en-GB")} · stock as at {selected.asOfDate}</p>
@@ -12501,7 +12512,7 @@ function ScheduledReportsPanel({ reports, setActive }: { reports: ScheduledRepor
       {reports.length === 0 ? (
         <div className="mt-4 grid gap-3">
           <EmptyState title="No scheduled reports yet" detail="Turn on a weekly or monthly schedule on the Inventory & WIP page. A frozen report is filed here each period when the stock data changes." />
-          <button className="justify-self-start rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={() => setActive("Inventory & WIP")}>Go to Inventory & WIP</button>
+          <button className="justify-self-start rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={() => setActive("Inventory & WIP")}>Go to Inventory & WIP</button>
         </div>
       ) : (
         <div className="mt-4 grid gap-2">
@@ -12559,7 +12570,7 @@ function PilotMetricsPanel({ snapshots, tenantName, setActive }: { snapshots: An
       <Panel title="Practice Metrics">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted">Live pilot metrics for {tenantName}, aggregated from every review in this workspace.</p>
-          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-black text-white" onClick={copyDeck}>{copied ? "Copied ✓" : "Copy for deck"}</button>
+          <button className="rounded-lg bg-brand px-4 py-2 text-sm font-bold text-white" onClick={copyDeck}>{copied ? "Copied ✓" : "Copy for deck"}</button>
         </div>
         {metrics.reviewsCompleted === 0 ? (
           <div className="mt-4"><EmptyState title="No completed reviews yet" detail="Run a review (upload a finance pack or sync a connected ledger) and the pilot metrics will populate here." /></div>
