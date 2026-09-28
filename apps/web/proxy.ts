@@ -19,6 +19,9 @@ export async function proxy(request: NextRequest) {
     // The recipient has no session until verifyOtp runs inside this route, so
     // gating it would bounce every emailed link to /login before it could work.
     "/auth/confirm",
+    // Reads the token from the URL fragment, so the visitor has no session
+    // when they arrive and gating it would bounce every such link to /login.
+    "/auth/confirm/recover",
     "/update-password"
   ]);
 

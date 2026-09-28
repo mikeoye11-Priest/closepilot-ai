@@ -59,6 +59,19 @@ export async function GET(request: NextRequest) {
   // would break recovery entirely. Same-device only, as PKCE always is — the
   // token-hash branch above is what makes it work across devices.
   const code = searchParams.get("code");
+  if (!code) {
+    // Nothing in the query at all. The stock {{ .ConfirmationURL }} template
+    // returns an implicit-flow session in the URL *fragment*
+    // (#access_token=...), and fragments are never sent to the server — so
+    // this route genuinely receives a bare path and cannot tell a verified
+    // link from an empty one.
+    //
+    // Hand it to a client page that can read the fragment, rather than
+    // bouncing. That also fixes the original symptom of this whole saga: the
+    // fragment was being picked up elsewhere and silently signing the user in
+    // without ever asking for a new password.
+    return NextResponse.redirect(new URL(`/auth/confirm/recover?next=${encodeURIComponent(next)}`, origin));
+  }
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) return bounce("link_expired", error.message);
