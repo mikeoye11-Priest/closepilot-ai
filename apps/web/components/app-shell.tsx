@@ -153,6 +153,23 @@ type WorkspaceState = {
   scheduledReports?: ScheduledReport[];
 };
 
+/**
+ * Stored workspace state arrives from localStorage or /api/workspace, and both
+ * were cast straight to WorkspaceState. A cast proves nothing at runtime: state
+ * written by a different build can be missing `companies` entirely, and
+ * restoreWorkspace dereferences it immediately — a white screen the user can
+ * only escape by clearing site data. Check the shape and fall back instead.
+ */
+function isWorkspaceState(value: unknown): value is WorkspaceState {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<WorkspaceState>;
+  return typeof candidate.currentCompanyId === "string"
+    && Array.isArray(candidate.companies)
+    && Array.isArray(candidate.portfolioClients)
+    && typeof candidate.tenant === "object" && candidate.tenant !== null
+    && typeof candidate.companySnapshots === "object" && candidate.companySnapshots !== null;
+}
+
 type UploadJobState = {
   id: string;
   status: string;
@@ -1978,7 +1995,11 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   useEffect(() => {
     if (presentationMode) return;
     const readLocalBackup = (): WorkspaceState | null => {
-      try { const local = window.localStorage.getItem(storageKey); return local ? JSON.parse(local) as WorkspaceState : null; }
+      try {
+        const local = window.localStorage.getItem(storageKey);
+        const parsed: unknown = local ? JSON.parse(local) : null;
+        return isWorkspaceState(parsed) ? parsed : null;
+      }
       catch { return null; }
     };
     // One company's review, fetched on its own. Pilot-demo companies have no
@@ -2026,7 +2047,14 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       let serverWorkspace: WorkspaceState | null = null;
       try {
         const res = await fetch("/api/workspace");
-        if (res.ok) serverWorkspace = ((await res.json()).workspace ?? null) as WorkspaceState | null;
+        if (res.ok) {
+          const raw: unknown = (await res.json()).workspace ?? null;
+          // A malformed payload is not an authoritative empty. Treating it as
+          // one would clear the local backup below and lose a real workspace.
+          if (raw === null) serverWorkspace = null;
+          else if (isWorkspaceState(raw)) serverWorkspace = raw;
+          else serverReachable = false;
+        }
         else serverReachable = false; // 401/500 etc. — not an authoritative answer
       } catch {
         serverReachable = false; // network failure
