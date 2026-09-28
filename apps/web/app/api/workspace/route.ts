@@ -132,10 +132,23 @@ async function buildSharedShell(
 
   if (accessError || !access?.length) return null;
 
-  // A user could in principle hold access across tenants; the first is used as
-  // their workspace. Switching between firms is a separate feature.
-  const tenantId = stringValue(access[0].tenant_id);
-  if (!UUID_RE.test(tenantId)) return null;
+  // Membership is many-to-many, so holding grants in several firms is normal,
+  // not a corner case — this account already holds six. Taking access[0] from
+  // an unordered query meant whichever row Postgres happened to return first,
+  // so the same person could land in a different firm on consecutive loads.
+  //
+  // Pick the firm they have the most access to, breaking ties on tenant id so
+  // the choice is at least stable. This is a default, not a answer: switching
+  // firms needs a picker, which is a separate piece of work.
+  const byTenant = new Map<string, number>();
+  for (const row of access) {
+    const id = stringValue(row.tenant_id);
+    if (UUID_RE.test(id)) byTenant.set(id, (byTenant.get(id) ?? 0) + 1);
+  }
+  if (!byTenant.size) return null;
+
+  const tenantId = [...byTenant.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
 
   const companyIds = access
     .filter((row) => stringValue(row.tenant_id) === tenantId)
