@@ -101,6 +101,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: grantError.message }, { status: 500 });
     }
 
+    // A public.users row is what the People page joins against for names, and
+    // what both access checks read `status` from. Granting scope access alone
+    // left neither: the member rendered as a bare UUID, and a previously
+    // removed person stayed inactive, holding a grant that granted nothing.
+    //
+    // Upsert on id rather than update, because a directly granted user may
+    // never have had a row - only invitation acceptance created one.
+    const { error: profileError } = await admin
+      .from("users")
+      .upsert(
+        { id: existingUserId, email: normalisedEmail, role, status: "active" },
+        { onConflict: "id" }
+      );
+
+    if (profileError) reportError(profileError, { step: "upsert_member_profile", tenantId });
+
     return NextResponse.json({ added: true, existingAccount: true });
   }
 
