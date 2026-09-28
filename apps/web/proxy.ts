@@ -7,7 +7,20 @@ const AUTH_DISABLED = process.env.CLOSEPILOT_AUTH_DISABLED === "1" && process.en
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const publicPaths = new Set(["/login", "/demo", "/compatibility"]);
+  // /update-password is public so an expired or reused reset link reaches the
+  // page's own "link expired" screen instead of being bounced to /login with no
+  // explanation. The page still requires a session before it will change anything.
+  const publicPaths = new Set([
+    "/login",
+    "/demo",
+    "/compatibility",
+    "/forgot-password",
+    "/auth/callback",
+    // The recipient has no session until verifyOtp runs inside this route, so
+    // gating it would bounce every emailed link to /login before it could work.
+    "/auth/confirm",
+    "/update-password"
+  ]);
 
   if (AUTH_DISABLED) {
     return NextResponse.next();

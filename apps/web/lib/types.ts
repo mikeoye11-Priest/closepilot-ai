@@ -30,6 +30,50 @@ export type Tenant = {
   plan: string;
 };
 
+/**
+ * A person's role within one firm. Renamed from "reviewer" to "preparer" in
+ * migration 0006 to match what the review workflow and the pilot pack both
+ * call that person. Capabilities live in lib/permissions.ts.
+ */
+export type FirmRole = "practice_admin" | "manager" | "preparer" | "client_user";
+
+/** One grant: a whole tenant when orgUnitId is null, otherwise one unit. */
+export type ScopeGrant = {
+  id: string;
+  userId: string;
+  tenantId: string;
+  orgUnitId: string | null;
+  role: FirmRole;
+};
+
+export type InvitationStatus = "pending" | "accepted" | "revoked";
+
+export type FirmInvitation = {
+  id: string;
+  tenantId: string;
+  email: string;
+  role: FirmRole;
+  orgUnitId: string | null;
+  status: InvitationStatus;
+  expiresAt: string;
+  createdAt: string;
+};
+
+export type OrgUnitKind = "branch" | "division";
+
+/**
+ * The optional grouping layer between a tenant and its companies: a branch or
+ * office for an accounting practice, a division or region for a multi-entity
+ * group. A single company has none, which is why companies carry a nullable
+ * orgUnitId rather than this being required.
+ */
+export type OrgUnit = {
+  id: string;
+  tenantId: string;
+  name: string;
+  kind: OrgUnitKind;
+};
+
 export type Company = {
   id: string;
   tenantId: string;
@@ -38,6 +82,8 @@ export type Company = {
   accountingSystem: string;
   currency: string;
   country: string;
+  /** Null or absent means the company sits directly under the tenant. */
+  orgUnitId?: string | null;
 };
 
 export type Upload = {
@@ -363,7 +409,7 @@ export type UserCompanyAccess = {
   userId: string;
   tenantId: string;
   companyId: string;
-  role: "practice_admin" | "manager" | "reviewer" | "client_user";
+  role: FirmRole;
 };
 
 export type AnalysisResult = {
