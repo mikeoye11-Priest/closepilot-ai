@@ -101,17 +101,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: grantError.message }, { status: 500 });
     }
 
-    // Someone removed from a firm is marked inactive, and both access checks
-    // require an active user - so re-adding them without this would hand them
-    // a grant that grants nothing, and they would be locked out while the
-    // People page listed them as a member.
-    const { error: reactivateError } = await admin
+    // A public.users row is what the People page joins against for names, and
+    // what both access checks read `status` from. Granting scope access alone
+    // left neither: the member rendered as a bare UUID, and a previously
+    // removed person stayed inactive, holding a grant that granted nothing.
+    //
+    // Upsert on id rather than update, because a directly granted user may
+    // never have had a row - only invitation acceptance created one.
+    const { error: profileError } = await admin
       .from("users")
-      .update({ status: "active" })
-      .eq("id", existingUserId)
-      .neq("status", "active");
+      .upsert(
+        { id: existingUserId, email: normalisedEmail, role, status: "active" },
+        { onConflict: "id" }
+      );
 
-    if (reactivateError) reportError(reactivateError, { step: "reactivate_member", tenantId });
+    if (profileError) reportError(profileError, { step: "upsert_member_profile", tenantId });
 
     return NextResponse.json({ added: true, existingAccount: true });
   }
