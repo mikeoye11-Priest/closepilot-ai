@@ -39,10 +39,40 @@ export async function GET() {
     await supabase
       .from("user_workspaces")
       .upsert({ user_id: user.id, data: migrated, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
-    return NextResponse.json({ workspace: migrated });
   }
 
-  return NextResponse.json({ workspace: stored });
+  const shell = (migrated ?? stored) as Record<string, unknown>;
+  return NextResponse.json({ workspace: { ...shell, orgUnits: await readOrgUnits(supabase, shell) } });
+}
+
+/**
+ * The tenant's org units, read from the shared table rather than the per-user
+ * blob so every member of a firm sees the same structure.
+ *
+ * Returns [] rather than failing when the table is not there yet: 0004 may not
+ * have been applied, and a practice with no branches is the normal case for a
+ * single entity. Neither should stop the workspace loading.
+ */
+async function readOrgUnits(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  shell: Record<string, unknown>
+): Promise<Array<{ id: string; tenantId: string; name: string; kind: string }>> {
+  const tenantId = stringValue((shell.tenant as { id?: unknown } | undefined)?.id);
+  if (!UUID_RE.test(tenantId)) return [];
+
+  const { data, error } = await supabase
+    .from("org_units")
+    .select("id, tenant_id, name, kind")
+    .eq("tenant_id", tenantId)
+    .order("name");
+
+  if (error || !data) return [];
+  return data.map((row) => ({
+    id: String(row.id),
+    tenantId: String(row.tenant_id),
+    name: String(row.name),
+    kind: String(row.kind)
+  }));
 }
 
 /**

@@ -35,7 +35,8 @@ import { buildPilotMetrics, PILOT_HOURLY_RATE, type PilotMetrics } from "@/lib/p
 import type { InventoryReviewResult } from "@/lib/inventory-engine";
 import { shouldGenerateSnapshot, inventoryFingerprint, financeInsightsFingerprint, latestSnapshotFor, type ReportSchedule, type ScheduledReport, type ReportCadence, type ReportKind } from "@/lib/scheduled-reports";
 import { analyseFinanceFiles, scopeAnalysisResult } from "@/lib/upload-analysis";
-import type { AnalysisResult, CashForecastPoint, ClientCompany, CollectionCase, CollectionStatus, Company, Evidence, EvidenceStatus, FinanceScoreBreakdown, Finding, FindingActivity, FindingComment, FindingEvidenceRow, FindingStatus, ImportMappingProfile, ManagerReviewStatus, PartnerSignOff, PartnerSignOffGateSnapshot, PartnerSignOffStatus, Recommendation, ReviewPackStatus, RiskLevel, Tenant, TenantType, Upload, ValidationCheck, ValidationStatus } from "@/lib/types";
+import type { AnalysisResult, CashForecastPoint, ClientCompany, CollectionCase, CollectionStatus, Company, Evidence, EvidenceStatus, FinanceScoreBreakdown, Finding, FindingActivity, FindingComment, FindingEvidenceRow, FindingStatus, ImportMappingProfile, ManagerReviewStatus, OrgUnit, PartnerSignOff, PartnerSignOffGateSnapshot, PartnerSignOffStatus, Recommendation, ReviewPackStatus, RiskLevel, Tenant, TenantType, Upload, ValidationCheck, ValidationStatus } from "@/lib/types";
+import { CompanyPicker } from "./company-picker";
 import type { VatReviewResult } from "@/lib/vat-engine/types";
 import { VAT_ENGINE_VERSION } from "@/lib/vat-engine";
 import { approveVatFiling, reopenVatFiling } from "@/lib/vat-engine/sign-off";
@@ -143,6 +144,8 @@ type WorkspaceState = {
    * row per company and are fetched on demand.
    */
   companySnapshots?: Record<string, AnalysisResult>;
+  /** The tenant's branches or divisions; read from the shared table. */
+  orgUnits?: OrgUnit[];
   reportSchedules?: ReportSchedule[];
   scheduledReports?: ScheduledReport[];
 };
@@ -1821,6 +1824,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const [localBackupStale, setLocalBackupStale] = useState(false);
   // Company whose snapshot is being fetched during a switch, for the picker.
   const [switchingCompanyId, setSwitchingCompanyId] = useState<string | null>(null);
+  const [orgUnits, setOrgUnits] = useState<OrgUnit[]>([]);
   // Companies whose snapshot we have already tried to fetch for a digest, so
   // a company with no review is not refetched on every render.
   const scheduledSnapshotAttempts = useRef<Set<string>>(new Set());
@@ -1977,6 +1981,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setTenant(parsed.tenant);
       setCompanies(parsed.companies);
       setPortfolioClients(parsed.portfolioClients);
+      setOrgUnits(parsed.orgUnits ?? []);
       setCompanySnapshots(companySnapshots);
       setReportSchedules(parsed.reportSchedules ?? []);
       setScheduledReports(parsed.scheduledReports ?? []);
@@ -3289,9 +3294,14 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
             <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
               {!presentationMode && (
                 <>
-                  <select className="h-10 min-w-0 rounded-lg border border-line bg-white px-3 text-sm font-bold shadow-sm" value={currentCompany.id} onChange={(event) => switchCompany(event.target.value)}>
-                    {companies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </select>
+                  <CompanyPicker
+                    companies={companies}
+                    orgUnits={orgUnits}
+                    tenantType={tenant.type}
+                    currentCompany={currentCompany}
+                    busyCompanyId={switchingCompanyId}
+                    onSelect={switchCompany}
+                  />
                   {!isPilotDemo && tenant.type === "accounting_practice" && tenant.name !== "Your Firm" && (
                     <button className="h-10 rounded-lg border border-brand bg-brand/5 px-4 text-sm font-bold text-brand shadow-sm transition-colors hover:bg-brand/10" onClick={() => { setOnboardIntent("add-client"); setActive("Onboarding"); }}>+ Add client</button>
                   )}
