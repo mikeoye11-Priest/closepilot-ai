@@ -27,7 +27,70 @@ export async function GET() {
   // disappearing-workspace bug. maybeSingle() returns null data without error
   // when there is no row, so only a real error reaches the 500 branch.
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ workspace: data?.data ?? null });
+
+  const stored = data?.data ?? null;
+  if (!stored) return NextResponse.json({ workspace: null });
+
+  // Existing rows still carry every company's snapshot inline. Move them to
+  // company_snapshots on first read and slim the row, so nobody has to be
+  // migrated by hand and no snapshot is lost in the changeover.
+  const migrated = await drainInlineSnapshots(supabase, stored);
+  if (migrated) {
+    await supabase
+      .from("user_workspaces")
+      .upsert({ user_id: user.id, data: migrated, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+    return NextResponse.json({ workspace: migrated });
+  }
+
+  return NextResponse.json({ workspace: stored });
+}
+
+/**
+ * Lifts any inline companySnapshots into company_snapshots and returns the
+ * slimmed workspace, or null when there was nothing to move.
+ *
+ * Snapshots are written before the blob is slimmed, and a failed write aborts
+ * the whole drain: losing a client's review to make a payload smaller would be
+ * a far worse bug than the one this is fixing.
+ */
+async function drainInlineSnapshots(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  stored: unknown
+): Promise<Record<string, unknown> | null> {
+  if (!stored || typeof stored !== "object") return null;
+
+  const workspace = stored as Record<string, unknown>;
+  const snapshots = workspace.companySnapshots;
+  if (!snapshots || typeof snapshots !== "object") return null;
+
+  const entries = Object.entries(snapshots as Record<string, unknown>)
+    .filter(([companyId, snapshot]) => UUID_RE.test(companyId) && snapshot && typeof snapshot === "object");
+  if (!entries.length) {
+    // Nothing worth keeping (an empty map, or pilot-demo placeholders that are
+    // not real companies). Drop the key so it stops travelling.
+    if (!Object.keys(snapshots as Record<string, unknown>).length) return null;
+    const { companySnapshots: _dropped, ...rest } = workspace;
+    return rest;
+  }
+
+  const tenantId = stringValue((workspace.tenant as { id?: unknown } | undefined)?.id);
+  if (!UUID_RE.test(tenantId)) return null;
+
+  const rows = entries.map(([companyId, snapshot]) => ({
+    tenant_id: tenantId,
+    company_id: companyId,
+    data: snapshot,
+    updated_at: new Date().toISOString()
+  }));
+
+  const { error } = await supabase.from("company_snapshots").upsert(rows, { onConflict: "company_id" });
+  if (error) {
+    reportError(error, { step: "drain_inline_snapshots", route: "workspace", tenantId });
+    return null; // keep the blob intact; try again on the next read
+  }
+
+  const { companySnapshots: _moved, ...rest } = workspace;
+  return rest;
 }
 
 export async function POST(request: Request) {
@@ -42,9 +105,15 @@ export async function POST(request: Request) {
   const body = await request.json();
   await bootstrapWorkspaceScope(supabase, body);
 
+  // A client still sending snapshots inline - an old tab left open across the
+  // deploy - must not put them back into the row. Move them across first and
+  // store only the shell. Falls back to the body untouched if the move fails,
+  // so a snapshot is never dropped on the floor.
+  const slimmed = await drainInlineSnapshots(supabase, body);
+
   const { error } = await supabase
     .from("user_workspaces")
-    .upsert({ user_id: user.id, data: body, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+    .upsert({ user_id: user.id, data: slimmed ?? body, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ success: true });
