@@ -128,7 +128,11 @@ export default function PeoplePage() {
 
   return (
     <main className="mx-auto max-w-4xl p-6">
-      <h1 className="text-2xl font-bold">People</h1>
+      {/* This is a route of its own rather than a page inside the shell, so it
+          has none of the shell's navigation. Without this the only way back to
+          the workspace is the browser's Back button. */}
+      <a className="text-sm font-bold text-brand" href="/">← Back to workspace</a>
+      <h1 className="mt-3 text-2xl font-bold">People</h1>
       <p className="mt-1 text-sm text-muted">{tenant?.name ?? "Your firm"} — who has access, and what they can do.</p>
 
       {error && <p className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p>}

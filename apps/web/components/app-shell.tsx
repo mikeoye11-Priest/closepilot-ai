@@ -52,7 +52,7 @@ const navGroups = [
   { label: "Review", items: ["Findings", "Finance Review", "VAT Assurance", "Controls & Fraud", "Audit Readiness", "Review Pack"] },
   { label: "Accounts", items: ["Accounts", "Inventory & WIP"] },
   { label: "Analysis", items: ["Cash Intelligence", "Collections Intelligence", "Change Intelligence", "Close Review", "Ask ClosePilot"] },
-  { label: "Workspace", items: ["Upload Finance Pack", "Practice Portal", "Practice Metrics", "Scheduled Reports"] },
+  { label: "Workspace", items: ["Upload Finance Pack", "Practice Portal", "People", "Practice Metrics", "Scheduled Reports"] },
   { label: "Help & admin", items: ["Compatibility", "User Guide", "Assurance Engine", "Settings"], advanced: true },
 ] as const;
 
@@ -76,6 +76,7 @@ const PAGE_LABELS: Record<string, string> = {
   "Close Review": "Month-end close",
   "Upload Finance Pack": "Import & upload",
   "Practice Portal": "All clients",
+  "People": "People & access",
   "Practice Metrics": "Practice metrics",
   "Scheduled Reports": "Scheduled reports",
   "Assurance Engine": "Assurance engine",
@@ -86,6 +87,14 @@ const PAGE_LABELS: Record<string, string> = {
 function pageLabel(value: string) {
   return PAGE_LABELS[value] ?? value;
 }
+
+// Nav entries that are their own route rather than a page inside the shell.
+// People manages firm membership and invitations; it lived at a URL with
+// nothing linking to it, so the only way to invite a colleague was to know the
+// path and type it.
+const NAV_HREFS: Record<string, string> = {
+  People: "/practice/people"
+};
 
 const storageKey = "closepilot.workspace.v2";
 // Pilot-demo ids ("company_pilot_brightlane") are not UUIDs and have no row to
@@ -3280,15 +3289,23 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
                   </button>
                 )}
                 <div className={`contents lg:gap-1 ${isOpen ? "lg:grid" : "lg:hidden"}`}>
-                  {group.items.map((item) => (
-                    <button
-                      key={item}
-                      className={`whitespace-nowrap rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors lg:whitespace-normal ${active === item ? "bg-white text-[#0f172a] shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`}
-                      onClick={() => setActive(item)}
-                    >
-                      {pageLabel(item)}
-                    </button>
-                  ))}
+                  {group.items.map((item) => {
+                    const navClass = `whitespace-nowrap rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors lg:whitespace-normal ${active === item ? "bg-white text-[#0f172a] shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`;
+                    const href = NAV_HREFS[item];
+                    // Routed entries are a real navigation, not a shell page,
+                    // so they must be an anchor - setActive would silently do
+                    // nothing. Hidden in the demo, where there is no real firm
+                    // to manage members for.
+                    if (href) {
+                      if (presentationMode || isPilotDemo) return null;
+                      return <a key={item} className={navClass} href={href}>{pageLabel(item)}</a>;
+                    }
+                    return (
+                      <button key={item} className={navClass} onClick={() => setActive(item)}>
+                        {pageLabel(item)}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             );
