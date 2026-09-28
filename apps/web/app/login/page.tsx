@@ -2,8 +2,10 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createBrowserClient } from "@supabase/ssr";
+import { AuthShell } from "../../components/auth-shell";
+import { authErrorMessage } from "@/lib/auth-errors";
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -20,6 +22,15 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState("");
+
+  // /auth/callback sends failed or expired reset links back here with ?error=.
+  // Read from location rather than useSearchParams to avoid a Suspense boundary.
+  // The value is a fixed code resolved to our own copy — never rendered raw, so
+  // a crafted link cannot put its own words on this page.
+  useEffect(() => {
+    const message = authErrorMessage(new URLSearchParams(window.location.search).get("error"));
+    if (message) setError(message);
+  }, []);
 
   const submit = async () => {
     setError("");
@@ -51,59 +62,47 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#101827] p-4">
-      <div className="w-full max-w-md">
-        <div className="mb-8 flex items-center gap-3">
-          <div className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 font-black text-white text-lg">CP</div>
-          <div>
-            <strong className="block text-white text-xl">ClosePilot</strong>
-            <span className="text-sm text-slate-400 font-semibold uppercase tracking-wide">System of Review</span>
-          </div>
-        </div>
-
-        <div className="rounded-2xl bg-white p-8 shadow-2xl">
-          <h1 className="text-2xl font-black mb-1">{mode === "login" ? "Welcome back" : "Create your account"}</h1>
-          <p className="text-muted text-sm mb-6">{mode === "login" ? "Sign in to your practice workspace." : "Set up your ClosePilot practice workspace."}</p>
-
-          {done ? (
-            <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-4 text-emerald-800 text-sm font-semibold">{done}</div>
-          ) : (
-            <div className="grid gap-4">
-              {mode === "signup" && (
-                <label className="grid gap-1.5">
-                  <span className="text-sm font-bold text-muted">Firm or company name</span>
-                  <input className="h-11 rounded-lg border border-line px-3 focus:border-brand focus:outline-none" placeholder="Northbridge Advisory LLP" value={firmName} onChange={(e) => setFirmName(e.target.value)} />
-                </label>
-              )}
-              <label className="grid gap-1.5">
-                <span className="text-sm font-bold text-muted">Email address</span>
-                <input className="h-11 rounded-lg border border-line px-3 focus:border-brand focus:outline-none" type="email" placeholder="you@firm.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-              </label>
-              <label className="grid gap-1.5">
-                <span className="text-sm font-bold text-muted">Password</span>
-                <input className="h-11 rounded-lg border border-line px-3 focus:border-brand focus:outline-none" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} />
-              </label>
-
-              {error && <p className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700 font-semibold">{error}</p>}
-
-              <button className="h-11 rounded-lg bg-brand font-bold text-white disabled:opacity-60" onClick={submit} disabled={loading}>
-                {loading ? "Please wait..." : mode === "login" ? "Sign in" : "Create account"}
-              </button>
-            </div>
+    <AuthShell
+      title={mode === "login" ? "Welcome back" : "Create your account"}
+      subtitle={mode === "login" ? "Sign in to your practice workspace." : "Set up your ClosePilot practice workspace."}
+      footer={
+        <>
+          {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
+          <button className="font-bold text-brand" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); setDone(""); }}>
+            {mode === "login" ? "Sign up" : "Sign in"}
+          </button>
+        </>
+      }
+    >
+      {done ? (
+        <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-4 text-emerald-800 text-sm font-semibold">{done}</div>
+      ) : (
+        <div className="grid gap-4">
+          {mode === "signup" && (
+            <label className="grid gap-1.5">
+              <span className="text-sm font-bold text-muted">Firm or company name</span>
+              <input className="h-11 rounded-lg border border-line px-3 focus:border-brand focus:outline-none" placeholder="Northbridge Advisory LLP" value={firmName} onChange={(e) => setFirmName(e.target.value)} />
+            </label>
           )}
+          <label className="grid gap-1.5">
+            <span className="text-sm font-bold text-muted">Email address</span>
+            <input className="h-11 rounded-lg border border-line px-3 focus:border-brand focus:outline-none" type="email" placeholder="you@firm.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </label>
+          <label className="grid gap-1.5">
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm font-bold text-muted">Password</span>
+              {mode === "login" && <a className="text-sm font-bold text-brand" href="/forgot-password">Forgot password?</a>}
+            </div>
+            <input className="h-11 rounded-lg border border-line px-3 focus:border-brand focus:outline-none" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} />
+          </label>
 
-          <p className="mt-6 text-center text-sm text-muted">
-            {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
-            <button className="font-bold text-brand" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); setDone(""); }}>
-              {mode === "login" ? "Sign up" : "Sign in"}
-            </button>
-          </p>
+          {error && <p className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700 font-semibold">{error}</p>}
+
+          <button className="h-11 rounded-lg bg-brand font-bold text-white disabled:opacity-60" onClick={submit} disabled={loading}>
+            {loading ? "Please wait..." : mode === "login" ? "Sign in" : "Create account"}
+          </button>
         </div>
-
-        <p className="mt-6 text-center text-xs text-slate-400">Standardise review and partner sign-off without replacing your accounts production software.</p>
-        <p className="mt-2 text-center text-xs text-slate-500"><a className="underline hover:text-slate-300" href="/compatibility">View integrations and compatibility</a></p>
-        <p className="mt-2 text-center text-xs text-slate-500"><a className="underline hover:text-slate-300" href="/terms">Terms</a> · <a className="underline hover:text-slate-300" href="/privacy">Privacy</a></p>
-      </div>
-    </div>
+      )}
+    </AuthShell>
   );
 }
