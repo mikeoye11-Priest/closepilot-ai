@@ -48,11 +48,15 @@ export default function UpdatePasswordPage() {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [checking, setChecking] = useState(true);
+  // An invitee has never had a password, so "set a NEW one" is confusing and
+  // "that link has expired" would be the wrong story if their session lapsed.
+  const [invited, setInvited] = useState(false);
   const [hasSession, setHasSession] = useState(false);
 
   // /auth/callback exchanges the emailed code for a session before redirecting
   // here. No session means the link was expired, reused, or opened directly.
   useEffect(() => {
+    setInvited(new URLSearchParams(window.location.search).get("invited") === "1");
     const supabase = getSupabase();
     if (!supabase) {
       setChecking(false);
@@ -108,8 +112,8 @@ export default function UpdatePasswordPage() {
   if (!hasSession) {
     return (
       <AuthShell
-        title="That link has expired"
-        subtitle="Reset links are single-use and last one hour."
+        title={invited ? "Your invitation session has ended" : "That link has expired"}
+        subtitle={invited ? "Sign in or ask for a new invitation to finish setting up." : "Reset links are single-use and last one hour."}
         footer={<><a className="font-bold text-brand" href="/forgot-password">Request a new link</a></>}
       >
         <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700 font-semibold">
@@ -121,8 +125,8 @@ export default function UpdatePasswordPage() {
 
   return (
     <AuthShell
-      title={done ? "Password updated" : "Set a new password"}
-      subtitle={done ? "You're signed in with your new password." : "Choose something you don't use anywhere else."}
+      title={done ? "Password set" : invited ? "Choose a password" : "Set a new password"}
+      subtitle={done ? "You can now sign in with it any time." : invited ? "You'll use this to sign in from now on." : "Choose something you don't use anywhere else."}
       footer={done ? <a className="font-bold text-brand" href="/">Go to your workspace</a> : undefined}
     >
       {done ? (
