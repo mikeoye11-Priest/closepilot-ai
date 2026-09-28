@@ -85,6 +85,9 @@ function pageLabel(value: string) {
 }
 
 const storageKey = "closepilot.workspace.v2";
+// Pilot-demo ids ("company_pilot_brightlane") are not UUIDs and have no row to
+// save against, so snapshot writes are skipped for them rather than 400ing.
+const PERSISTABLE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const lifecycleStatuses = ["open", "under_review", "evidence_requested", "evidence_received", "resolved", "approved", "closed"] as const satisfies readonly LifecycleStatus[];
 const reviewedFindingStatuses: FindingStatus[] = ["under_review", "evidence_requested", "evidence_received", "resolved", "approved", "closed", "false_positive", "accepted_risk", "in_review", "accepted", "rejected", "needs_investigation", "not_applicable"];
 // isOpenFinding, isCriticalOpenFinding and lifecycleStatus now come from the
@@ -134,7 +137,12 @@ type WorkspaceState = {
   companies: Company[];
   currentCompanyId: string;
   portfolioClients: ClientCompany[];
-  companySnapshots: Record<string, AnalysisResult>;
+  /**
+   * Only ever present on a legacy blob or the local cache, which holds just the
+   * open company. The persisted shell no longer carries snapshots: they live a
+   * row per company and are fetched on demand.
+   */
+  companySnapshots?: Record<string, AnalysisResult>;
   reportSchedules?: ReportSchedule[];
   scheduledReports?: ScheduledReport[];
 };
@@ -320,6 +328,28 @@ function isUnusableVatReview(vatReview?: VatReviewResult) {
   if (vatReview.engineVersion === VAT_ENGINE_VERSION) return false;
   const rateFindingFlood = vatReview.findings.filter((finding) => finding.id === "VAT101" || /Invalid VAT rate detected/i.test(finding.finding)).length;
   return (vatReview.scoreBreakdown?.computationAccuracy ?? 100) === 0 && rateFindingFlood >= 20;
+}
+
+/**
+ * Fetches one company's snapshot.
+ *
+ * The result distinguishes "this company genuinely has no review yet" from
+ * "the request failed", because the two must not be treated alike: rendering
+ * a failed fetch as an empty review would let the next autosave persist that
+ * emptiness over a real one. Callers abort on { ok: false }.
+ */
+type SnapshotFetch = { ok: true; snapshot: AnalysisResult | null } | { ok: false };
+
+async function fetchCompanySnapshot(companyId: string): Promise<SnapshotFetch> {
+  // Pilot-demo companies are never persisted, so absent is the right answer.
+  if (!PERSISTABLE_ID.test(companyId)) return { ok: true, snapshot: null };
+  try {
+    const res = await fetch(`/api/workspace/snapshot?companyId=${encodeURIComponent(companyId)}`);
+    if (!res.ok) return { ok: false };
+    return { ok: true, snapshot: ((await res.json()).snapshot ?? null) as AnalysisResult | null };
+  } catch {
+    return { ok: false };
+  }
 }
 
 function normaliseSnapshot(snapshot?: AnalysisResult, options: { preserveStaleVatReview?: boolean } = {}): AnalysisResult {
@@ -1789,6 +1819,11 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   // Set when the browser refuses to cache the workspace locally (quota). Work
   // still saves to the server; only the offline backup stops updating.
   const [localBackupStale, setLocalBackupStale] = useState(false);
+  // Company whose snapshot is being fetched during a switch, for the picker.
+  const [switchingCompanyId, setSwitchingCompanyId] = useState<string | null>(null);
+  // Companies whose snapshot we have already tried to fetch for a digest, so
+  // a company with no review is not refetched on every render.
+  const scheduledSnapshotAttempts = useRef<Set<string>>(new Set());
   const [question, setQuestion] = useState("Why is cash getting tighter?");
   const [showExport, setShowExport] = useState(false);
   const [ruleAnalytics, setRuleAnalytics] = useState<RuleAnalyticsReport | null>(null);
@@ -1925,11 +1960,20 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       try { const local = window.localStorage.getItem(storageKey); return local ? JSON.parse(local) as WorkspaceState : null; }
       catch { return null; }
     };
-    const restoreWorkspace = (parsed: WorkspaceState) => {
-      const selectedCompany = parsed.companies.find((item) => item.id === parsed.currentCompanyId) ?? parsed.companies[0];
-      if (!selectedCompany) { setActive("Onboarding"); return; }
-      const snapshot = normaliseSnapshot(parsed.companySnapshots[selectedCompany.id]);
-      const companySnapshots = { ...parsed.companySnapshots, [selectedCompany.id]: snapshot };
+    // One company's review, fetched on its own. Pilot-demo companies have no
+    // row, so they resolve to an empty snapshot rather than a failed request.
+    const fetchSnapshot = async (companyId: string): Promise<AnalysisResult | null> => {
+      if (!PERSISTABLE_ID.test(companyId)) return null;
+      try {
+        const res = await fetch(`/api/workspace/snapshot?companyId=${encodeURIComponent(companyId)}`);
+        if (!res.ok) return null;
+        return ((await res.json()).snapshot ?? null) as AnalysisResult | null;
+      } catch {
+        return null;
+      }
+    };
+    const restoreWorkspace = (parsed: WorkspaceState, selectedCompany: Company, snapshot: AnalysisResult) => {
+      const companySnapshots = { ...(parsed.companySnapshots ?? {}), [selectedCompany.id]: snapshot };
       setTenant(parsed.tenant);
       setCompanies(parsed.companies);
       setPortfolioClients(parsed.portfolioClients);
@@ -1979,7 +2023,18 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
         setActive("Onboarding");
         return;
       }
-      restoreWorkspace(parsed);
+
+      const selectedCompany = parsed.companies.find((item) => item.id === parsed.currentCompanyId) ?? parsed.companies[0];
+      if (!selectedCompany) { setActive("Onboarding"); return; }
+
+      // A legacy blob or the local cache may still carry the snapshot inline;
+      // otherwise fetch just this one company's row. Either way only the open
+      // company's review is loaded, never the whole practice's.
+      const inline = parsed.companySnapshots?.[selectedCompany.id];
+      const snapshot = normaliseSnapshot(inline ?? (await fetchSnapshot(selectedCompany.id)) ?? undefined);
+      if (workspaceLoadCancelled.current) return;
+
+      restoreWorkspace(parsed, selectedCompany, snapshot);
     }
     loadWorkspace();
   }, [presentationMode, userEmail]);
@@ -1995,15 +2050,33 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     // Don't persist default empty state — only save once real data exists
     const hasRealData = tenant.name !== "Your Firm" || uploads.length > 0 || findings.length > 0;
     if (!hasRealData) return;
+    // The open company's review, saved on its own. Previously every company's
+    // snapshot was rewritten on every edit, so a practice paid for all 1,500
+    // reviews to change one.
+    const currentSnapshot: AnalysisResult = {
+      uploads,
+      validationChecks,
+      findings,
+      importProfiles,
+      findingEvidence,
+      findingComments,
+      findingActivities,
+      collectionCases,
+      partnerSignOff,
+      recommendations,
+      vatReview,
+      // Held only in the snapshot cache, not in their own state.
+      inventoryReview: companySnapshots[currentCompany.id]?.inventoryReview,
+      statements: companySnapshots[currentCompany.id]?.statements
+    };
+
+    // The shell: structure and settings, no reviews. Small enough to load and
+    // cache whole however many companies the tenant has.
     const workspace: WorkspaceState = {
       tenant,
       companies,
       currentCompanyId: currentCompany.id,
       portfolioClients,
-      companySnapshots: {
-        ...companySnapshots,
-        [currentCompany.id]: { uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, collectionCases, partnerSignOff, recommendations, vatReview, inventoryReview: companySnapshots[currentCompany.id]?.inventoryReview, statements: companySnapshots[currentCompany.id]?.statements }
-      },
       reportSchedules,
       scheduledReports,
     };
@@ -2015,8 +2088,13 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     // A failed setItem leaves the previous value intact, so the older backup
     // survives and is still worth keeping for an offline restore. Flag it as
     // stale rather than clearing it.
+    // Cache the shell plus only the open company's snapshot. Caching all of
+    // them is what exhausted the browser's budget in the first place.
     try {
-      window.localStorage.setItem(storageKey, JSON.stringify(workspace));
+      window.localStorage.setItem(
+        storageKey,
+        JSON.stringify({ ...workspace, companySnapshots: { [currentCompany.id]: currentSnapshot } })
+      );
       setLocalBackupStale(false);
     } catch {
       setLocalBackupStale(true);
@@ -2026,7 +2104,49 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(workspace)
     }).catch(() => {});
+    if (PERSISTABLE_ID.test(currentCompany.id)) {
+      fetch("/api/workspace/snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId: currentCompany.id, snapshot: currentSnapshot })
+      }).catch(() => {});
+    }
   }, [collectionCases, companies, companySnapshots, currentCompany.id, findingActivities, findingComments, findingEvidence, findings, importProfiles, partnerSignOff, portfolioClients, presentationMode, recommendations, reportSchedules, scheduledReports, tenant, uploads, validationChecks, vatReview]);
+
+  // The digest effect below reads the snapshot of every company that has a
+  // schedule, not just the open one — and snapshots are no longer loaded
+  // eagerly, so without this those digests would silently stop being produced.
+  // The work is bounded by how many schedules exist, not by the size of the
+  // practice, and each company is attempted once per session.
+  useEffect(() => {
+    if (presentationMode || !reportSchedules.length) return;
+    const missing = Array.from(new Set(reportSchedules.map((schedule) => schedule.companyId)))
+      .filter((id) => !companySnapshots[id] && !scheduledSnapshotAttempts.current.has(id) && PERSISTABLE_ID.test(id));
+    if (!missing.length) return;
+
+    let cancelled = false;
+    missing.forEach((id) => scheduledSnapshotAttempts.current.add(id));
+
+    (async () => {
+      const results = await Promise.all(
+        missing.map(async (id) => [id, await fetchCompanySnapshot(id)] as const)
+      );
+      if (cancelled) return;
+
+      const additions: Record<string, AnalysisResult> = {};
+      for (const [id, result] of results) {
+        // Cache only a definite answer. Recording a failed fetch as an empty
+        // review would let a digest treat that emptiness as fact.
+        if (result.ok && result.snapshot) additions[id] = result.snapshot;
+        // A company that really has no review yet stays uncached and simply
+        // produces no digest, which is correct.
+        if (!result.ok) scheduledSnapshotAttempts.current.delete(id);
+      }
+      if (Object.keys(additions).length) setCompanySnapshots((items) => ({ ...items, ...additions }));
+    })();
+
+    return () => { cancelled = true; };
+  }, [companySnapshots, presentationMode, reportSchedules]);
 
   // In-app scheduled digests: when a company's inventory review satisfies its
   // schedule (cadence elapsed and data changed since the last snapshot), freeze a
@@ -2871,15 +2991,32 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
     setActive("Partner Summary");
   };
 
-  const switchCompany = (companyId: string) => {
+  const switchCompany = async (companyId: string) => {
     const selectedCompany = companies.find((item) => item.id === companyId);
     if (!selectedCompany) return;
     // statements + inventoryReview live only in the company snapshot (not top-level
     // state), so they MUST be carried over from the outgoing company's snapshot —
     // otherwise switching clients silently drops that client's accounts/inventory.
     const currentSnapshot = normaliseSnapshot({ uploads, validationChecks, findings, importProfiles, findingEvidence, findingComments, findingActivities, collectionCases, partnerSignOff, recommendations, vatReview, inventoryReview: companySnapshots[currentCompany.id]?.inventoryReview, statements: companySnapshots[currentCompany.id]?.statements });
-    const nextSnapshot = normaliseSnapshot(companySnapshots[selectedCompany.id]);
-    setCompanySnapshots((items) => ({ ...items, [currentCompany.id]: currentSnapshot }));
+
+    // Snapshots load per company, so the target usually is not cached yet.
+    // Fetch it before swapping anything: showing an empty review while the
+    // request is in flight would let the autosave write that emptiness over a
+    // real review, and a failed fetch is not evidence the client has no work.
+    let incoming: AnalysisResult | undefined = companySnapshots[selectedCompany.id];
+    if (!incoming) {
+      setSwitchingCompanyId(selectedCompany.id);
+      const result = await fetchCompanySnapshot(selectedCompany.id);
+      setSwitchingCompanyId(null);
+      if (!result.ok) {
+        setUploadMessage(`Could not load ${selectedCompany.name} just now. Nothing has changed — try again in a moment.`);
+        return;
+      }
+      incoming = result.snapshot ?? undefined;
+    }
+
+    const nextSnapshot = normaliseSnapshot(incoming);
+    setCompanySnapshots((items) => ({ ...items, [currentCompany.id]: currentSnapshot, [selectedCompany.id]: nextSnapshot }));
     setCurrentCompany(selectedCompany);
     setUploads(nextSnapshot.uploads);
     setValidationChecks(nextSnapshot.validationChecks);
