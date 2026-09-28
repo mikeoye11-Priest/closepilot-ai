@@ -38,6 +38,7 @@ import { analyseFinanceFiles, scopeAnalysisResult } from "@/lib/upload-analysis"
 import type { AnalysisResult, CashForecastPoint, ClientCompany, CollectionCase, CollectionStatus, Company, Evidence, EvidenceStatus, FinanceScoreBreakdown, Finding, FindingActivity, FindingComment, FindingEvidenceRow, FindingStatus, ImportMappingProfile, FirmRole, ManagerReviewStatus, OrgUnit, PartnerSignOff, PartnerSignOffGateSnapshot, PartnerSignOffStatus, Recommendation, ReviewPackStatus, RiskLevel, Tenant, TenantType, Upload, ValidationCheck, ValidationStatus } from "@/lib/types";
 import { CompanyPicker } from "./company-picker";
 import { can } from "@/lib/permissions";
+import { isWorkspaceState, type WorkspaceState } from "@/lib/workspace-state";
 import type { VatReviewResult } from "@/lib/vat-engine/types";
 import { VAT_ENGINE_VERSION } from "@/lib/vat-engine";
 import { approveVatFiling, reopenVatFiling } from "@/lib/vat-engine/sign-off";
@@ -134,41 +135,7 @@ const uploadTypeLabels: Record<Upload["fileType"], string> = {
 
 const coreUploadTypes: Upload["fileType"][] = ["trial_balance", "profit_loss", "balance_sheet", "aged_debtors", "aged_creditors", "vat_report"];
 
-type WorkspaceState = {
-  tenant: Tenant;
-  companies: Company[];
-  currentCompanyId: string;
-  portfolioClients: ClientCompany[];
-  /**
-   * Only ever present on a legacy blob or the local cache, which holds just the
-   * open company. The persisted shell no longer carries snapshots: they live a
-   * row per company and are fetched on demand.
-   */
-  companySnapshots?: Record<string, AnalysisResult>;
-  /** The tenant's branches or divisions; read from the shared table. */
-  orgUnits?: OrgUnit[];
-  /** Roles the signed-in user holds; server-provided, never persisted back. */
-  callerRoles?: FirmRole[];
-  reportSchedules?: ReportSchedule[];
-  scheduledReports?: ScheduledReport[];
-};
 
-/**
- * Stored workspace state arrives from localStorage or /api/workspace, and both
- * were cast straight to WorkspaceState. A cast proves nothing at runtime: state
- * written by a different build can be missing `companies` entirely, and
- * restoreWorkspace dereferences it immediately — a white screen the user can
- * only escape by clearing site data. Check the shape and fall back instead.
- */
-function isWorkspaceState(value: unknown): value is WorkspaceState {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<WorkspaceState>;
-  return typeof candidate.currentCompanyId === "string"
-    && Array.isArray(candidate.companies)
-    && Array.isArray(candidate.portfolioClients)
-    && typeof candidate.tenant === "object" && candidate.tenant !== null
-    && typeof candidate.companySnapshots === "object" && candidate.companySnapshots !== null;
-}
 
 type UploadJobState = {
   id: string;
