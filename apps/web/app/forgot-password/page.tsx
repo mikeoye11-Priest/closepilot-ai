@@ -13,6 +13,34 @@ function getSupabase() {
   return createBrowserClient(url, key);
 }
 
+/**
+ * Turns a failed reset request into something the reader can act on.
+ *
+ * Passing err.message straight through put a literal "{}" in front of the user
+ * when Supabase returned an error whose message did not survive serialisation.
+ * A person cannot do anything with that, and it hides the one useful fact:
+ * whether the fault is theirs or ours.
+ *
+ * Send failures are ours — a misconfigured mail sender, not a bad address — so
+ * say so rather than implying they typed something wrong.
+ */
+function resetRequestError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : "";
+  const message = raw.trim();
+
+  if (/rate limit/i.test(message)) {
+    return "Too many reset emails have been requested recently. Wait a few minutes and try again.";
+  }
+  if (/sending|smtp|mail/i.test(message)) {
+    return "We could not send the email. This is a problem on our side, not with your address — please let us know.";
+  }
+  // "{}" and "[object Object]" are serialisation leftovers, not messages.
+  if (!message || message === "{}" || message === "[object Object]") {
+    return "Something went wrong sending the reset email. Please try again, and let us know if it keeps happening.";
+  }
+  return message;
+}
+
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
@@ -50,7 +78,7 @@ export default function ForgotPasswordPage() {
       // used to probe which emails are registered.
       setSent(true);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(resetRequestError(err));
     } finally {
       setLoading(false);
     }
