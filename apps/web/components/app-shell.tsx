@@ -7,7 +7,7 @@ import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompan
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateMtdReadiness, calculateMtdReadinessDrivers, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type MtdReadinessDriver, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, num as cashNum, type CashflowScenario, type StatementsForCashflow } from "@/lib/cashflow-13week";
 import { isOpenFinding, isCriticalOpenFinding, lifecycleStatus, type LifecycleStatus } from "@/lib/finding-ledger";
-import { defaultReviewReason, findingActivityLabel, findingDueDate, findingLifecycleCounts, findingOwner, isReadyForManagerReview, lifecycleStatuses, managerReviewStatus, reviewedFindingStatuses } from "@/lib/finding-workflow";
+import { FINDING_LIFECYCLE_LABELS, FINDING_STATUS_CONFIG, defaultReviewReason, findingActivityLabel, findingDueDate, findingLifecycleCounts, findingOwner, isReadyForManagerReview, lifecycleStatuses, managerReviewStatus, reviewedFindingStatuses } from "@/lib/finding-workflow";
 import { buildDebtorLedger, forecastRecovery, debtorExposure, type DebtorLedger } from "@/lib/debtor-ledger";
 import { checkInvariants } from "@/lib/invariants";
 import { buildWorkingCapital } from "@/lib/working-capital";
@@ -568,7 +568,7 @@ function buildGeneratedReviewPack({
   const workflowDossier = findings.map((finding) => ({
     finding,
     lifecycleStatus: lifecycleStatus(finding.status),
-    lifecycleLabel: LIFECYCLE_LABELS[lifecycleStatus(finding.status)],
+    lifecycleLabel: FINDING_LIFECYCLE_LABELS[lifecycleStatus(finding.status)],
     owner: findingOwner(finding),
     managerReviewStatus: managerReviewStatus(finding),
     evidence: findingEvidence.filter((item) => item.findingId === finding.id),
@@ -869,7 +869,7 @@ function reviewNotesForFinding(finding: Finding): ReviewNoteSet {
   const code = finding.ruleId ?? finding.id;
   const evidence = finding.evidence?.calculation || finding.expectedImpact || "Evidence should be retained with the review pack.";
   const source = finding.evidence?.sourceFile || finding.sourceFile || "uploaded finance pack";
-  const status = STATUS_CONFIG[finding.status]?.label ?? finding.status;
+  const status = FINDING_STATUS_CONFIG[finding.status]?.label ?? finding.status;
   const templateByRule: Record<string, Omit<ReviewNoteSet, "findingCode">> = {
     DI_040: {
       reviewerNote: "Revenue completeness review performed. Revenue accounts were identified in the source data but all balances were nil. Management should confirm whether revenue postings occurred after extraction or whether the export is incomplete. No conclusion reached pending evidence.",
@@ -988,7 +988,7 @@ function generateWorkpapers({ findings, uploads, validationChecks, reviewer, dat
         code: notes.findingCode,
         title: finding.title,
         severity: finding.severity,
-        status: STATUS_CONFIG[finding.status]?.label ?? finding.status,
+        status: FINDING_STATUS_CONFIG[finding.status]?.label ?? finding.status,
         note: notes.reviewerNote,
         sourceFile: evidenceRef.sourceFile,
         rowIndexes: evidenceRef.rowIndexes,
@@ -1144,7 +1144,7 @@ function auditReviewPackWordHtml({
         <td>${htmlCell(finding.severity.toUpperCase())}</td>
         <td>${htmlCell(finding.title)}</td>
         <td>${htmlCell(findingCategoryLabel(finding.category))}</td>
-        <td>${htmlCell(STATUS_CONFIG[finding.status]?.label ?? finding.status)}</td>
+        <td>${htmlCell(FINDING_STATUS_CONFIG[finding.status]?.label ?? finding.status)}</td>
         <td>${htmlCell(findingOwner(finding))}</td>
       </tr>
     `);
@@ -5591,7 +5591,7 @@ function ReviewPack({
                         <tr key={finding.id}>
                           <td className="border-b border-line p-2 font-bold capitalize">{finding.severity}</td>
                           <td className="border-b border-line p-2">{finding.title}</td>
-                          <td className="border-b border-line p-2">{STATUS_CONFIG[finding.status]?.label ?? finding.status}</td>
+                          <td className="border-b border-line p-2">{FINDING_STATUS_CONFIG[finding.status]?.label ?? finding.status}</td>
                           <td className="border-b border-line p-2">{findingOwner(finding)}</td>
                         </tr>
                       ))}
@@ -5973,7 +5973,7 @@ function ReviewPack({
                   <p className="mt-1 text-xs text-muted">{finding.evidence.calculation}</p>
                   <p className="mt-1 text-xs text-muted">Source: {finding.evidence.sourceFile} · Account/party: {finding.evidence.accountCode || "N/A"} · Period: {finding.evidence.period}</p>
                   <div className="mt-2 grid gap-2 text-xs text-muted sm:grid-cols-3">
-                    <span>Status: {LIFECYCLE_LABELS[lifecycleStatus(finding.status)]}</span>
+                    <span>Status: {FINDING_LIFECYCLE_LABELS[lifecycleStatus(finding.status)]}</span>
                     <span>Owner: {findingOwner(finding)}</span>
                     <span>Manager: {managerReviewStatus(finding).replace(/_/g, " ")}</span>
                   </div>
@@ -6666,33 +6666,6 @@ function CopilotPrompt({ question, setQuestion, openCopilot }: { question: strin
   );
 }
 
-const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  open:                 { label: "Awaiting Review", color: "bg-slate-100 text-slate-600" },
-  under_review:         { label: "Under Review",    color: "bg-blue-100 text-blue-700" },
-  evidence_requested:   { label: "Evidence Requested", color: "bg-amber-100 text-amber-800" },
-  evidence_received:    { label: "Evidence Received", color: "bg-cyan-100 text-cyan-800" },
-  resolved:             { label: "Resolved",         color: "bg-emerald-100 text-emerald-700" },
-  approved:             { label: "Approved",         color: "bg-green-100 text-green-800" },
-  closed:               { label: "Closed",           color: "bg-slate-100 text-slate-500" },
-  false_positive:        { label: "False Positive",   color: "bg-red-100 text-red-700" },
-  accepted_risk:         { label: "Accepted Risk",    color: "bg-violet-100 text-violet-700" },
-  in_review:            { label: "Under Review",     color: "bg-blue-100 text-blue-700" },
-  accepted:             { label: "Resolved",         color: "bg-emerald-100 text-emerald-800" },
-  rejected:             { label: "Rejected",         color: "bg-red-100 text-red-700" },
-  needs_investigation:  { label: "Evidence Requested", color: "bg-amber-100 text-amber-800" },
-  not_applicable:       { label: "Closed",           color: "bg-slate-100 text-slate-500" },
-};
-
-const LIFECYCLE_LABELS: Record<LifecycleStatus, string> = {
-  open: "Open",
-  under_review: "Under Review",
-  evidence_requested: "Evidence Requested",
-  evidence_received: "Evidence Received",
-  resolved: "Resolved",
-  approved: "Approved",
-  closed: "Closed",
-};
-
 function FindingLifecycleSummary({ findings, setActive }: { findings: Finding[]; setActive: (value: string) => void }) {
   const counts = findingLifecycleCounts(findings);
   const tones: Record<LifecycleStatus, RiskLevel> = {
@@ -6709,10 +6682,10 @@ function FindingLifecycleSummary({ findings, setActive }: { findings: Finding[];
     <div className="grid gap-2">
       {lifecycleStatuses.map((status) => (
         <button key={status} className="grid grid-cols-[1fr_auto] items-center rounded-lg border border-line bg-slate-50 px-3 py-2 text-left transition-colors hover:border-brand hover:bg-cyan-50" onClick={() => setActive("Findings")}>
-          <span className="text-sm font-bold">{LIFECYCLE_LABELS[status]}</span>
+          <span className="text-sm font-bold">{FINDING_LIFECYCLE_LABELS[status]}</span>
           <strong className="text-lg">{counts[status]}</strong>
           <span className="col-span-2 mt-1">
-            <Pill level={tones[status]}>{status === "evidence_requested" ? "evidence queue" : status === "resolved" ? "ready for sign-off" : STATUS_CONFIG[status].label}</Pill>
+            <Pill level={tones[status]}>{status === "evidence_requested" ? "evidence queue" : status === "resolved" ? "ready for sign-off" : FINDING_STATUS_CONFIG[status].label}</Pill>
           </span>
         </button>
       ))}
@@ -6876,7 +6849,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
             <tbody>
               {lifecycleStatuses.map((status) => (
                 <tr key={status} className={`cursor-pointer ${statusFilter === status ? "bg-cyan-50" : "hover:bg-slate-50"}`} onClick={() => setStatusFilter(status)}>
-                  <td className="border-b border-line p-2 font-bold">{LIFECYCLE_LABELS[status]}</td>
+                  <td className="border-b border-line p-2 font-bold">{FINDING_LIFECYCLE_LABELS[status]}</td>
                   <td className="border-b border-line p-2 text-right text-lg font-black">{counts[status]}</td>
                 </tr>
               ))}
@@ -6992,7 +6965,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <strong className="block truncate text-sm">{finding.title}</strong>
-                      <p className="mt-1 text-xs text-muted">{findingOwner(finding)} · {STATUS_CONFIG[finding.status]?.label ?? finding.status}</p>
+                      <p className="mt-1 text-xs text-muted">{findingOwner(finding)} · {FINDING_STATUS_CONFIG[finding.status]?.label ?? finding.status}</p>
                     </div>
                     <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs font-bold text-slate-600">{reviewStatus.replaceAll("_", " ")}</span>
                   </div>
@@ -7017,7 +6990,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
             <button className={`rounded-lg px-3 py-2 text-sm font-bold ${statusFilter === "all" ? "bg-brand text-white" : "border border-line bg-white"}`} onClick={() => setStatusFilter("all")}>All Findings</button>
             {lifecycleStatuses.map((status) => (
               <button key={status} className={`rounded-lg px-3 py-2 text-sm font-bold ${statusFilter === status ? "bg-brand text-white" : "border border-line bg-white"}`} onClick={() => setStatusFilter(status)}>
-                {LIFECYCLE_LABELS[status]}
+                {FINDING_LIFECYCLE_LABELS[status]}
               </button>
             ))}
           </div>
@@ -7053,7 +7026,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
                     <strong className="block truncate text-sm">{finding.title}</strong>
                     <p className="mt-1 text-xs text-muted">{linkedEvidence.length || finding.evidenceIds?.length ? `${linkedEvidence.length || finding.evidenceIds?.length} evidence item(s) linked · ${linkedEvidence.filter((item) => item.status === "accepted").length} accepted · ${linkedEvidence.filter((item) => item.status === "rejected").length} rejected · ${linkedEvidence.filter((item) => item.status === "superseded").length} superseded` : finding.evidence.sourceFile}</p>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${STATUS_CONFIG[finding.status]?.color ?? STATUS_CONFIG.open.color}`}>{STATUS_CONFIG[finding.status]?.label ?? "Open"}</span>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${FINDING_STATUS_CONFIG[finding.status]?.color ?? FINDING_STATUS_CONFIG.open.color}`}>{FINDING_STATUS_CONFIG[finding.status]?.label ?? "Open"}</span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-bold disabled:cursor-not-allowed disabled:text-muted" disabled={reviewLocked} onClick={() => updateFindingStatus(finding.id, "evidence_requested")}>Request Evidence</button>
@@ -7078,7 +7051,7 @@ function FindingsHub({ findings, findingEvidence, findingComments, findingActivi
           <button className={`rounded-lg px-3 py-2 text-sm font-bold ${statusFilter === "all" ? "bg-brand text-white" : "border border-line bg-white"}`} onClick={() => setStatusFilter("all")}>All Findings</button>
           {lifecycleStatuses.map((status) => (
             <button key={status} className={`rounded-lg px-3 py-2 text-sm font-bold ${statusFilter === status ? "bg-brand text-white" : "border border-line bg-white"}`} onClick={() => setStatusFilter(status)}>
-              {LIFECYCLE_LABELS[status]}
+              {FINDING_LIFECYCLE_LABELS[status]}
             </button>
           ))}
         </div>
@@ -7135,7 +7108,7 @@ function FindingRegister({
         </thead>
         <tbody>
           {rows.map((finding) => {
-            const statusCfg = STATUS_CONFIG[finding.status] ?? STATUS_CONFIG.open;
+            const statusCfg = FINDING_STATUS_CONFIG[finding.status] ?? FINDING_STATUS_CONFIG.open;
             return (
               <tr key={finding.id} className="cursor-pointer hover:bg-slate-50" onClick={() => onSelect(finding.id)}>
                 <td className="border-b border-line p-2" onClick={(event) => event.stopPropagation()}>
@@ -7201,7 +7174,7 @@ function FindingDetailDrawer({
   const [assignmentDueDate, setAssignmentDueDate] = useState(finding.dueDate ?? "");
   const [evidenceNotes, setEvidenceNotes] = useState("");
   const [isUploadingEvidence, setIsUploadingEvidence] = useState(false);
-  const statusCfg = STATUS_CONFIG[finding.status] ?? STATUS_CONFIG.open;
+  const statusCfg = FINDING_STATUS_CONFIG[finding.status] ?? FINDING_STATUS_CONFIG.open;
   const confidencePct = findingDetectionConfidence(finding);
   const evidenceStrengthPct = findingEvidenceStrengthScore(finding, evidence.length);
   const primaryRow = finding.evidence.rows?.[0];
@@ -7496,7 +7469,7 @@ function DrawerField({ label, value }: { label: string; value: string }) {
 function EvidenceDecisionTrace({ finding, partnerSignOff }: { finding: Finding; partnerSignOff?: PartnerSignOff }) {
   const evidenceRef = findingEvidenceReference(finding);
   const managerStatus = managerReviewStatus(finding);
-  const reviewDecision = finding.reviewAction?.replaceAll("_", " ") || STATUS_CONFIG[finding.status]?.label || finding.status.replaceAll("_", " ");
+  const reviewDecision = finding.reviewAction?.replaceAll("_", " ") || FINDING_STATUS_CONFIG[finding.status]?.label || finding.status.replaceAll("_", " ");
   const signOffImpact = partnerSignOff
     ? finding.status === "accepted_risk"
       ? "Accepted risk retained in locked pack"
@@ -7593,7 +7566,7 @@ function FindingCard({ finding, setActive, updateFindingStatus, expanded = false
       setAiExplanation(String(data.explanation ?? "")); setAiStatus("done");
     } catch { setAiStatus("error"); }
   };
-  const statusCfg = STATUS_CONFIG[finding.status] ?? STATUS_CONFIG.open;
+  const statusCfg = FINDING_STATUS_CONFIG[finding.status] ?? FINDING_STATUS_CONFIG.open;
   const confidencePct = findingDetectionConfidence(finding);
   const evidenceStrengthPct = findingEvidenceStrengthScore(finding);
   const severityBorder = finding.evidenceStrength === "advisory" ? "border-l-slate-300" : finding.severity === "critical" ? "border-l-red" : finding.severity === "high" ? "border-l-amber" : "border-l-line";
@@ -10798,7 +10771,7 @@ function AICopilot({ question, setQuestion, score, findings, findingActivities, 
                             <>
                               <AssistantAnswerItem label="Severity" value={linkedFinding.severity.toUpperCase()} />
                               <AssistantAnswerItem label="Category" value={findingCategoryLabel(linkedFinding.category)} detail={`Type: ${findingTypeLabel(linkedFinding)}`} />
-                              <AssistantAnswerItem label="Review Status" value={`${STATUS_CONFIG[linkedFinding.status]?.label ?? linkedFinding.status} · Owner: ${findingOwner(linkedFinding)} · Due: ${findingDueDate(linkedFinding)}`} />
+                              <AssistantAnswerItem label="Review Status" value={`${FINDING_STATUS_CONFIG[linkedFinding.status]?.label ?? linkedFinding.status} · Owner: ${findingOwner(linkedFinding)} · Due: ${findingDueDate(linkedFinding)}`} />
                               <AssistantAnswerItem label="Finding Age" value={ageDays === null ? "Unknown" : `${ageDays} day${ageDays !== 1 ? "s" : ""}`} detail={`Created ${createdDate ? createdDate.toLocaleDateString("en-GB") : "-"} · Updated ${updatedDate ? updatedDate.toLocaleDateString("en-GB") : "-"}`} />
                               <AssistantAnswerItem label="Financial Impact" value={impactAmount ? `£${Math.round(impactAmount).toLocaleString()} · ${materiality.label}` : materiality.label} detail={materiality.detail} />
                               <AssistantAnswerItem label="Review Effort" value={`Manual ${effort.manual} · ClosePilot ${effort.closePilot}`} detail={`Time saved ${effort.saved}`} />
@@ -11177,7 +11150,7 @@ function ExportModal({
                         <tr key={finding.id}>
                           <td className="border-b border-line p-2 font-bold capitalize">{finding.severity}</td>
                           <td className="border-b border-line p-2">{finding.title}</td>
-                          <td className="border-b border-line p-2">{STATUS_CONFIG[finding.status]?.label ?? finding.status}</td>
+                          <td className="border-b border-line p-2">{FINDING_STATUS_CONFIG[finding.status]?.label ?? finding.status}</td>
                         </tr>
                       ))}
                     </tbody>

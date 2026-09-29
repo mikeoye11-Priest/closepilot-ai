@@ -27,6 +27,33 @@ export const reviewedFindingStatuses: FindingStatus[] = [
   "not_applicable",
 ];
 
+export const FINDING_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  open: { label: "Awaiting Review", color: "bg-slate-100 text-slate-600" },
+  under_review: { label: "Under Review", color: "bg-blue-100 text-blue-700" },
+  evidence_requested: { label: "Evidence Requested", color: "bg-amber-100 text-amber-800" },
+  evidence_received: { label: "Evidence Received", color: "bg-cyan-100 text-cyan-800" },
+  resolved: { label: "Resolved", color: "bg-emerald-100 text-emerald-700" },
+  approved: { label: "Approved", color: "bg-green-100 text-green-800" },
+  closed: { label: "Closed", color: "bg-slate-100 text-slate-500" },
+  false_positive: { label: "False Positive", color: "bg-red-100 text-red-700" },
+  accepted_risk: { label: "Accepted Risk", color: "bg-violet-100 text-violet-700" },
+  in_review: { label: "Under Review", color: "bg-blue-100 text-blue-700" },
+  accepted: { label: "Resolved", color: "bg-emerald-100 text-emerald-800" },
+  rejected: { label: "Rejected", color: "bg-red-100 text-red-700" },
+  needs_investigation: { label: "Evidence Requested", color: "bg-amber-100 text-amber-800" },
+  not_applicable: { label: "Closed", color: "bg-slate-100 text-slate-500" },
+};
+
+export const FINDING_LIFECYCLE_LABELS: Record<LifecycleStatus, string> = {
+  open: "Open",
+  under_review: "Under Review",
+  evidence_requested: "Evidence Requested",
+  evidence_received: "Evidence Received",
+  resolved: "Resolved",
+  approved: "Approved",
+  closed: "Closed",
+};
+
 export function isReadyForManagerReview(finding: Finding) {
   return ["evidence_received", "resolved", "approved", "accepted_risk", "false_positive", "closed"].includes(finding.status);
 }
