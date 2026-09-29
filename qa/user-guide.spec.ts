@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-const baseURL = process.env.CLOSEPILOT_QA_URL ?? "http://127.0.0.1:3010";
+const baseURL = process.env.CLOSEPILOT_QA_URL ?? `http://127.0.0.1:${process.env.CLOSEPILOT_QA_PORT ?? "3210"}`;
 
 test("user guide is discoverable and opens the guided workflow", async ({ page }) => {
   await page.goto(baseURL, { waitUntil: "networkidle" });

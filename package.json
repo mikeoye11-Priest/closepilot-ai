@@ -49,7 +49,7 @@
     "test:findings-insights": "node --import tsx --test qa/findings-insights.test.ts",
     "test:audit-insights": "node --import tsx --test qa/audit-insights.test.ts",
     "test:close-insights": "node --import tsx --test qa/close-insights.test.ts",
-    "test:upload": "CLOSEPILOT_QA_URL=${CLOSEPILOT_QA_URL:-http://localhost:3010} playwright test qa/upload-compat.spec.ts --browser=chromium --reporter=line",
+    "test:upload": "playwright test qa/upload-compat.spec.ts --browser=chromium --reporter=line",
     "test:upload-capacity": "node --import tsx --test qa/upload-capacity.test.ts",
     "test:worker": "node --import tsx --test qa/background-worker.test.ts",
     "test:accounts": "node --import tsx --test qa/statutory-accounts.test.ts",

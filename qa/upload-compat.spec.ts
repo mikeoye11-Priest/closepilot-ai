@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 
-const baseURL = process.env.CLOSEPILOT_QA_URL ?? "http://localhost:3010";
+const baseURL = process.env.CLOSEPILOT_QA_URL ?? `http://127.0.0.1:${process.env.CLOSEPILOT_QA_PORT ?? "3210"}`;
 const workbookPath = "demo-data/ClosePilot_Enterprise_Demo_Pack v2.xlsx";
 const vatAssuranceV2DemoPaths = [
   "demo-data/vat-assurance-v2-transactions.csv",

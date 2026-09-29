@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
+  // Playwright can run beside a developer's active `.next` dev server without
+  // competing for Next's build-directory lock.
+  distDir: process.env.CLOSEPILOT_DIST_DIR || ".next",
   allowedDevOrigins: ["127.0.0.1"],
   typedRoutes: true,
   async headers() {
