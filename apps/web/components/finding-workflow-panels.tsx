@@ -10,6 +10,10 @@ import {
 } from "@/lib/finding-workflow";
 import type { Finding, RiskLevel } from "@/lib/types";
 
+export function DrawerField({ label, value }: { label: string; value: string }) {
+  return <div><p className="text-xs font-bold uppercase text-muted">{label}</p><p className="mt-1 break-words text-sm font-semibold capitalize">{value}</p></div>;
+}
+
 export function FindingLifecycleSummary({ findings, setActive }: { findings: Finding[]; setActive: (value: string) => void }) {
   const counts = findingLifecycleCounts(findings);
   const tones: Record<LifecycleStatus, RiskLevel> = {

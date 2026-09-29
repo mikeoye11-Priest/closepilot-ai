@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { EvidenceRowsPreview } from "@/components/evidence-rows-preview";
-import { FindingLifecycleSummary, FindingRegister } from "@/components/finding-workflow-panels";
+import { DrawerField, FindingLifecycleSummary, FindingRegister } from "@/components/finding-workflow-panels";
 import { EmptyState, Panel, Pill } from "@/components/ui-primitives";
 import { evidenceGroundedAnswer, type GroundedAnswerSections } from "@/lib/ask-closepilot";
 import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompany, pilotTenant, tenant as seededTenant } from "@/lib/data";
@@ -7126,15 +7126,6 @@ function FindingDetailDrawer({
           </div>
         </div>
       </aside>
-    </div>
-  );
-}
-
-function DrawerField({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-xs font-bold uppercase text-muted">{label}</p>
-      <p className="mt-1 break-words text-sm font-semibold capitalize">{value}</p>
     </div>
   );
 }
