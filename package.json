@@ -27,6 +27,7 @@
     "test:reauth": "node --import tsx --test qa/integration-reauth.test.ts",
     "test:revoke": "node --import tsx --test qa/integration-revoke.test.ts",
     "test:http": "node --import tsx --test qa/integration-http.test.ts",
+    "test:integration-lifecycle": "node --import tsx --test qa/integration-lifecycle.test.ts",
     "test:comparatives": "node --import tsx --test qa/pilot-comparatives.test.ts",
     "test:report-statements": "node --import tsx --test qa/report-statements.test.ts",
     "test:pilot-readiness": "node --import tsx --test qa/pilot-readiness.test.ts",

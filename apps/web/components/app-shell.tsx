@@ -43,6 +43,7 @@ import type { VatReviewResult } from "@/lib/vat-engine/types";
 import { VAT_ENGINE_VERSION } from "@/lib/vat-engine";
 import { approveVatFiling, reopenVatFiling } from "@/lib/vat-engine/sign-off";
 import type { AccountingIntegrationState } from "@/lib/integrations/types";
+import { INTEGRATION_STAGE_META, integrationActivityLabel, integrationSyncSummary, pollIntegrationSync, type IntegrationActivity } from "@/lib/integrations/lifecycle";
 import { decideUploadMode, formatUploadBytes } from "@/lib/upload-capacity";
 import { recentVatPeriods, recentPeriods, VAT_PERIOD_COUNTS, PERIOD_COUNTS, type VatFrequency, type ReportFrequency } from "@/lib/vat-periods";
 import { ManagementAccountsPanel } from "@/components/management-accounts-panel";
@@ -11959,66 +11960,6 @@ function partnerReviewQuestions(findings: Finding[], validationChecks: Validatio
   return Array.from(new Set(questions));
 }
 
-type XeroSyncPollResult = {
-  status: "queued" | "running" | "completed" | "failed";
-  counts?: { trialBalance?: number; vatRows?: number };
-  warnings?: string[];
-  analysis?: AnalysisResult;
-  vatPeriod?: { start: string; end: string };
-  error?: string;
-};
-
-async function pollSync(provider: "xero" | "quickbooks" | "sage", syncId: string, onProgress: (status: XeroSyncPollResult["status"]) => void): Promise<XeroSyncPollResult> {
-  const deadline = Date.now() + 5 * 60 * 1000;
-  while (Date.now() < deadline) {
-    const response = await fetch(`/api/integrations/${provider}/sync?syncId=${encodeURIComponent(syncId)}`, { cache: "no-store" });
-    const result = await response.json() as XeroSyncPollResult;
-    if (!response.ok) throw new Error(result.error || "Could not read sync progress.");
-    if (result.status === "completed") return result;
-    if (result.status === "failed") throw new Error(result.error || "Sync failed.");
-    onProgress(result.status);
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-  }
-  throw new Error("The sync is still running. You can leave this page and check again shortly.");
-}
-
-type IntegrationOrg = NonNullable<AccountingIntegrationState["organisations"]>[number];
-const INTEGRATION_STAGE_META: Record<string, { label: string; cls: string }> = {
-  authorised: { label: "Authorised", cls: "bg-slate-100 text-slate-600" },
-  ready_to_sync: { label: "Ready to sync", cls: "bg-blue-50 text-blue-700 border border-blue-200" },
-  syncing: { label: "Syncing…", cls: "bg-amber-50 text-amber-800 border border-amber-200" },
-  synced: { label: "Synced", cls: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
-  needs_attention: { label: "Needs attention", cls: "bg-red-50 text-red-700 border border-red-200" },
-  reauth_required: { label: "Reconnect needed", cls: "bg-red-50 text-red-700 border border-red-200" },
-};
-// One-line summary of the last sync for a connected organisation: when, how many
-// records, the period covered, VAT period and any warnings/error.
-function integrationSyncSummary(org: IntegrationOrg): string {
-  if (org.stage === "reauth_required") return "Access was revoked or has expired — reconnect to resume syncing.";
-  const sync = org.sync;
-  if (!sync) return "Not yet synced";
-  if (sync.status === "queued" || sync.status === "running") return "Sync in progress…";
-  if (sync.status === "failed") return `Last sync failed${sync.error ? ` — ${sync.error}` : ""}`;
-  const parts: string[] = [];
-  const when = sync.completedAt ?? org.lastSyncedAt;
-  if (when) parts.push(`Last synced ${new Date(when).toLocaleString("en-GB")}`);
-  if (sync.recordsImported != null) parts.push(`${sync.recordsImported} records`);
-  if (sync.periodStart && sync.periodEnd) parts.push(`period ${sync.periodStart} → ${sync.periodEnd}`);
-  if (sync.vatPeriodStart && sync.vatPeriodEnd) parts.push(`VAT ${sync.vatPeriodStart} → ${sync.vatPeriodEnd}`);
-  if (sync.warnings) parts.push(`${sync.warnings} warning${sync.warnings === 1 ? "" : "s"}`);
-  return parts.join(" · ") || "Synced";
-}
-
-// The connect / sync / disconnect audit trail, surfaced so the lifecycle is
-// traceable (the events are written on every action; this makes them visible).
-type IntegrationActivity = { action: string; at: string; entityType?: string };
-function integrationActivityLabel(action: string): string {
-  if (action === "integration_data_erased") return "Synced data erased";
-  const provider = action.startsWith("quickbooks") ? "QuickBooks" : action.startsWith("sage") ? "Sage" : action.startsWith("xero") ? "Xero" : "";
-  const event = action.endsWith("_sync_completed") ? "synced" : action.endsWith("_disconnected") ? "disconnected" : action.endsWith("_connected") ? "connected" : action.replace(/_/g, " ");
-  return provider ? `${provider} ${event}` : action.replace(/_/g, " ");
-}
-
 function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnalysis, onSyncedDataErased, setActive, presentationMode }: { tenant: Tenant; company: Company; userEmail: string; userName: string; onIntegrationAnalysis: (result: AnalysisResult, warnings?: string[]) => void; onSyncedDataErased?: () => void; setActive: (value: string) => void; presentationMode: boolean }) {
   const canConnectLiveIntegration = PERSISTABLE_ID.test(tenant.id) && PERSISTABLE_ID.test(company.id);
   const [name, setName] = useState(userName);
@@ -12092,7 +12033,7 @@ function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnal
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || `${label} sync failed.`);
       setIntegrationMessage(`${label} sync is running in the background…`);
-      const completed = await pollSync(provider, result.syncId, (status) => setIntegrationMessage(status === "queued" ? `${label} sync queued…` : `Syncing ${label} data and running assurance checks…`));
+      const completed = await pollIntegrationSync(provider, result.syncId, (status) => setIntegrationMessage(status === "queued" ? `${label} sync queued…` : `Syncing ${label} data and running assurance checks…`));
       if (!completed.analysis) throw new Error(`${label} sync completed without an analysis result.`);
       onIntegrationAnalysis(completed.analysis, completed.warnings ?? []);
       await reloadIntegrations();
