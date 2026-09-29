@@ -1,3 +1,4 @@
+import { hasCompanyCapability } from "@/lib/api-authorization";
 import { requireApiSession } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase-server";
 import { decryptIntegrationSecret } from "@/lib/integrations/crypto";
@@ -14,8 +15,11 @@ export async function POST(request: Request) {
   const body = await request.json();
   const integrationId = typeof body.integrationId === "string" ? body.integrationId : "";
   const supabase = await createClient();
-  const { data, error } = await supabase.from("accounting_integrations").select("id,tenant_id,refresh_token_encrypted").eq("id", integrationId).eq("provider", "sage").eq("user_id", session.userId).single();
+  const { data, error } = await supabase.from("accounting_integrations").select("id,tenant_id,company_id,refresh_token_encrypted").eq("id", integrationId).eq("provider", "sage").eq("user_id", session.userId).single();
   if (error || !data) return NextResponse.json({ error: error?.message || "Sage connection not found." }, { status: 404 });
+  if (!await hasCompanyCapability(supabase, session.userId, data.company_id, "manage_integrations")) {
+    return NextResponse.json({ error: "Only a practice administrator can disconnect accounting systems." }, { status: 403 });
+  }
   // Best-effort revoke of the grant at Sage; never blocks the local delete.
   try {
     const token = decryptIntegrationSecret((data as { refresh_token_encrypted?: string }).refresh_token_encrypted ?? "");

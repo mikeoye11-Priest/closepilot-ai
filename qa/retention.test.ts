@@ -45,11 +45,10 @@ test("planRetention splits items and tallies per category against the policy per
   assert.equal(plan.byCategory.integration_tokens.retained, 1);
 });
 
-test("enforcement is DISABLED until every retention period is confirmed (safety interlock)", () => {
-  // Periods ship as unconfirmed defaults, so an automated purge must refuse to run.
-  assert.equal(retentionEnforcementEnabled(), false);
-  assert.equal(planRetention([], NOW).enforcementEnabled, false);
-  assert.ok(Object.values(RETENTION_TARGETS).every((t) => t.confirmed === false), "no period is pre-confirmed in code");
+test("enforcement is enabled only because every approved period is confirmed", () => {
+  assert.equal(retentionEnforcementEnabled(), true);
+  assert.equal(planRetention([], NOW).enforcementEnabled, true);
+  assert.ok(Object.values(RETENTION_TARGETS).every((t) => t.confirmed === true));
 });
 
 test("every retention target is bound to a real schema location", () => {

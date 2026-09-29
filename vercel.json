@@ -4,5 +4,6 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build:web",
   "outputDirectory": "apps/web/.next",
-  "regions": ["lhr1"]
+  "regions": ["lhr1"],
+  "crons": [{"path": "/api/internal/purge-retention", "schedule": "17 2 * * *"}]
 }

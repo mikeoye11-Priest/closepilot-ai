@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { hasCompanyCapability } from "@/lib/api-authorization";
 import { NextResponse } from "next/server";
 import * as XLSX from "@e965/xlsx";
 import { requireApiSession } from "@/lib/api-auth";
@@ -9,6 +10,9 @@ import { enforceRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { analyseParsedFiles, createUpload, normaliseHeader, scopeAnalysisResult, type ParsedFile } from "@/lib/upload-analysis";
 import type { Company, ImportMappingProfile, Tenant, Upload } from "@/lib/types";
 import { INTERACTIVE_UPLOAD_MAX_BYTES, INTERACTIVE_UPLOAD_MAX_FILES, SUPPORTED_FINANCE_FILE } from "@/lib/upload-capacity";
+import { calculateFinanceScorecard, riskLabel } from "@/lib/finance";
+import { signAnalysis } from "@/lib/analysis-attestation";
+import { parseDelimitedFile } from "@/lib/server-delimited-parser";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -26,6 +30,16 @@ export async function POST(request: Request) {
   const files = form.getAll("files").filter((item): item is File => item instanceof File);
   const scope = readAnalysisScope(form);
   const savedProfiles = readMappingProfiles(form);
+
+  if (!session.authDisabled) {
+    if (!session.userId || !scope || !UUID_RE.test(scope.tenant.id) || !UUID_RE.test(scope.company.id)) {
+      return NextResponse.json({ error: "A valid company scope is required." }, { status: 400 });
+    }
+    const supabase = await createClient();
+    if (!await hasCompanyCapability(supabase, session.userId, scope.company.id, "prepare")) {
+      return NextResponse.json({ error: "You do not have permission to analyse uploads for this company." }, { status: 403 });
+    }
+  }
 
   if (!files.length) {
     return NextResponse.json({ error: "No files uploaded" }, { status: 400 });
@@ -49,7 +63,14 @@ export async function POST(request: Request) {
   const storedFiles = await storeUploadedFiles(files, scope, session.authDisabled);
   const parsedWithStorage = attachStoredFileMetadata(parsed, storedFiles);
   const result = analyseParsedFiles(parsedWithStorage, { savedProfiles });
-  return NextResponse.json(scope ? scopeAnalysisResult(result, scope.tenant, scope.company) : result);
+  const scopedResult = scope ? scopeAnalysisResult(result, scope.tenant, scope.company) : result;
+  if (!session.authDisabled && scope) {
+    const score = calculateFinanceScorecard(scopedResult.findings, scopedResult.validationChecks, scopedResult.recommendations, scopedResult.uploads).overall;
+    const persistenceAttestation = signAnalysis(scopedResult, scope.tenant.id, scope.company.id, score, riskLabel(score));
+    if (!persistenceAttestation) return NextResponse.json({ error: "Server analysis signing is not configured." }, { status: 503 });
+    return NextResponse.json({ ...scopedResult, persistenceAttestation });
+  }
+  return NextResponse.json(scopedResult);
 }
 
 function readAnalysisScope(form: FormData): { tenant: Tenant; company: Company } | null {
@@ -174,8 +195,7 @@ async function parseServerFile(file: File): Promise<ParsedFile[]> {
   const lowerName = file.name.toLowerCase();
 
   if (lowerName.endsWith(".csv") || lowerName.endsWith(".tsv") || lowerName.endsWith(".txt")) {
-    const text = await file.text();
-    return [parseDelimitedUpload(file.name, text, lowerName.endsWith(".tsv") ? "\t" : undefined)];
+    return [await parseDelimitedUpload(file.name, file, lowerName.endsWith(".tsv") ? "\t" : undefined)];
   }
 
   if (lowerName.endsWith(".xlsx")) {
@@ -190,10 +210,8 @@ async function parseServerFile(file: File): Promise<ParsedFile[]> {
   return [createUnparsedFile(file.name)];
 }
 
-function parseDelimitedUpload(fileName: string, text: string, delimiter?: string): ParsedFile {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
-  const selectedDelimiter = delimiter ?? (lines[0]?.includes("\t") ? "\t" : ",");
-  const matrix = lines.map((line) => splitDelimitedLine(line, selectedDelimiter));
+async function parseDelimitedUpload(fileName: string, file: File, delimiter?: string): Promise<ParsedFile> {
+  const matrix = await parseDelimitedFile(file, delimiter);
   const parsed = rowsFromMatrix(matrix, fileName);
   const headers = parsed?.headers ?? [];
   const rawRows = parsed?.rows ?? [];
@@ -449,33 +467,4 @@ function cellToString(value: ExcelJS.CellValue) {
     if ("hyperlink" in value && "text" in value) return String(value.text ?? value.hyperlink ?? "");
   }
   return String(value);
-}
-
-function splitDelimitedLine(line: string, delimiter: string) {
-  const result: string[] = [];
-  let current = "";
-  let quoted = false;
-
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index];
-    const next = line[index + 1];
-    if (char === "\"" && quoted && next === "\"") {
-      current += "\"";
-      index += 1;
-      continue;
-    }
-    if (char === "\"") {
-      quoted = !quoted;
-      continue;
-    }
-    if (char === delimiter && !quoted) {
-      result.push(current);
-      current = "";
-      continue;
-    }
-    current += char;
-  }
-
-  result.push(current);
-  return result;
 }

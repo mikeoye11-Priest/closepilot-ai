@@ -1,3 +1,4 @@
+import { hasCompanyCapability } from "@/lib/api-authorization";
 import { requireApiSession } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase-server";
 import { NextResponse } from "next/server";
@@ -11,6 +12,9 @@ export async function POST(request: Request) {
   const companyId = stringValue(body.companyId);
   const integrationId = stringValue(body.integrationId);
   const supabase = await createClient();
+  if (!await hasCompanyCapability(supabase, session.userId, companyId, "manage_integrations")) {
+    return NextResponse.json({ error: "Only a practice administrator can select accounting-system organisations." }, { status: 403 });
+  }
   const { error: clearError } = await supabase.from("accounting_integrations").update({ selected: false, status: "tenant_selection_required", updated_at: new Date().toISOString() }).eq("tenant_id", tenantId).eq("company_id", companyId).eq("provider", "xero");
   if (clearError) return NextResponse.json({ error: clearError.message }, { status: 500 });
   const { error } = await supabase.from("accounting_integrations").update({ selected: true, status: "connected", updated_at: new Date().toISOString() }).eq("id", integrationId).eq("tenant_id", tenantId).eq("company_id", companyId).eq("user_id", session.userId);

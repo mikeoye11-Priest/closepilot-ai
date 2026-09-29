@@ -250,7 +250,10 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
 
   const body = await request.json();
-  await bootstrapWorkspaceScope(supabase, body);
+  const bootstrapError = await bootstrapWorkspaceScope(supabase, body);
+  if (bootstrapError) {
+    return NextResponse.json({ error: bootstrapError }, { status: 403 });
+  }
 
   // A client still sending snapshots inline - an old tab left open across the
   // deploy - must not put them back into the row. Move them across first and
@@ -266,8 +269,8 @@ export async function POST(request: Request) {
   return NextResponse.json({ success: true });
 }
 
-async function bootstrapWorkspaceScope(supabase: Awaited<ReturnType<typeof createClient>>, body: unknown) {
-  if (!body || typeof body !== "object") return;
+async function bootstrapWorkspaceScope(supabase: Awaited<ReturnType<typeof createClient>>, body: unknown): Promise<string | null> {
+  if (!body || typeof body !== "object") return null;
 
   const workspace = body as {
     tenant?: { id?: unknown; name?: unknown; type?: unknown; plan?: unknown };
@@ -276,22 +279,32 @@ async function bootstrapWorkspaceScope(supabase: Awaited<ReturnType<typeof creat
   };
 
   const tenantId = stringValue(workspace.tenant?.id);
-  if (!UUID_RE.test(tenantId)) return;
+  if (!UUID_RE.test(tenantId)) return null;
 
   const companies = Array.isArray(workspace.companies) ? workspace.companies : [];
   // Persist every real company so background uploads (which write tenant/company
   // rows and depend on the FKs) work for any of them. Skip non-UUID placeholders
   // such as the "company_pilot_brightlane" pilot-demo remnant left by loadPilotDemo.
   const realCompanies = companies.filter((company) => UUID_RE.test(stringValue(company?.id)));
-  if (!realCompanies.length) return;
+  if (!realCompanies.length) return null;
 
   for (const company of realCompanies) {
+    const companyId = stringValue(company.id);
+    const { data: existing, error: lookupError } = await supabase
+      .from("companies")
+      .select("id")
+      .eq("id", companyId)
+      .maybeSingle();
+    if (lookupError) return lookupError.message;
+    // Routine workspace persistence must never re-run onboarding or touch roles.
+    if (existing) continue;
+
     const { error } = await supabase.rpc("bootstrap_workspace", {
       p_tenant_id: tenantId,
       p_tenant_name: stringValue(workspace.tenant?.name) || "ClosePilot Workspace",
       p_tenant_type: stringValue(workspace.tenant?.type) || "accounting_practice",
       p_plan: stringValue(workspace.tenant?.plan) || "practice",
-      p_company_id: stringValue(company.id),
+      p_company_id: companyId,
       p_company_name: stringValue(company.name) || "Company",
       p_industry: stringValue(company.industry),
       p_accounting_system: stringValue(company.accountingSystem) || "Unknown",
@@ -299,12 +312,12 @@ async function bootstrapWorkspaceScope(supabase: Awaited<ReturnType<typeof creat
       p_country: stringValue(company.country) || "United Kingdom",
     });
 
-    // Surface instead of swallowing: a silent failure here leaves tenant/company
-    // rows uncreated, which then breaks background uploads with an opaque 500.
     if (error) {
-      reportError(error, { step: "bootstrap_workspace", route: "workspace", tenantId, companyId: stringValue(company.id) });
+      reportError(error, { step: "bootstrap_workspace", route: "workspace", tenantId, companyId });
+      return error.message;
     }
   }
+  return null;
 }
 
 function stringValue(value: unknown) {

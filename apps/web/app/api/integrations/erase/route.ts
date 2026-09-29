@@ -1,3 +1,4 @@
+import { hasCompanyCapability } from "@/lib/api-authorization";
 import { requireApiSession } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase-server";
 import { NextResponse } from "next/server";
@@ -27,6 +28,9 @@ export async function POST(request: Request) {
   }
 
   const supabase = await createClient();
+  if (!await hasCompanyCapability(supabase, session.userId, companyId, "erase_data")) {
+    return NextResponse.json({ error: "Only a practice administrator can erase client financial data." }, { status: 403 });
+  }
   // RLS already scopes every query to the acting user's company access.
   const countRuns = async () => (await supabase.from("accounting_sync_runs").select("*", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("company_id", companyId)).count ?? 0;
   const countConnections = async () => (await supabase.from("accounting_integrations").select("*", { count: "exact", head: true }).eq("tenant_id", tenantId).eq("company_id", companyId)).count ?? 0;

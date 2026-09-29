@@ -1,7 +1,9 @@
+import { hasCompanyCapability } from "@/lib/api-authorization";
 import { requireApiSession } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase-server";
 import type { AnalysisResult, Finding, Recommendation, Upload, ValidationCheck } from "@/lib/types";
 import { NextResponse } from "next/server";
+import { verifyAnalysis } from "@/lib/analysis-attestation";
 
 export const runtime = "nodejs";
 
@@ -40,6 +42,9 @@ export async function POST(request: Request) {
   if (!result) {
     return NextResponse.json({ error: "result is required" }, { status: 400 });
   }
+  const attestation = stringValue(body.attestation);
+  const trusted = verifyAnalysis(attestation, result, tenantId, companyId);
+  if (!trusted) return NextResponse.json({ error: "Analysis result is unsigned, expired, or was modified after server analysis." }, { status: 403 });
 
   const jobId = crypto.randomUUID();
   const uploadIdMap = new Map(result.uploads.map((upload) => [upload.id, crypto.randomUUID()]));
@@ -48,9 +53,12 @@ export async function POST(request: Request) {
   const recommendationIdMap = new Map(result.recommendations.map((recommendation) => [recommendation.id, crypto.randomUUID()]));
 
   const supabase = await createClient();
+  if (!session.userId || !await hasCompanyCapability(supabase, session.userId, companyId, "prepare")) {
+    return NextResponse.json({ error: "You do not have permission to persist analysis for this company." }, { status: 403 });
+  }
   const jobSummary = {
-    score: numberValue(body.score),
-    risk: stringValue(body.risk),
+    score: trusted.score,
+    risk: trusted.risk,
     upload_count: result.uploads.length,
     validation_check_count: result.validationChecks.length,
     finding_count: result.findings.length,
@@ -58,7 +66,7 @@ export async function POST(request: Request) {
     vat_review_source: result.vatReview && typeof result.vatReview === "object" && "source" in result.vatReview ? result.vatReview.source : null,
   };
 
-  const { error: jobError } = await supabase.from("analysis_jobs").insert({
+  const job = {
     id: jobId,
     tenant_id: tenantId,
     company_id: companyId,
@@ -68,55 +76,22 @@ export async function POST(request: Request) {
     result_summary: jobSummary,
     started_at: new Date().toISOString(),
     completed_at: new Date().toISOString(),
-  });
-  if (jobError) return NextResponse.json({ error: jobError.message }, { status: 500 });
-
-  if (result.uploads.length) {
-    const { error } = await supabase.from("uploads").insert(result.uploads.map((upload) => uploadRow(upload, tenantId, companyId, uploadIdMap)));
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  if (result.validationChecks.length) {
-    const { error } = await supabase.from("validation_checks").insert(result.validationChecks.map((check) => validationCheckRow(check, tenantId, companyId, jobId, validationCheckIdMap)));
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  if (result.findings.length) {
-    const { error } = await supabase.from("findings").insert(result.findings.map((finding) => findingRow(finding, result.uploads, tenantId, companyId, jobId, uploadIdMap, findingIdMap)));
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-    const { error: evidenceError } = await supabase.from("finding_evidence_rows").insert(
-      result.findings.flatMap((finding) => evidenceRows(finding, result.uploads, tenantId, companyId, uploadIdMap, findingIdMap))
-    );
-    if (evidenceError) return NextResponse.json({ error: evidenceError.message }, { status: 500 });
-  }
-
-  if (result.recommendations.length) {
-    const rows = result.recommendations
+    retention_until: new Date(Date.now()+365*86_400_000).toISOString(),
+  };
+  const recommendations = result.recommendations
       .filter((recommendation) => findingIdMap.has(recommendation.findingId))
       .map((recommendation) => recommendationRow(recommendation, tenantId, companyId, findingIdMap, recommendationIdMap));
-    if (rows.length) {
-      const { error } = await supabase.from("recommendations").insert(rows);
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-  }
-
-  await supabase.from("finance_health_scores").insert({
-    id: crypto.randomUUID(),
-    tenant_id: tenantId,
-    company_id: companyId,
-    score: numberValue(body.score),
-    risk_level: stringValue(body.risk) || "medium",
-  });
-
-  await supabase.from("audit_logs").insert({
-    id: crypto.randomUUID(),
-    tenant_id: tenantId,
-    user_id: session.userId,
-    action: "analysis_result_persisted",
-    entity_type: "analysis_job",
-    entity_id: jobId,
-  });
+  const { error: persistenceError } = await supabase.rpc("persist_analysis_result", { p: {
+    job,
+    uploads: result.uploads.map((upload) => uploadRow(upload, tenantId, companyId, uploadIdMap)),
+    validation_checks: result.validationChecks.map((check) => validationCheckRow(check, tenantId, companyId, jobId, validationCheckIdMap)),
+    findings: result.findings.map((finding) => findingRow(finding, result.uploads, tenantId, companyId, jobId, uploadIdMap, findingIdMap)),
+    evidence: result.findings.flatMap((finding) => evidenceRows(finding, result.uploads, tenantId, companyId, uploadIdMap, findingIdMap)),
+    recommendations,
+    score: { id: crypto.randomUUID(), tenant_id: tenantId, company_id: companyId, score: trusted.score, risk_level: trusted.risk },
+    audit: { id: crypto.randomUUID(), tenant_id: tenantId, user_id: session.userId, action: "analysis_result_persisted", entity_type: "analysis_job", entity_id: jobId },
+  } });
+  if (persistenceError) return NextResponse.json({ error: persistenceError.message }, { status: 500 });
 
   return NextResponse.json({
     persisted: true,
@@ -140,6 +115,7 @@ function uploadRow(upload: Upload, tenantId: string, companyId: string, uploadId
     file_url: upload.storageStatus === "stored" && upload.fileUrl ? upload.fileUrl : `pending://${encodeURIComponent(upload.fileName)}`,
     storage_key: upload.storageKey ?? `tenants/${tenantId}/companies/${companyId}/uploads/${id}/${upload.fileName}`,
     uploaded_at: dateOrNow(upload.uploadedAt),
+    retention_until: new Date(Date.now()+90*86_400_000).toISOString(),
   };
 }
 

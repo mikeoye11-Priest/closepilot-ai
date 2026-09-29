@@ -1,3 +1,4 @@
+import { hasCompanyCapability } from "@/lib/api-authorization";
 import { requireApiSession } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase-server";
 import { authenticatedSage, selectedSageConnection } from "@/lib/integrations/sage-repository";
@@ -60,6 +61,9 @@ export async function POST(request: Request) {
   const asOfDate = dateValue(body.asOfDate) ?? new Date().toISOString().slice(0, 10);
   const syncId = crypto.randomUUID();
   const supabase = await createClient();
+  if (!await hasCompanyCapability(supabase, session.userId, companyId, "manage_integrations")) {
+    return NextResponse.json({ error: "Only a practice administrator can run accounting-system syncs." }, { status: 403 });
+  }
   const connection = await selectedSageConnection(supabase, tenantId, companyId);
   // Refuse a second concurrent sync (parallel token refresh would invalidate the
   // rotating refresh token); expire any stuck run first so it isn't blocked forever.

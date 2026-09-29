@@ -27,6 +27,15 @@ test("only a partner manages members and structure", () => {
   assert.equal(can(["practice_admin"], "manage_members"), true);
 });
 
+test("only a partner manages integrations or permanently erases data", () => {
+  for (const role of ["manager", "preparer", "client_user"] as FirmRole[]) {
+    assert.equal(can([role], "manage_integrations"), false);
+    assert.equal(can([role], "erase_data"), false);
+  }
+  assert.equal(can(["practice_admin"], "manage_integrations"), true);
+  assert.equal(can(["practice_admin"], "erase_data"), true);
+});
+
 test("capability is the union of every grant a user holds", () => {
   // Tenant-wide preparer plus manager on one branch, which the scope model allows.
   assert.equal(can(["preparer", "manager"], "review"), true);

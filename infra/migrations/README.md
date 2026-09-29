@@ -16,6 +16,14 @@ ensures the `schema_migrations` table exists, and applies any `NNNN_*.sql` file
 here that hasn't been recorded yet — **each in its own transaction**. Re-running
 is safe; already-applied files are skipped.
 
+Prove the complete chain against a disposable empty local PostgreSQL database:
+
+```bash
+npm run verify:provisioning
+```
+
+The proof requires local PostgreSQL server binaries and never touches Supabase.
+
 ## Add a migration
 
 1. Create `infra/migrations/NNNN_short_name.sql` using the next number.

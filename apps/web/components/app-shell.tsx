@@ -2780,7 +2780,8 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
         return;
       }
 
-      let result: AnalysisResult;
+      let result: AnalysisResult & { persistenceAttestation?: string };
+      let persistenceAttestation: string | undefined;
       try {
         const form = new FormData();
         selected.forEach((file) => form.append("files", file));
@@ -2804,6 +2805,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           throw new Error(payload.error || "Server parser failed");
         }
         result = await response.json();
+        persistenceAttestation = result.persistenceAttestation;
       } catch {
         result = await analyseFinanceFiles(selected, { savedProfiles: importProfiles.filter((profile) => profile.status === "confirmed") });
       }
@@ -2855,14 +2857,13 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       setVatReview(scoped.vatReview);
       setCompanySnapshots((items) => ({ ...items, [currentCompany.id]: scopedWithWorkflow }));
       setPortfolioClients((items) => updateClientSummary(items, currentCompany, scopedWithWorkflow));
-      fetch("/api/analysis-results", {
+      if (persistenceAttestation) fetch("/api/analysis-results", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tenantId: tenant.id,
           companyId: currentCompany.id,
-          score: scopedScorecard.overall,
-          risk: riskLabel(scopedScorecard.overall),
+          attestation: persistenceAttestation,
           result: scopedWithWorkflow,
         })
       }).catch(() => {});

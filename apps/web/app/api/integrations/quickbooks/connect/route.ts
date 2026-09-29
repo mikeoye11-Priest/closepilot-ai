@@ -1,4 +1,6 @@
+import { hasCompanyCapability } from "@/lib/api-authorization";
 import { requireApiSession } from "@/lib/api-auth";
+import { createClient } from "@/lib/supabase-server";
 import { encryptIntegrationSecret } from "@/lib/integrations/crypto";
 import { buildConsentUrl, quickbooksConfigured } from "@/lib/integrations/quickbooks";
 import { NextResponse } from "next/server";
@@ -16,6 +18,10 @@ export async function GET(request: Request) {
   const tenantId = url.searchParams.get("tenantId") ?? "";
   const companyId = url.searchParams.get("companyId") ?? "";
   if (!UUID_RE.test(tenantId) || !UUID_RE.test(companyId)) return NextResponse.json({ error: "A UUID tenantId and companyId are required." }, { status: 400 });
+
+  if (!await hasCompanyCapability(await createClient(), session.userId, companyId, "manage_integrations")) {
+    return NextResponse.json({ error: "Only a practice administrator can connect accounting systems." }, { status: 403 });
+  }
 
   const state = crypto.randomUUID();
   const context = encryptIntegrationSecret(JSON.stringify({ state, tenantId, companyId, userId: session.userId, createdAt: Date.now() }));

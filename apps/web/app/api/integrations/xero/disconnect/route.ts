@@ -1,3 +1,4 @@
+import { hasCompanyCapability } from "@/lib/api-authorization";
 import { requireApiSession } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase-server";
 import { authenticatedXeroClient, type XeroIntegrationRow } from "@/lib/integrations/xero-repository";
@@ -16,6 +17,9 @@ export async function POST(request: Request) {
   const { data, error } = await supabase.from("accounting_integrations").select("*").eq("id", integrationId).eq("provider", "xero").eq("user_id", session.userId).single();
   if (error || !data) return NextResponse.json({ error: error?.message || "Xero connection not found." }, { status: 404 });
   const connection = data as XeroIntegrationRow;
+  if (!await hasCompanyCapability(supabase, session.userId, connection.company_id, "manage_integrations")) {
+    return NextResponse.json({ error: "Only a practice administrator can disconnect accounting systems." }, { status: 403 });
+  }
 
   // Revoking the token at Xero is best-effort: a disconnect must always succeed so
   // a broken/expired connection can be removed. Previously this ran the token

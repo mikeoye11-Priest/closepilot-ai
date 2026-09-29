@@ -68,81 +68,172 @@ The layers are deliberately separated:
 
 The moat is the finance rules library, anomaly dataset, industry benchmarks and knowledge graph. OpenAI powers narrative and reasoning support; it must not be the source of deterministic calculations.
 
-## Multi-Tenant Practice Model
+## Multi-tenant model
 
-ClosePilot supports two onboarding paths:
+Three shapes are supported by one structure:
 
-- Accounting practice: one tenant owns many client companies.
-- Single company: one tenant owns one internal company workspace.
+| Tenant | Org unit (optional) | Company |
+|---|---|---|
+| Accounting practice | Branch / office | Client |
+| Multi-entity group | Division / region | Legal entity |
+| Single company | *none* | The company itself |
 
-Data separation rules:
+`companies.org_unit_id` is nullable, so a single entity and a practice that has
+not organised its branches both work without special-casing. The vocabulary
+(`branch` vs `division`, `client` vs `entity`) is derived from the tenant type
+in `lib/org-units.ts`, not stored in the schema.
 
-- Every client-facing table carries `tenant_id` and `company_id`.
-- Practice users see client data through `user_company_access`, not by broad tenant membership alone.
-- Uploads, findings, recommendations, reports, validation checks and AI conversations are always scoped to one company inside one tenant.
-- File storage should use tenant/company paths, for example `tenants/{tenant_id}/companies/{company_id}/uploads/{upload_id}/{filename}`.
-- AI prompts must only receive the active tenant and company context plus evidence from that same scope.
-- PostgreSQL row-level security should enforce tenant and company scope from the authenticated user session.
+**Membership is many-to-many.** A person can belong to several firms — an
+accountant who consults for two practices, or a ClosePilot facilitator across
+pilot firms. `users.tenant_id` is only a home-tenant hint; membership lives in
+`user_scope_access`.
 
-This keeps accounting practice data clean: one firm can manage 20, 50 or 100 clients, while each client's uploads, findings, reports and conversations remain isolated.
+Access is granted at the level a firm thinks in:
 
-## Platform Architecture
+- `user_scope_access` — whole tenant (`org_unit_id` null) or one org unit.
+- `user_company_access` — one company, which is the right shape for a client
+  user who should see only their own entity.
 
-**Company / Platform:** ClosePilot
+`has_company_access()` ORs both, so every RLS policy written against it honours
+either. Granting per company alone does not scale: "manages the Manchester
+branch" would be 100 rows, and would silently exclude the 101st client.
 
-**Product:** ClosePilot AI
+### Roles
 
-**Category:** AI Finance Operations Platform
+`practice_admin` · `manager` · `preparer` · `client_user`, mapped to
+capabilities in `lib/permissions.ts` rather than compared as strings at call
+sites. Capability is the **union** of every grant held, since a user can be
+firm-wide preparer and manager of one branch. Nobody can grant a role above
+their own.
 
-**Modules:**
+The four-eyes split is enforced, not just modelled: a manager can approve a
+finding but cannot partner sign off. Enforcement is server-side on the snapshot
+write, because sign-off persists through the snapshot rather than its own
+endpoint; the UI gating is advisory.
 
-- ClosePilot Close
-- ClosePilot Cash
-- ClosePilot VAT
-- ClosePilot Collections
-- ClosePilot Controls
+### Data separation
 
-## Apps
+Every client-facing table carries `tenant_id`, and row-level security enforces
+scope from the authenticated session. Two proofs run against a real database:
 
-- `apps/web`: Next.js 16, TypeScript, Tailwind CSS, React Query-ready UI.
-- `apps/api`: FastAPI modular monolith scaffold.
-- `infra`: PostgreSQL schema for tenants, companies, uploads, findings, recommendations, reports, audit logs, and AI conversations.
+- `npm run verify:isolation` — seeds two tenants, assumes each identity, asserts
+  no cross-tenant reads, rolls back.
+- `npm run verify:rls` — fails if any table has RLS enabled with **no policies**
+  (silently unreadable — PostgREST returns an empty result, never an error), or
+  if a tenant-scoped table has RLS off (readable with the public anon key).
 
-## Upload-to-Findings MVP
+The second exists because three tables reached production in that state.
 
-The current MVP can run deterministic analysis on CSV, TSV, TXT, XLSX and XLS exports uploaded through the `Upload Pack` screen.
+## Authentication
 
-Supported file inference:
+Supabase email/password. `apps/web/proxy.ts` is the gate; `CLOSEPILOT_AUTH_DISABLED=1`
+bypasses it in development only (never when `NODE_ENV=production`).
 
-- Trial Balance: filenames containing `trial`, `tb`, or default uploads
-- P&L: filenames containing `p&l`, `profit`, or `loss`
-- Balance Sheet: filenames containing `balance_sheet`, `balance-sheet`, or `bs_`
-- Aged Debtors / AR: filenames containing `debtor`, `ar`, or `receivable`
-- Aged Creditors / AP: filenames containing `creditor`, `ap`, or `payable`
-- VAT: filenames containing `vat` or `tax`
+- `/forgot-password` → `/api/auth/reset-request` (server-side, so send failures
+  reach error tracking rather than only the user) → `/auth/confirm` → `/update-password`
+- `/practice/people` → invite → `/auth/confirm` → `/join` → `/update-password`
 
-Generated outputs:
+`/auth/confirm` verifies a `token_hash` via `verifyOtp`, which needs no
+browser-bound state and therefore works when the email is opened on a different
+device. It also accepts a PKCE `code`, and forwards a parameterless request to
+`/auth/confirm/recover`, which reads an implicit-flow session from the URL
+fragment. That fallback matters: Supabase's stock `{{ .ConfirmationURL }}`
+template returns the token in the fragment, which is never sent to the server.
 
-- Validation checks
-- Evidence-linked findings
-- Confidence labels
-- Recommendations
-- Finance Review Appendix
+Inviting an address that already has an account grants access directly instead
+of failing — a normal case once membership is many-to-many.
 
-Excel workbooks are parsed through a server-side Next.js route using a Node runtime parser. The browser keeps a CSV/TSV fallback, but workbook parsing does not happen client-side.
+## Repository layout
 
-## Local Development
+- `apps/web` — Next.js 16 (App Router, Turbopack), TypeScript, Tailwind. 38 API
+  routes. `components/app-shell.tsx` holds most of the UI and is ~13k lines;
+  splitting it is the main obstacle to fast UI iteration.
+- `apps/api` — FastAPI modular monolith scaffold.
+- `infra/schema.sql` + `infra/*.sql` — the historical baseline, applied by hand
+  and known to have drifted.
+- `infra/migrations/NNNN_*.sql` — tracked, idempotent, one transaction each.
+  **New schema changes go here, never in the legacy files.**
+- `infra/tests/*.sql` — isolation, erasure and RLS proofs.
+- `qa/` — 40 test suites.
+
+## Current state
+
+Working and exercised against the deployed app:
+
+- Upload → validation → evidence-linked findings → manager review → partner
+  sign-off → exported review pack.
+- Deliverables: management accounts, FRS 102 (1A and full), draft CT600, draft
+  iXBRL. `npm run test:pilot-readiness` drives the whole chain for Xero,
+  QuickBooks, Sage and upload, asserting each balances and cites the correct source.
+- Integrations: Xero, QuickBooks and Sage Business Cloud (OAuth), plus Sage 50
+  and generic file import. All three are configured in production, but live
+  OAuth has only been exercised for Xero; QuickBooks currently points at
+  **sandbox**, and Sage Business Cloud has never been connected live.
+- Auth: password reset and invitations, both verified end to end in production.
+
+Known constraints, stated plainly:
+
+- The Supabase project is **shared with an unrelated product**. RLS protects
+  users from each other, not applications — that product's service-role key can
+  read every table. See `docs/supabase-project-separation.md`.
+- No firm switcher yet; a user in two firms loads whichever they have most
+  grants in.
+- Free-tier Supabase pauses on inactivity, which presents as
+  `TypeError: Failed to fetch` with no mention of Supabase.
+- Auth email requires Resend SMTP on **port 465**. Port 587 fails with an
+  unhelpful `unexpected_failure` and no entry in Resend's logs, which is hard
+  to diagnose from the error alone.
+
+## Running it
 
 ```bash
 npm install
-npm run dev:web
+npm run dev            # http://localhost:3004
 ```
 
-API dependencies:
+Needs `apps/web/.env.local` with `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` and `NEXT_PUBLIC_SITE_URL`. See `.env.example`.
 
 ```bash
 pip install -r apps/api/requirements.txt
 npm run dev:api
 ```
 
-The MVP currently uses seeded demo data so the finance-health-review workflow can be reviewed before live parsers and accounting integrations are added.
+### Database
+
+```bash
+npm run db:migrate     # applies any unapplied infra/migrations/*.sql
+```
+
+Reads `SUPABASE_DB_URL` from the environment or `.env.migrations.local`, and
+needs `psql` on PATH. Re-running is safe. To check SQL without applying it:
+
+```bash
+{ echo "begin;"; cat infra/migrations/00NN_x.sql; echo "rollback;"; } \
+  | psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1
+```
+
+### Verifying
+
+```bash
+npm run verify              # the full gate: build + every suite
+npm run test:pilot-readiness  # the deliverable chain, all four sources
+npm run verify:rls            # RLS posture on every table
+npm run verify:isolation      # cross-tenant read proof
+npm run verify:erasure        # right-to-erasure proof
+```
+
+The three `verify:*` scripts are read-only or roll back, so they are safe to run
+against any environment including production.
+
+## Accuracy in practice
+
+The trust model above is enforced by gates rather than intent:
+
+- `npm run test:rules` — rule accuracy and false-positive rate. A false positive
+  costs more than a missed finding here: a partner who chases one phantom stops
+  trusting the tool.
+- `npm run test:ai-explanations` — every narrative must be grounded in the
+  evidence it cites.
+- `npm run test:invariants` — cross-module checks, including that every
+  deliverable balances and cites the right source.

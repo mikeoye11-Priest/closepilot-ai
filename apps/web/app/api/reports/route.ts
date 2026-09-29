@@ -1,3 +1,4 @@
+import { hasCompanyCapability } from "@/lib/api-authorization";
 import { requireApiSession } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase-server";
 import { NextResponse } from "next/server";
@@ -26,6 +27,9 @@ export async function POST(request: Request) {
 
   const reportId = crypto.randomUUID();
   const supabase = await createClient();
+  if (!session.userId || !await hasCompanyCapability(supabase, session.userId, companyId, "prepare")) {
+    return NextResponse.json({ error: "You do not have permission to create reports for this company." }, { status: 403 });
+  }
   const { error } = await supabase.from("reports").insert({
     id: reportId,
     tenant_id: tenantId,
