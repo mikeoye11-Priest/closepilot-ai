@@ -1,5 +1,5 @@
 import { lifecycleStatus, type LifecycleStatus } from "./finding-ledger";
-import type { Finding, FindingActivity, FindingStatus, ManagerReviewStatus } from "./types";
+import type { Finding, FindingActivity, FindingEvidenceRow, FindingStatus, ManagerReviewStatus, RiskLevel } from "./types";
 
 export const lifecycleStatuses = [
   "open",
@@ -53,6 +53,49 @@ export const FINDING_LIFECYCLE_LABELS: Record<LifecycleStatus, string> = {
   approved: "Approved",
   closed: "Closed",
 };
+
+export function evidenceRowIndexes(rows?: FindingEvidenceRow[]) {
+  return rows?.map((row) => row.rowIndex ? `${row.sheetName ? `${row.sheetName}:` : ""}${row.rowIndex}` : row.sheetName).filter(Boolean).join(" / ") ?? "";
+}
+
+export function findingEvidenceReference(finding: Finding) {
+  const rows = finding.evidence?.rows ?? [];
+  const sourceFile = finding.sourceFile ?? finding.evidence?.sourceFile ?? "No source file linked";
+  const accountOrParty = finding.evidence?.accountCode || rows.find((row) => row.accountCode)?.accountCode || "N/A";
+  const calculation = finding.evidence?.calculation || finding.expectedImpact || finding.description || "No calculation captured";
+  return {
+    sourceFile,
+    rowIndexes: evidenceRowIndexes(rows) || "No source row captured",
+    rowCount: rows.length,
+    accountOrParty,
+    calculation,
+  };
+}
+
+export function findingSeverityRank(level: RiskLevel) {
+  return { low: 1, medium: 2, high: 3, critical: 4 }[level];
+}
+
+export function findingDetectionConfidence(finding: Finding) {
+  return finding.confidenceScore ?? (finding.confidence === "high" ? 95 : finding.confidence === "medium" ? 75 : 55);
+}
+
+export function findingEvidenceStrengthScore(finding: Finding, uploadedEvidenceCount = 0) {
+  const rowCount = finding.evidence?.rows?.length ?? 0;
+  const base = finding.evidenceStrength === "deterministic" ? 92 : finding.evidenceStrength === "indicator" ? 72 : 48;
+  return Math.min(99, base + Math.min(6, rowCount * 2) + Math.min(6, uploadedEvidenceCount * 3));
+}
+
+export function findingEvidenceTier(finding: Finding) {
+  if (finding.evidenceStrength === "deterministic") return "Deterministic";
+  if (finding.evidenceStrength === "advisory") return "Advisory";
+  return "Indicator";
+}
+
+export function findingTriggeredReason(finding: Finding) {
+  const calculation = finding.evidence?.calculation || finding.description;
+  return calculation.endsWith(".") ? calculation : `${calculation}.`;
+}
 
 export function isReadyForManagerReview(finding: Finding) {
   return ["evidence_received", "resolved", "approved", "accepted_risk", "false_positive", "closed"].includes(finding.status);

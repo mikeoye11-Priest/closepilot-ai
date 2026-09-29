@@ -7,7 +7,7 @@ import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompan
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateMtdReadiness, calculateMtdReadinessDrivers, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type MtdReadinessDriver, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, num as cashNum, type CashflowScenario, type StatementsForCashflow } from "@/lib/cashflow-13week";
 import { isOpenFinding, isCriticalOpenFinding, lifecycleStatus, type LifecycleStatus } from "@/lib/finding-ledger";
-import { FINDING_LIFECYCLE_LABELS, FINDING_STATUS_CONFIG, defaultReviewReason, findingActivityLabel, findingDueDate, findingLifecycleCounts, findingOwner, isReadyForManagerReview, lifecycleStatuses, managerReviewStatus, reviewedFindingStatuses } from "@/lib/finding-workflow";
+import { FINDING_LIFECYCLE_LABELS, FINDING_STATUS_CONFIG, defaultReviewReason, evidenceRowIndexes, findingActivityLabel, findingDetectionConfidence, findingDueDate, findingEvidenceReference, findingEvidenceStrengthScore, findingEvidenceTier, findingLifecycleCounts, findingOwner, findingSeverityRank, findingTriggeredReason, isReadyForManagerReview, lifecycleStatuses, managerReviewStatus, reviewedFindingStatuses } from "@/lib/finding-workflow";
 import { buildDebtorLedger, forecastRecovery, debtorExposure, type DebtorLedger } from "@/lib/debtor-ledger";
 import { checkInvariants } from "@/lib/invariants";
 import { buildWorkingCapital } from "@/lib/working-capital";
@@ -448,10 +448,6 @@ function findingsCsv(findings: Finding[]) {
   return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
 }
 
-function evidenceRowIndexes(rows?: FindingEvidenceRow[]) {
-  return rows?.map((row) => row.rowIndex ? `${row.sheetName ? `${row.sheetName}:` : ""}${row.rowIndex}` : row.sheetName).filter(Boolean).join(" / ") ?? "";
-}
-
 function evidenceRowPreview(row: FindingEvidenceRow) {
   const entries = Object.entries(row.sourceRow ?? {})
     .filter(([, value]) => String(value ?? "").trim())
@@ -462,20 +458,6 @@ function evidenceRowPreview(row: FindingEvidenceRow) {
 function evidenceCalculationLabel(row: FindingEvidenceRow) {
   const label = row.calculationInput?.label;
   return typeof label === "string" && label ? label : row.accountCode || "Evidence row";
-}
-
-function findingEvidenceReference(finding: Finding) {
-  const rows = finding.evidence?.rows ?? [];
-  const sourceFile = finding.sourceFile ?? finding.evidence?.sourceFile ?? "No source file linked";
-  const accountOrParty = finding.evidence?.accountCode || rows.find((row) => row.accountCode)?.accountCode || "N/A";
-  const calculation = finding.evidence?.calculation || finding.expectedImpact || finding.description || "No calculation captured";
-  return {
-    sourceFile,
-    rowIndexes: evidenceRowIndexes(rows) || "No source row captured",
-    rowCount: rows.length,
-    accountOrParty,
-    calculation,
-  };
 }
 
 function buildGeneratedReviewPack({
@@ -1413,10 +1395,6 @@ function supplierRiskOpportunities(findings: Finding[]): SupplierRiskOpportunity
     .slice(0, 10);
 }
 
-function findingSeverityRank(level: RiskLevel) {
-  return { low: 1, medium: 2, high: 3, critical: 4 }[level];
-}
-
 function findingMaterialityStatus(amount: number) {
   const threshold = 25_000;
   if (!amount) return { label: "Unknown", detail: "Further evidence required" };
@@ -1435,27 +1413,6 @@ function findingReviewEffort(finding?: Finding) {
     closePilot: `${closePilot} mins`,
     saved: `${Math.max(1, manual - closePilot)} mins`,
   };
-}
-
-function findingDetectionConfidence(finding: Finding) {
-  return finding.confidenceScore ?? (finding.confidence === "high" ? 95 : finding.confidence === "medium" ? 75 : 55);
-}
-
-function findingEvidenceStrengthScore(finding: Finding, uploadedEvidenceCount = 0) {
-  const rowCount = finding.evidence?.rows?.length ?? 0;
-  const base = finding.evidenceStrength === "deterministic" ? 92 : finding.evidenceStrength === "indicator" ? 72 : 48;
-  return Math.min(99, base + Math.min(6, rowCount * 2) + Math.min(6, uploadedEvidenceCount * 3));
-}
-
-function findingEvidenceTier(finding: Finding) {
-  if (finding.evidenceStrength === "deterministic") return "Deterministic";
-  if (finding.evidenceStrength === "advisory") return "Advisory";
-  return "Indicator";
-}
-
-function findingTriggeredReason(finding: Finding) {
-  const calculation = finding.evidence?.calculation || finding.description;
-  return calculation.endsWith(".") ? calculation : `${calculation}.`;
 }
 
 function readinessForecast(findings: Finding[], validationChecks: ValidationCheck[], uploads: Upload[]) {
