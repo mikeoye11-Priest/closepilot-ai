@@ -34,6 +34,7 @@
     "test:cashflow": "node --import tsx --test qa/cashflow-13week.test.ts",
     "test:debtor-ledger": "node --import tsx --test qa/debtor-ledger.test.ts",
     "test:finding-ledger": "node --import tsx --test qa/finding-ledger.test.ts",
+    "test:finding-workflow": "node --import tsx --test qa/finding-workflow.test.ts",
     "test:invariants": "node --import tsx --test qa/invariants.test.ts",
     "test:org-units": "node --import tsx --test qa/org-units.test.ts",
     "test:permissions": "node --import tsx --test qa/permissions.test.ts",

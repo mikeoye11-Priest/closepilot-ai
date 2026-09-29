@@ -7,6 +7,7 @@ import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompan
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateMtdReadiness, calculateMtdReadinessDrivers, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type MtdReadinessDriver, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, num as cashNum, type CashflowScenario, type StatementsForCashflow } from "@/lib/cashflow-13week";
 import { isOpenFinding, isCriticalOpenFinding, lifecycleStatus, type LifecycleStatus } from "@/lib/finding-ledger";
+import { defaultReviewReason, findingActivityLabel, findingDueDate, findingLifecycleCounts, findingOwner, isReadyForManagerReview, lifecycleStatuses, managerReviewStatus, reviewedFindingStatuses } from "@/lib/finding-workflow";
 import { buildDebtorLedger, forecastRecovery, debtorExposure, type DebtorLedger } from "@/lib/debtor-ledger";
 import { checkInvariants } from "@/lib/invariants";
 import { buildWorkingCapital } from "@/lib/working-capital";
@@ -99,34 +100,6 @@ const NAV_HREFS: Record<string, string> = {
 };
 
 const storageKey = "closepilot.workspace.v2";
-const lifecycleStatuses = ["open", "under_review", "evidence_requested", "evidence_received", "resolved", "approved", "closed"] as const satisfies readonly LifecycleStatus[];
-const reviewedFindingStatuses: FindingStatus[] = ["under_review", "evidence_requested", "evidence_received", "resolved", "approved", "closed", "false_positive", "accepted_risk", "in_review", "accepted", "rejected", "needs_investigation", "not_applicable"];
-// isOpenFinding, isCriticalOpenFinding and lifecycleStatus now come from the
-// canonical finding service (@/lib/finding-ledger) — one definition app-wide.
-
-function isReadyForManagerReview(finding: Finding) {
-  return ["evidence_received", "resolved", "approved", "accepted_risk", "false_positive", "closed"].includes(finding.status);
-}
-
-function managerReviewStatus(finding: Finding): ManagerReviewStatus {
-  return finding.managerReviewStatus ?? (isReadyForManagerReview(finding) ? "ready" : "not_ready");
-}
-
-function findingLifecycleCounts(findings: Finding[]) {
-  return lifecycleStatuses.reduce<Record<LifecycleStatus, number>>((counts, status) => {
-    counts[status] = findings.filter((finding) => lifecycleStatus(finding.status) === status).length;
-    return counts;
-  }, {
-    open: 0,
-    under_review: 0,
-    evidence_requested: 0,
-    evidence_received: 0,
-    resolved: 0,
-    approved: 0,
-    closed: 0,
-  });
-}
-
 type AssuranceMetrics = {
   testsExecuted: number;
   critical: number;
@@ -3589,22 +3562,6 @@ function PilotWalkthroughRail({
   );
 }
 
-function defaultReviewReason(status: FindingStatus) {
-  if (status === "under_review") return "Reviewer started review of the finding and supporting evidence.";
-  if (status === "evidence_requested") return "Reviewer requested supporting evidence before approval.";
-  if (status === "evidence_received") return "Requested evidence has been received and is ready for review.";
-  if (status === "false_positive") return "Reviewer closed the finding as a false positive.";
-  if (status === "accepted_risk") return "Reviewer accepted the risk and documented no further remediation.";
-  if (status === "approved") return "Finding approved after reviewer and manager review.";
-  if (status === "closed") return "Finding closed after review with no further action required.";
-  if (status === "accepted") return "Reviewer accepted the finding as valid based on available evidence.";
-  if (status === "rejected") return "Reviewer rejected the finding as a false positive.";
-  if (status === "needs_investigation") return "Reviewer requested further evidence before final decision.";
-  if (status === "not_applicable") return "Reviewer marked the finding as not applicable to this client or period.";
-  if (status === "resolved") return "Finding marked resolved after review action.";
-  return "Review status updated.";
-}
-
 function DashboardPanel({
   score, risk, assurance, findings, partnerSignOff, openFindings, cashAtRisk, financialExposure, timeSaved, timeSavedHours, timeSavedValue, validationWarnings, validationBlockers, validationChecks, recommendations, clients, uploads, companyName, scoreDrivers, activities, statements, setActive
 }: {
@@ -6763,15 +6720,6 @@ function FindingLifecycleSummary({ findings, setActive }: { findings: Finding[];
   );
 }
 
-function findingOwner(finding: Finding) {
-  return finding.assignedTo || finding.reviewer || "Unassigned";
-}
-
-function findingDueDate(finding: Finding) {
-  if (!finding.dueDate) return "—";
-  return new Date(finding.dueDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
-}
-
 function FindingsHub({ findings, findingEvidence, findingComments, findingActivities, partnerSignOff, reviewLocked, pilotWalkthroughStep, focusedFindingId, clearFocusedFinding, validationChecks, uploads, updateFindingStatus, updateFindingAssignment, updateManagerReview, recordPartnerSignOff, addFindingComment, addFindingEvidence, updateEvidenceStatus, onCreateNewReviewCycle, setActive }: {
   findings: Finding[];
   findingEvidence: Evidence[];
@@ -7217,10 +7165,6 @@ function FindingRegister({
   );
 }
 
-function activityLabel(action: FindingActivity["action"]) {
-  return action.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
 function FindingDetailDrawer({
   finding,
   evidence,
@@ -7526,7 +7470,7 @@ function FindingDetailDrawer({
               <div className="mt-3 grid gap-3">
                 {sortedActivities.length ? sortedActivities.map((item) => (
                   <div key={item.id} className="border-l-2 border-brand pl-3">
-                    <strong className="block text-sm">{activityLabel(item.action)}</strong>
+                    <strong className="block text-sm">{findingActivityLabel(item.action)}</strong>
                     {item.details && <p className="mt-1 text-xs text-muted">{item.details}</p>}
                     <p className="mt-1 text-xs text-muted">{item.userId} · {new Date(item.timestamp).toLocaleString("en-GB")}</p>
                   </div>
