@@ -7,6 +7,7 @@ import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompan
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateMtdReadiness, calculateMtdReadinessDrivers, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type MtdReadinessDriver, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, num as cashNum, type CashflowScenario, type StatementsForCashflow } from "@/lib/cashflow-13week";
 import { isOpenFinding, isCriticalOpenFinding, lifecycleStatus, type LifecycleStatus } from "@/lib/finding-ledger";
+import { readinessForecast, signOffTrafficLight, trafficLightClasses } from "@/lib/finding-readiness";
 import { FINDING_LIFECYCLE_LABELS, FINDING_STATUS_CONFIG, defaultReviewReason, evidenceRowIndexes, findingActivityLabel, findingDetectionConfidence, findingDueDate, findingEvidenceReference, findingEvidenceStrengthScore, findingEvidenceTier, findingLifecycleCounts, findingOwner, findingSeverityRank, findingTriggeredReason, isReadyForManagerReview, lifecycleStatuses, managerReviewStatus, reviewedFindingStatuses } from "@/lib/finding-workflow";
 import { buildDebtorLedger, forecastRecovery, debtorExposure, type DebtorLedger } from "@/lib/debtor-ledger";
 import { checkInvariants } from "@/lib/invariants";
@@ -1413,104 +1414,6 @@ function findingReviewEffort(finding?: Finding) {
     closePilot: `${closePilot} mins`,
     saved: `${Math.max(1, manual - closePilot)} mins`,
   };
-}
-
-function readinessForecast(findings: Finding[], validationChecks: ValidationCheck[], uploads: Upload[]) {
-  const current = calculateAuditReadinessV2(findings, validationChecks, uploads);
-  const simulated = (predicate: (finding: Finding) => boolean) => calculateAuditReadinessV2(
-    findings.map((finding) => predicate(finding) ? { ...finding, status: "resolved" as FindingStatus } : finding),
-    validationChecks,
-    uploads,
-  );
-  const open = findings.filter(isOpenFinding);
-  const highRiskOpen = open.filter((finding) => finding.severity === "critical" || finding.severity === "high");
-  const allResolved = simulated(isOpenFinding);
-  const highResolved = simulated((finding) => isOpenFinding(finding) && (finding.severity === "critical" || finding.severity === "high"));
-  const nextFinding = highRiskOpen[0] ?? open[0];
-  const nextResolved = nextFinding ? simulated((finding) => finding.id === nextFinding.id) : current;
-  const effortMinutes = open.reduce((sum, finding) => {
-    const effort = finding.severity === "critical" ? 12 : finding.severity === "high" ? 9 : finding.severity === "medium" ? 6 : 3;
-    return sum + effort;
-  }, validationChecks.filter((check) => check.status === "failed").length * 5);
-
-  return {
-    current,
-    nextFinding,
-    nextResolved,
-    highResolved,
-    allResolved,
-    effortMinutes,
-    highRiskOpen: highRiskOpen.length,
-    open: open.length,
-  };
-}
-
-function signOffTrafficLight({
-  signOffEnabled,
-  signOffComplete,
-  acceptedRiskCount,
-  criticalOpen,
-  highOpen,
-  validationBlockers,
-  evidenceOutstanding,
-  managerReviewComplete,
-}: {
-  signOffEnabled: boolean;
-  signOffComplete: boolean;
-  acceptedRiskCount: number;
-  criticalOpen: number;
-  highOpen: number;
-  validationBlockers: number;
-  evidenceOutstanding: number;
-  managerReviewComplete: boolean;
-}) {
-  if (signOffComplete) {
-    return {
-      label: acceptedRiskCount ? "Signed With Accepted Risks" : "Signed Off",
-      state: acceptedRiskCount ? "amber" : "green",
-      headline: acceptedRiskCount ? "Locked with accepted risks" : "Locked and clean",
-      detail: acceptedRiskCount ? `${acceptedRiskCount} accepted risk(s) retained in the review pack.` : "No accepted risks recorded at sign-off.",
-    };
-  }
-
-  if (signOffEnabled && acceptedRiskCount > 0) {
-    return {
-      label: "Ready With Accepted Risks",
-      state: "amber",
-      headline: "Partner judgement required",
-      detail: `${acceptedRiskCount} accepted risk(s) must remain visible in the sign-off certificate.`,
-    };
-  }
-
-  if (signOffEnabled) {
-    return {
-      label: "Ready",
-      state: "green",
-      headline: "Ready for sign-off",
-      detail: "No critical/high findings, evidence requests, validation blockers or manager approvals remain.",
-    };
-  }
-
-  const blockers = [
-    criticalOpen ? `${criticalOpen} critical open` : "",
-    highOpen ? `${highOpen} high open` : "",
-    validationBlockers ? `${validationBlockers} validation blocker(s)` : "",
-    evidenceOutstanding ? `${evidenceOutstanding} evidence request(s)` : "",
-    !managerReviewComplete ? "manager review outstanding" : "",
-  ].filter(Boolean);
-
-  return {
-    label: "Not Ready",
-    state: "red",
-    headline: "Sign-off blocked",
-    detail: blockers.length ? blockers.join(" · ") : "Sign-off gate conditions are not yet satisfied.",
-  };
-}
-
-function trafficLightClasses(state: string) {
-  if (state === "green") return { box: "border-emerald-200 bg-emerald-50", text: "text-emerald-800", dot: "bg-emerald-600" };
-  if (state === "amber") return { box: "border-amber-200 bg-amber-50", text: "text-amber-800", dot: "bg-amber-500" };
-  return { box: "border-red-200 bg-red-50", text: "text-red-800", dot: "bg-red-600" };
 }
 
 function partnerReviewNote(finding?: Finding) {
