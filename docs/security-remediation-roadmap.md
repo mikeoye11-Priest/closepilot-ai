@@ -40,10 +40,10 @@ persistence failure cannot leave a partial review.
 
 - [x] Replace the custom CSV reader with a standards-compliant streaming parser.
 - [x] Enforce approved retention periods for database rows and storage objects.
-- [ ] Add legal-hold, deletion-audit, retry, and failed-purge handling.
-- [ ] Make the Playwright server lifecycle reliable with or without a local
+- [x] Add legal-hold, deletion-audit, retry, and failed-purge handling.
+- [x] Make the Playwright server lifecycle reliable with or without a local
   development server.
-- [ ] Add CSP and production HSTS after compatibility testing.
+- [x] Add CSP and production HSTS after compatibility testing.
 
 Exit gate: the complete verification command passes from a clean checkout and
 retention can be demonstrated without deleting held or in-scope records.
