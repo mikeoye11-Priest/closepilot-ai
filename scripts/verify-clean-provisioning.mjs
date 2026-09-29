@@ -18,6 +18,7 @@ try{
   ["capability authorization","infra/tests/capability_authorization.sql","PASS: role capability matrix"],
   ["analysis transactionality","infra/tests/analysis_transactionality.sql","PASS: induced late failure"],
   ["retention enforcement","infra/tests/retention_enforcement.sql","PASS: expired rows purged"],
+  ["retention holds and purge audit","infra/tests/retention_holds_and_purge_audit.sql","PASS: legal holds exclude scoped records"],
  ];
  for(const[name,file,marker]of proofs){const output=run("psql",[url,"-v","ON_ERROR_STOP=1","-f",file]);if(!output.includes(marker))throw Error(`${name} proof did not emit its PASS marker.`);console.log(`PASS: ${name}`)}
  console.log(`PASS: clean database provisioned with ${counts[0]} migrations and ${counts[1]} public tables; repeat run was clean.`);
