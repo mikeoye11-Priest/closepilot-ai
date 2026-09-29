@@ -38,6 +38,7 @@
     "test:permissions": "node --import tsx --test qa/permissions.test.ts",
     "test:analysis-attestation": "node --import tsx --test qa/analysis-attestation.test.ts",
     "test:workspace-state": "node --import tsx --test qa/workspace-state.test.ts",
+    "test:workspace-snapshots": "node --import tsx --test qa/workspace-snapshots.test.ts",
     "test:sign": "node --import tsx --test qa/sign-handling.test.ts",
     "test:working-capital": "node --import tsx --test qa/working-capital.test.ts",
     "test:runway": "node --import tsx --test qa/runway.test.ts",

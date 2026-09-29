@@ -46,6 +46,7 @@ import type { AccountingIntegrationState } from "@/lib/integrations/types";
 import { decideUploadMode, formatUploadBytes } from "@/lib/upload-capacity";
 import { recentVatPeriods, recentPeriods, VAT_PERIOD_COUNTS, PERIOD_COUNTS, type VatFrequency, type ReportFrequency } from "@/lib/vat-periods";
 import { ManagementAccountsPanel } from "@/components/management-accounts-panel";
+import { PERSISTABLE_ID, clientToCompany, emptySnapshot, fetchCompanySnapshot, isUnusableVatReview, mergeImportProfiles, normaliseSnapshot, updateClientSummary } from "@/lib/workspace-snapshots";
 
 const navGroups = [
   { label: "", items: ["Partner Summary"] },
@@ -97,9 +98,6 @@ const NAV_HREFS: Record<string, string> = {
 };
 
 const storageKey = "closepilot.workspace.v2";
-// Pilot-demo ids ("company_pilot_brightlane") are not UUIDs and have no row to
-// save against, so snapshot writes are skipped for them rather than 400ing.
-const PERSISTABLE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const lifecycleStatuses = ["open", "under_review", "evidence_requested", "evidence_received", "resolved", "approved", "closed"] as const satisfies readonly LifecycleStatus[];
 const reviewedFindingStatuses: FindingStatus[] = ["under_review", "evidence_requested", "evidence_received", "resolved", "approved", "closed", "false_positive", "accepted_risk", "in_review", "accepted", "rejected", "needs_investigation", "not_applicable"];
 // isOpenFinding, isCriticalOpenFinding and lifecycleStatus now come from the
@@ -289,138 +287,6 @@ type Workpaper = {
   reviewer: string;
   date: string;
 };
-
-const emptyAnalysisResult: AnalysisResult = {
-  uploads: [],
-  validationChecks: [],
-  findings: [],
-  importProfiles: [],
-  findingEvidence: [],
-  findingComments: [],
-  findingActivities: [],
-  collectionCases: [],
-  partnerSignOff: undefined,
-  recommendations: [],
-  vatReview: undefined,
-};
-
-function emptySnapshot(): AnalysisResult {
-  return { ...emptyAnalysisResult, uploads: [], validationChecks: [], findings: [], importProfiles: [], findingEvidence: [], findingComments: [], findingActivities: [], collectionCases: [], partnerSignOff: undefined, recommendations: [] };
-}
-
-// A real (persistable) workspace has UUID tenant/company ids. The sample/demo
-// workspace uses non-UUID placeholders (e.g. company_pilot_brightlane), which
-// the accounting-integration routes reject — so a live Xero connection can only
-// be offered once the user has created their own workspace.
-const WORKSPACE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-// A saved VAT review is *unusable* only when it was produced by the superseded
-// VAT-inclusive import bug — computation accuracy collapsed to zero with a flood
-// of false "invalid VAT rate" findings. Those numbers are materially wrong and
-// must be regenerated. Crucially this only applies to a LEGACY-engine review:
-// a review computed by the CURRENT engine already has the inclusive-normalisation
-// fix, so even one with many rate findings has usable numbers and must be shown
-// (its findings are review items, not a reason to blank the page). Treating a
-// current-engine review as unusable was blanking a valid £8,315/£1,635 return.
-function isUnusableVatReview(vatReview?: VatReviewResult) {
-  if (!vatReview || vatReview.source === "empty") return false;
-  if (vatReview.engineVersion === VAT_ENGINE_VERSION) return false;
-  const rateFindingFlood = vatReview.findings.filter((finding) => finding.id === "VAT101" || /Invalid VAT rate detected/i.test(finding.finding)).length;
-  return (vatReview.scoreBreakdown?.computationAccuracy ?? 100) === 0 && rateFindingFlood >= 20;
-}
-
-/**
- * Fetches one company's snapshot.
- *
- * The result distinguishes "this company genuinely has no review yet" from
- * "the request failed", because the two must not be treated alike: rendering
- * a failed fetch as an empty review would let the next autosave persist that
- * emptiness over a real one. Callers abort on { ok: false }.
- */
-type SnapshotFetch = { ok: true; snapshot: AnalysisResult | null } | { ok: false };
-
-async function fetchCompanySnapshot(companyId: string): Promise<SnapshotFetch> {
-  // Pilot-demo companies are never persisted, so absent is the right answer.
-  if (!PERSISTABLE_ID.test(companyId)) return { ok: true, snapshot: null };
-  try {
-    const res = await fetch(`/api/workspace/snapshot?companyId=${encodeURIComponent(companyId)}`);
-    if (!res.ok) return { ok: false };
-    return { ok: true, snapshot: ((await res.json()).snapshot ?? null) as AnalysisResult | null };
-  } catch {
-    return { ok: false };
-  }
-}
-
-function normaliseSnapshot(snapshot?: AnalysisResult, options: { preserveStaleVatReview?: boolean } = {}): AnalysisResult {
-  if (!snapshot || snapshot.uploads.length === 0) return emptySnapshot();
-  const reviewLocked = snapshot.partnerSignOff?.reviewPackStatus === "LOCKED" || snapshot.partnerSignOff?.status === "locked" || snapshot.partnerSignOff?.status === "signed";
-  const unusableVatReview = isUnusableVatReview(snapshot.vatReview);
-  return {
-    uploads: snapshot.uploads,
-    validationChecks: snapshot.validationChecks ?? [],
-    findings: snapshot.findings ?? [],
-    importProfiles: snapshot.importProfiles ?? [],
-    findingEvidence: snapshot.findingEvidence ?? [],
-    findingComments: snapshot.findingComments ?? [],
-    findingActivities: snapshot.findingActivities ?? [],
-    collectionCases: snapshot.collectionCases ?? [],
-    partnerSignOff: snapshot.partnerSignOff,
-    recommendations: (snapshot.recommendations ?? []).map((recommendation) => reviewLocked ? { ...recommendation, completed: true } : recommendation),
-    vatReview: unusableVatReview && !options.preserveStaleVatReview ? undefined : snapshot.vatReview,
-    inventoryReview: snapshot.inventoryReview,
-    statements: snapshot.statements,
-  };
-}
-
-
-function clientToCompany(client: ClientCompany, tenantId: string): Company {
-  return {
-    id: client.id,
-    tenantId,
-    name: client.name,
-    industry: "Professional Services",
-    accountingSystem: client.system,
-    currency: "GBP",
-    country: "United Kingdom"
-  };
-}
-
-function updateClientSummary(clients: ClientCompany[], company: Company, snapshot: AnalysisResult): ClientCompany[] {
-  if (!snapshot.uploads.length) {
-    const nextClient: ClientCompany = {
-      id: company.id,
-      name: company.name,
-      system: company.accountingSystem,
-      score: 0,
-      risk: "medium",
-      openFindings: 0,
-      closeStatus: "Awaiting upload",
-    };
-    return [nextClient, ...clients.filter((item) => item.id !== company.id)];
-  }
-  const score = calculateFinanceScorecard(snapshot.findings, snapshot.validationChecks, snapshot.recommendations, snapshot.uploads).overall;
-  const risk = riskLabel(score);
-  const openFindings = snapshot.findings.filter(isOpenFinding).length;
-  const nextClient: ClientCompany = {
-    id: company.id,
-    name: company.name,
-    system: company.accountingSystem,
-    score,
-    risk,
-    openFindings,
-    closeStatus: snapshot.uploads.length ? `${snapshot.uploads.length} files reviewed` : "Awaiting upload"
-  };
-  return [nextClient, ...clients.filter((item) => item.id !== company.id)];
-}
-
-function mergeImportProfiles(existing: ImportMappingProfile[], incoming: ImportMappingProfile[]) {
-  const merged = new Map(existing.map((profile) => [profile.id, profile]));
-  incoming.forEach((profile) => {
-    const prior = merged.get(profile.id);
-    merged.set(profile.id, prior?.status === "confirmed" ? { ...profile, ...prior, lastUsedAt: profile.lastUsedAt ?? prior.lastUsedAt } : profile);
-  });
-  return Array.from(merged.values());
-}
 
 // Rule counts sourced from the actual rule library — always accurate
 const LAYER_RULE_COUNTS = {
@@ -12154,7 +12020,7 @@ function integrationActivityLabel(action: string): string {
 }
 
 function SettingsPanel({ tenant, company, userEmail, userName, onIntegrationAnalysis, onSyncedDataErased, setActive, presentationMode }: { tenant: Tenant; company: Company; userEmail: string; userName: string; onIntegrationAnalysis: (result: AnalysisResult, warnings?: string[]) => void; onSyncedDataErased?: () => void; setActive: (value: string) => void; presentationMode: boolean }) {
-  const canConnectLiveIntegration = WORKSPACE_UUID_RE.test(tenant.id) && WORKSPACE_UUID_RE.test(company.id);
+  const canConnectLiveIntegration = PERSISTABLE_ID.test(tenant.id) && PERSISTABLE_ID.test(company.id);
   const [name, setName] = useState(userName);
   const [email, setEmail] = useState(userEmail);
   const [role, setRole] = useState("Practice Admin");
