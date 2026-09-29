@@ -37,21 +37,37 @@ export async function loadReportStatements(
   const scopedProvider = SYNC_PROVIDERS.has(provider as SourceProvider) ? (provider as SourceProvider) : undefined;
   const explicitRun = UUID_RE.test(syncId);
 
+  // Company snapshots are authoritative. The workspace fallback below exists
+  // only for rows not yet drained by /api/workspace's migration-on-read path.
+  let snapshot: { statements?: SyncStatements; findings?: ManagementAccountsFinding[] } | undefined;
+  let snapshotExists = false;
+  if (companyId && !explicitRun) {
+    const { data: snapshotRow } = await supabase
+      .from("company_snapshots")
+      .select("data")
+      .eq("company_id", companyId)
+      .maybeSingle();
+    if (snapshotRow) {
+      snapshotExists = true;
+      snapshot = snapshotRow.data as typeof snapshot;
+    }
+  }
+
   // The user's workspace snapshot reflects their CURRENT review. Read it once so it
   // can (a) act as a TOMBSTONE — a snapshot that exists but carries no statements
   // means the review was cleared or erased, so the preview must NOT resurrect a
   // stale sync run that survived disconnect — and (b) supply the fallback statements
   // for an uploaded review. A specific syncId is an explicit request and bypasses this.
-  let snapshot: { statements?: SyncStatements; findings?: ManagementAccountsFinding[] } | undefined;
   let snapshotCleared = false;
-  if (companyId && !explicitRun) {
+  if (companyId && !explicitRun && !snapshotExists) {
     const { data: ws } = await supabase.from("user_workspaces").select("data").eq("user_id", userId).limit(1);
     const snapshots = (ws?.[0]?.data as { companySnapshots?: Record<string, { statements?: SyncStatements; findings?: ManagementAccountsFinding[] }> } | undefined)?.companySnapshots;
     if (snapshots && Object.prototype.hasOwnProperty.call(snapshots, companyId)) {
+      snapshotExists = true;
       snapshot = snapshots[companyId];
-      snapshotCleared = !hasRows(snapshot?.statements);
     }
   }
+  snapshotCleared = snapshotExists && !hasRows(snapshot?.statements);
   if (snapshotCleared) return null;
 
   // 1. Latest completed sync for this company (or a specific sync run), scoped to

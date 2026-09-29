@@ -1,3 +1,4 @@
+import { hasCompanyCapability } from "@/lib/api-authorization";
 import { requireApiSession } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase-server";
 import { decryptIntegrationSecret, encryptIntegrationSecret } from "@/lib/integrations/crypto";
@@ -17,13 +18,16 @@ export async function GET(request: Request) {
   try {
     const context = JSON.parse(decryptIntegrationSecret(cookie)) as { state: string; tenantId: string; companyId: string; userId: string; createdAt: number };
     if (context.userId !== session.userId || Date.now() - context.createdAt > 600_000) throw new Error("Xero OAuth context is invalid or expired.");
+    const supabase = await createClient();
+    if (!await hasCompanyCapability(supabase, session.userId, context.companyId, "manage_integrations")) {
+      return NextResponse.json({ error: "Integration administration permission is required." }, { status: 403 });
+    }
     const xero = createXeroClient(context.state);
     const tokenSet = await xero.apiCallback(xeroCallbackUrl(request.url));
     if (!tokenSet.access_token || !tokenSet.refresh_token) throw new Error("Xero returned an incomplete token set.");
     const tenants = await xero.updateTenants();
     if (!tenants.length) throw new Error("No Xero organisations were authorised.");
 
-    const supabase = await createClient();
     const rows = tenants.map((tenant: Record<string, unknown>) => ({
       id: crypto.randomUUID(),
       tenant_id: context.tenantId,

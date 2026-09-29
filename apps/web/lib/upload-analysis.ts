@@ -9,6 +9,7 @@ import { runVatEngine } from "./vat-engine";
 import { buildInventoryReview } from "./inventory-engine";
 import { buildStatementsFromUploads } from "./upload-statements";
 import { dedupeFindings } from "./finding-ledger";
+import { parseDelimitedRecords } from "./delimited-parser";
 import {
   normaliseFinanceRows,
   type Creditor,
@@ -326,8 +327,13 @@ export async function parseFinanceFile(file: File): Promise<ParsedFile> {
   const canParse = /\.(csv|tsv|txt)$/i.test(file.name);
   const upload: Upload = { id: `up_${crypto.randomUUID()}`, tenantId: tenant.id, companyId: company.id, fileType, fileName: file.name, uploadedAt: new Date().toISOString().slice(0, 10) };
   if (!canParse) return { upload, headers: [], rows: [], isParsed: false };
-  const text = await file.text();
-  const { headers, rows } = parseDelimitedText(text, file.name.toLowerCase().endsWith(".tsv") ? "\t" : undefined);
+  const { parseDelimitedFile } = await import("./server-delimited-parser");
+  const records = await parseDelimitedFile(file, file.name.toLowerCase().endsWith(".tsv") ? "\t" : undefined);
+  const headers = (records[0] ?? []).map(normaliseHeader);
+  const rows = records.slice(1).map((cells,index)=>({
+    ...Object.fromEntries(headers.map((header,cellIndex)=>[header,cells[cellIndex]?.trim()??""])),
+    __sourceRowIndex:String(index+2),
+  }));
   return { upload: { ...upload, rowCount: rows.length }, headers, rows, isParsed: true };
 }
 
@@ -336,27 +342,15 @@ export function createUpload(fileName: string, rowCount?: number): Upload {
 }
 
 export function parseDelimitedText(text: string, delimiter?: string) {
-  const d = delimiter ?? (text.split(/\r?\n/)[0]?.includes("\t") ? "\t" : ",");
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  const headers = splitLine(lines[0] ?? "", d).map(normaliseHeader);
-  const rows = lines.slice(1).map((line, index) => {
-    const cells = splitLine(line, d);
+  const records = parseDelimitedRecords(text, delimiter);
+  const headers = (records[0] ?? []).map(normaliseHeader);
+  const rows = records.slice(1).map((cells, index) => {
     return {
       ...Object.fromEntries(headers.map((h, i) => [h, cells[i]?.trim() ?? ""])),
       __sourceRowIndex: String(index + 2),
     };
   });
   return { headers, rows };
-}
-
-function splitLine(line: string, delimiter: string) {
-  const result: string[] = []; let current = ""; let quoted = false;
-  for (const char of line) {
-    if (char === "\"") { quoted = !quoted; continue; }
-    if (char === delimiter && !quoted) { result.push(current); current = ""; continue; }
-    current += char;
-  }
-  result.push(current); return result;
 }
 
 export function normaliseHeader(h: string) { return h.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""); }

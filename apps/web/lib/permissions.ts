@@ -28,10 +28,14 @@ export type Capability =
   /** Invite people, change roles, remove members. */
   | "manage_members"
   /** Create and edit org units. */
-  | "manage_structure";
+  | "manage_structure"
+  /** Connect, disconnect, and administer accounting-system integrations. */
+  | "manage_integrations"
+  /** Permanently erase client financial data. */
+  | "erase_data";
 
 const CAPABILITIES: Record<FirmRole, readonly Capability[]> = {
-  practice_admin: ["view", "prepare", "review", "sign_off", "manage_members", "manage_structure"],
+  practice_admin: ["view", "prepare", "review", "sign_off", "manage_members", "manage_structure", "manage_integrations", "erase_data"],
   manager: ["view", "prepare", "review"],
   preparer: ["view", "prepare"],
   // An SME seeing its own entity: reads its review, changes nothing.

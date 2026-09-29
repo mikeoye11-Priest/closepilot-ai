@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { parseDelimitedRecords } from "../apps/web/lib/delimited-parser";
+import { parseDelimitedText } from "../apps/web/lib/upload-analysis";
+import { parseDelimitedFile } from "../apps/web/lib/server-delimited-parser";
+test("quoted multiline fields remain one record",()=>{const p=parseDelimitedText('account,description,amount\r\n4000,"First line\r\nsecond line",125.50\r\n');assert.equal(p.rows.length,1);assert.equal(p.rows[0].description,"First line\r\nsecond line");assert.equal(p.rows[0].amount,"125.50")});
+test("embedded delimiters and escaped quotes follow CSV rules",()=>{assert.deepEqual(parseDelimitedRecords('name,detail\n"Acme, Ltd","said ""paid"""\n'),[["name","detail"],["Acme, Ltd",'said "paid"']])});
+test("TSV and semicolon exports are detected",()=>{assert.deepEqual(parseDelimitedRecords("a\tb\n1\t2"),[["a","b"],["1","2"]]);assert.deepEqual(parseDelimitedRecords("a;b\n1;2"),[["a","b"],["1","2"]])});
+test("blank cells survive while empty records are skipped",()=>{assert.deepEqual(parseDelimitedRecords("a,b,c\n1,,3\n\n"),[["a","b","c"],["1","","3"]])});
+test("server ingestion parses chunked quoted multiline data",async()=>{const file=new Blob(['account,description\n4000,"line one\nline two"\n']);assert.deepEqual(await parseDelimitedFile(file),[["account","description"],["4000","line one\nline two"]])});

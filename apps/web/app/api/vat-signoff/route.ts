@@ -1,3 +1,4 @@
+import { hasCompanyCapability } from "@/lib/api-authorization";
 import { requireApiSession } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase-server";
 import { NextResponse } from "next/server";
@@ -26,6 +27,10 @@ export async function POST(request: Request) {
   }
 
   const supabase = await createClient();
+  if (!session.userId || !await hasCompanyCapability(supabase, session.userId, companyId, "sign_off")) {
+    return NextResponse.json({ error: "Only a partner can approve or reopen a VAT filing review." }, { status: 403 });
+  }
+
   const reportId = crypto.randomUUID();
   const { error: reportError } = await supabase.from("reports").insert({
     id: reportId,

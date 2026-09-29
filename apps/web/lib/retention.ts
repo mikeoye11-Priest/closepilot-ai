@@ -11,7 +11,7 @@
 // Data Protection lead has confirmed each period. Right-to-erasure (immediate,
 // per-client) is separate and already live — see infra/tests/erasure_proof.sql.
 
-export type RetentionCategory = "audit_logs" | "sync_runs" | "integration_tokens" | "operational_logs";
+export type RetentionCategory = "raw_uploads" | "analysis_jobs" | "audit_logs" | "sync_runs" | "integration_tokens" | "operational_logs";
 
 // A retention target: the table + timestamp column that starts the clock, the
 // default period in days, and whether that period has been confirmed. Periods
@@ -26,17 +26,19 @@ export type RetentionTarget = {
 };
 
 export const RETENTION_TARGETS: Record<RetentionCategory, RetentionTarget> = {
+  raw_uploads: { category: "raw_uploads", table: "uploads", timestampColumn: "retention_until", days: 90, basis: "Processing on controller instruction", confirmed: true },
+  analysis_jobs: { category: "analysis_jobs", table: "analysis_jobs", timestampColumn: "retention_until", days: 365, basis: "Processing on controller instruction", confirmed: true },
   // Audit logs — retained for accountability, then pruned. [24 months]
-  audit_logs: { category: "audit_logs", table: "audit_logs", timestampColumn: "created_at", days: 730, basis: "Security / accountability (UK GDPR Art 5(2))", confirmed: false },
+  audit_logs: { category: "audit_logs", table: "audit_logs", timestampColumn: "created_at", days: 730, basis: "Security / accountability (UK GDPR Art 5(2))", confirmed: true },
   // Sync runs hold an operational copy of the client financials (result_summary).
   // [Engagement + 12 months] — modelled here as a fixed 365-day default until a
   // controller's instruction (from the DPA) overrides it. [12 months]
-  sync_runs: { category: "sync_runs", table: "accounting_sync_runs", timestampColumn: "started_at", days: 365, basis: "Processing on controller instruction", confirmed: false },
+  sync_runs: { category: "sync_runs", table: "accounting_sync_runs", timestampColumn: "started_at", days: 365, basis: "Processing on controller instruction", confirmed: true },
   // Accounting-integration tokens — dropped after a period of inactivity. [90 days]
-  integration_tokens: { category: "integration_tokens", table: "accounting_integrations", timestampColumn: "last_synced_at", days: 90, basis: "Necessary to provide the service", confirmed: false },
+  integration_tokens: { category: "integration_tokens", table: "accounting_integrations", timestampColumn: "last_synced_at", days: 90, basis: "Necessary to provide the service", confirmed: true },
   // Operational / error logs (host + Sentry). [90 days] — enforced at the host, not
   // in this table; listed so the policy and code agree on the period.
-  operational_logs: { category: "operational_logs", table: "(host / Sentry)", timestampColumn: "created_at", days: 90, basis: "Legitimate interest (security, reliability)", confirmed: false },
+  operational_logs: { category: "operational_logs", table: "(host / Sentry)", timestampColumn: "created_at", days: 90, basis: "Legitimate interest (security, reliability)", confirmed: true },
 };
 
 const DAY_MS = 86_400_000;

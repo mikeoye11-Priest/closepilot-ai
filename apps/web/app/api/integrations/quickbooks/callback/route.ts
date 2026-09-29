@@ -1,3 +1,4 @@
+import { hasCompanyCapability } from "@/lib/api-authorization";
 import { requireApiSession } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase-server";
 import { decryptIntegrationSecret, encryptIntegrationSecret } from "@/lib/integrations/crypto";
@@ -33,6 +34,9 @@ export async function GET(request: Request) {
     } catch { /* name is cosmetic — proceed without it */ }
 
     const supabase = await createClient();
+    if (!await hasCompanyCapability(supabase, session.userId, context.companyId, "manage_integrations")) {
+      return NextResponse.json({ error: "Integration administration permission is required." }, { status: 403 });
+    }
     const row = {
       id: crypto.randomUUID(),
       tenant_id: context.tenantId,

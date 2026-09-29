@@ -6,7 +6,7 @@ import { loadReportStatements } from "../apps/web/lib/report-statements";
 // the latest (started_at desc) matching accounting_sync_runs row; user_workspaces
 // resolves empty so the sync-run path is what's under test.
 type Run = { tenant_id: string; company_id: string; provider: string; status: string; started_at: string; result_summary: unknown };
-function stub(runs: Run[], workspace?: unknown) {
+function stub(runs: Run[], workspace?: unknown, snapshots: Record<string, unknown> = {}) {
   const state = { table: "", filters: {} as Record<string, unknown> };
   const builder: Record<string, unknown> = {
     from(t: string) { state.table = t; state.filters = {}; return builder; },
@@ -14,6 +14,11 @@ function stub(runs: Run[], workspace?: unknown) {
     order() { return builder; },
     limit() { return builder; },
     eq(col: string, val: unknown) { state.filters[col] = val; return builder; },
+    maybeSingle() {
+      if (state.table !== "company_snapshots") return Promise.resolve({ data: null });
+      const data = snapshots[String(state.filters.company_id)];
+      return Promise.resolve({ data: data === undefined ? null : { data } });
+    },
     then(resolve: (v: { data: unknown[] }) => void) {
       if (state.table === "user_workspaces") return resolve({ data: workspace ? [{ data: workspace }] : [] });
       if (state.table !== "accounting_sync_runs") return resolve({ data: [] });
@@ -87,4 +92,11 @@ test("source falls back to the run's provider column when statements carry no pr
   ];
   const loaded = await loadReportStatements(stub(runs), { ...opts, provider: "sage" });
   assert.equal(loaded?.source, "sage");
+});
+
+test("a migrated company snapshot remains the source for uploaded accounts", async () => {
+  const migrated = { statements: { balanceSheet: [{ item: "Cash", amount: "1" }], profitLoss: [], sourceProvider: "upload" }, findings: [] };
+  const loaded = await loadReportStatements(stub([], undefined, { c: migrated }), opts);
+  assert.equal(loaded?.source, "upload");
+  assert.deepEqual(loaded?.statements, migrated.statements);
 });

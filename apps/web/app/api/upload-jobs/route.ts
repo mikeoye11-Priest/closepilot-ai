@@ -1,3 +1,4 @@
+import { hasCompanyCapability } from "@/lib/api-authorization";
 import { NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-auth";
 import { enforceRateLimit, rateLimitKey } from "@/lib/rate-limit";
@@ -58,6 +59,9 @@ export async function POST(request: Request) {
   });
   const manifest = uploadRows.map((row) => row.manifest);
   const supabase = await createClient();
+  if (!session.userId || !await hasCompanyCapability(supabase, session.userId, companyId, "prepare")) {
+    return NextResponse.json({ error: "You do not have permission to upload data for this company." }, { status: 403 });
+  }
 
   const { error: uploadError } = await supabase.from("uploads").insert(uploadRows.map(({ manifest: _manifest, ...row }) => row));
   if (uploadError) {
