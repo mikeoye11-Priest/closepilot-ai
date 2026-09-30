@@ -2,22 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { EvidenceDecisionTrace } from "@/components/evidence-decision-trace";
-import { FindingDetailDrawer } from "@/components/finding-detail-drawer";
-import { FindingCard, FindingList } from "@/components/finding-cards";
-import { FindingsInsightsPanel } from "@/components/findings-insights-panel";
+import { FindingList } from "@/components/finding-cards";
 import { FindingsHub } from "@/components/findings-hub";
 import { EvidenceRowsPreview } from "@/components/evidence-rows-preview";
-import { DrawerField, FindingLifecycleSummary, FindingRegister } from "@/components/finding-workflow-panels";
+import { FindingLifecycleSummary } from "@/components/finding-workflow-panels";
 import { ForecastLine, SummaryItem } from "@/components/review-metrics";
 import { EmptyState, Panel, Pill } from "@/components/ui-primitives";
 import { evidenceGroundedAnswer, type GroundedAnswerSections } from "@/lib/ask-closepilot";
 import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompany, pilotTenant, tenant as seededTenant } from "@/lib/data";
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateMtdReadiness, calculateMtdReadinessDrivers, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type MtdReadinessDriver, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
 import { buildThirteenWeekCashflow, thirteenWeekInputFromStatements, num as cashNum, type CashflowScenario, type StatementsForCashflow } from "@/lib/cashflow-13week";
-import { isOpenFinding, isCriticalOpenFinding, lifecycleStatus, type LifecycleStatus } from "@/lib/finding-ledger";
+import { isOpenFinding, isCriticalOpenFinding, lifecycleStatus } from "@/lib/finding-ledger";
 import { readinessForecast, signOffTrafficLight, trafficLightClasses } from "@/lib/finding-readiness";
-import { FINDING_LIFECYCLE_LABELS, FINDING_STATUS_CONFIG, defaultReviewReason, evidenceRowIndexes, findingActivityLabel, findingDetectionConfidence, findingDueDate, findingEvidenceReference, findingEvidenceStrengthScore, findingEvidenceTier, findingLifecycleCounts, findingOwner, findingSeverityRank, findingTriggeredReason, isReadyForManagerReview, lifecycleStatuses, managerReviewStatus, reviewedFindingStatuses } from "@/lib/finding-workflow";
+import { FINDING_LIFECYCLE_LABELS, FINDING_STATUS_CONFIG, defaultReviewReason, evidenceRowIndexes, findingDetectionConfidence, findingDueDate, findingEvidenceReference, findingEvidenceTier, findingLifecycleCounts, findingOwner, findingSeverityRank, isReadyForManagerReview, managerReviewStatus, reviewedFindingStatuses } from "@/lib/finding-workflow";
 import { buildDebtorLedger, forecastRecovery, debtorExposure, type DebtorLedger } from "@/lib/debtor-ledger";
 import { checkInvariants } from "@/lib/invariants";
 import { buildWorkingCapital } from "@/lib/working-capital";
@@ -41,7 +38,6 @@ const INSIGHT_SEV_CHIP: Record<string, string> = {
   info: "bg-slate-100 text-slate-600 ring-slate-500/20",
 };
 import type { RuleAnalyticsReport } from "@/lib/rule-analytics";
-import { findingStandardReference } from "@/lib/finding-standards";
 import { buildPilotMetrics, PILOT_HOURLY_RATE, type PilotMetrics } from "@/lib/pilot-metrics";
 import type { InventoryReviewResult } from "@/lib/inventory-engine";
 import { shouldGenerateSnapshot, inventoryFingerprint, financeInsightsFingerprint, latestSnapshotFor, type ReportSchedule, type ScheduledReport, type ReportCadence, type ReportKind } from "@/lib/scheduled-reports";
