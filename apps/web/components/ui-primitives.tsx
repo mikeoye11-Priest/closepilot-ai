@@ -18,7 +18,7 @@ export function Pill({ level, children }: { level: string; children: ReactNode }
     medium: "bg-amber-50 text-amber-700 ring-amber-600/20",
     high: "bg-red-50 text-red-700 ring-red-600/20",
     critical: "bg-red-50 text-red-700 ring-red-600/20",
-    none: "bg-slate-100 text-slate-500 ring-slate-500/20",
+    none: "bg-slate-100 text-slate-700 ring-slate-500/20",
   };
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold capitalize leading-none ring-1 ring-inset ${colors[level] || colors.medium}`}>

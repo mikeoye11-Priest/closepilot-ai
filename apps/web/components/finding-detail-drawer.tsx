@@ -154,7 +154,7 @@ export function FindingDetailDrawer({
                 </label>
                 <label className="grid gap-1">
                   <span className="text-xs font-bold text-muted">Due date</span>
-                  <input className="h-10 rounded-lg border border-line px-3 text-sm" type="date" value={assignmentDueDate} onChange={(event) => setAssignmentDueDate(event.target.value)} />
+                  <input aria-label="Assignment due date" className="h-10 rounded-lg border border-line px-3 text-sm" type="date" value={assignmentDueDate} onChange={(event) => setAssignmentDueDate(event.target.value)} />
                 </label>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -236,7 +236,7 @@ export function FindingDetailDrawer({
                           <strong className="block truncate">{item.fileName}</strong>
                           <span className="mt-1 block text-xs text-muted">{item.uploadedBy} · {new Date(item.uploadedAt).toLocaleString("en-GB")}</span>
                         </a>
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${item.status === "accepted" || item.status === "not_required" ? "bg-emerald-100 text-emerald-700" : item.status === "rejected" ? "bg-red-100 text-red-700" : item.status === "requested" ? "bg-amber-100 text-amber-800" : item.status === "under_review" ? "bg-cyan-100 text-cyan-800" : item.status === "superseded" ? "bg-slate-100 text-slate-500" : "bg-blue-100 text-blue-700"}`}>{(item.status ?? "uploaded").replaceAll("_", " ")}</span>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${item.status === "accepted" || item.status === "not_required" ? "bg-emerald-100 text-emerald-700" : item.status === "rejected" ? "bg-red-100 text-red-700" : item.status === "requested" ? "bg-amber-100 text-amber-800" : item.status === "under_review" ? "bg-cyan-100 text-cyan-800" : item.status === "superseded" ? "bg-slate-100 text-slate-700" : "bg-blue-100 text-blue-700"}`}>{(item.status ?? "uploaded").replaceAll("_", " ")}</span>
                       </div>
                       {item.notes && <p className="mt-2 text-xs text-muted">{item.notes}</p>}
                       {item.reviewNote && <p className="mt-1 text-xs text-muted">Review: {item.reviewNote}</p>}
