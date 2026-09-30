@@ -53,7 +53,7 @@ retention can be demonstrated without deleting held or in-scope records.
 - [ ] Split `components/app-shell.tsx` by product domain and persistence boundary.
 - [ ] Add a firm switcher for users with membership in multiple tenants.
 - [ ] Complete live QuickBooks and Sage validation and operational runbooks.
-- [ ] Add performance budgets, accessibility checks, and report-generation load
+- [x] Add performance budgets, accessibility checks, and report-generation load
   tests for large practices.
 
 Exit gate: supported multi-firm workflows are explicit, observable, and covered
