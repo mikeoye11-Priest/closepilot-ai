@@ -21,7 +21,7 @@ test("review pack exports produce the findings CSV and evidence JSON", async ({ 
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await gotoDemo(page);
-  await openPage(page, "Review pack");
+  await openPage(page, "Reports");
 
   await expectDownload(page, "Findings Schedule", /\.csv$/i);
   await expectDownload(page, "Evidence Archive", /\.json$/i);
@@ -32,7 +32,8 @@ test("VAT pack exports produce the exception CSV and evidence JSON", async ({ pa
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await gotoDemo(page);
-  await openPage(page, "VAT");
+  await openPage(page, "Review");
+  await page.getByRole("navigation", { name: "Review views" }).getByRole("button", { name: "VAT", exact: true }).click();
 
   await expectDownload(page, "VAT Evidence JSON", /\.json$/i);
   await expectDownload(page, "Exception CSV", /\.csv$/i);

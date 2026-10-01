@@ -58,26 +58,32 @@ import { PERSISTABLE_ID, clientToCompany, emptySnapshot, fetchCompanySnapshot, i
 
 const navGroups = [
   { label: "", items: ["Partner Summary"] },
-  { label: "Review", items: ["Findings", "Finance Review", "VAT Assurance", "Controls & Fraud", "Audit Readiness", "Close Review"] },
-  { label: "Reports", items: ["Review Pack", "Accounts", "Cash Intelligence", "Collections Intelligence", "Change Intelligence", "Inventory & WIP"] },
+  { label: "Review", items: ["Findings"] },
+  { label: "Reports", items: ["Review Pack"] },
   { label: "Clients & firm", items: ["Upload Finance Pack", "Practice Portal", "People", "Practice Metrics", "Scheduled Reports"] },
   { label: "Settings & help", items: ["Settings", "Assurance Engine", "Compatibility", "User Guide"], advanced: true },
 ] as const;
+
+const REVIEW_VIEWS = ["Findings", "Finance Review", "VAT Assurance", "Controls & Fraud", "Audit Readiness", "Close Review"] as const;
+const REPORT_VIEWS = ["Review Pack", "Accounts", "Cash Intelligence", "Collections Intelligence", "Change Intelligence", "Inventory & WIP"] as const;
 
 // item → its group label, so the sidebar can auto-open the section for the
 // current screen (progressive disclosure).
 const NAV_GROUP_OF: Record<string, string> = {};
 for (const group of navGroups) for (const item of group.items) NAV_GROUP_OF[item] = group.label;
+for (const item of REVIEW_VIEWS) NAV_GROUP_OF[item] = "Review";
+for (const item of REPORT_VIEWS) NAV_GROUP_OF[item] = "Reports";
 
 // Display labels — plain-English names for the nav + page header, kept separate
 // from the internal screen keys so routing/logic is untouched.
 const PAGE_LABELS: Record<string, string> = {
   "Partner Summary": "Overview",
+  "Findings": "Review",
   "Finance Review": "Finance review",
   "VAT Assurance": "VAT",
   "Controls & Fraud": "Controls & fraud",
   "Audit Readiness": "Audit readiness",
-  "Review Pack": "Review pack",
+  "Review Pack": "Reports",
   "Cash Intelligence": "Cash flow",
   "Collections Intelligence": "Collections",
   "Change Intelligence": "Changes",
@@ -90,6 +96,21 @@ const PAGE_LABELS: Record<string, string> = {
   "Assurance Engine": "Assurance engine",
   "Compatibility": "File compatibility",
   "User Guide": "Help & guide",
+};
+
+const SUBVIEW_LABELS: Record<string, string> = {
+  "Findings": "Work queue",
+  "Finance Review": "Finance",
+  "VAT Assurance": "VAT",
+  "Controls & Fraud": "Controls",
+  "Audit Readiness": "Audit readiness",
+  "Close Review": "Month-end",
+  "Review Pack": "Review pack",
+  "Accounts": "Accounts",
+  "Cash Intelligence": "Cash flow",
+  "Collections Intelligence": "Collections",
+  "Change Intelligence": "Changes",
+  "Inventory & WIP": "Inventory & WIP",
 };
 
 function pageLabel(value: string) {
@@ -2957,10 +2978,10 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           {navGroups.filter((group) => !presentationMode || !("advanced" in group && group.advanced)).map((group) => {
             // Ungrouped items (the Overview) always show; grouped sections expand
             // one at a time on desktop. On mobile every item stays in the scroll rail.
-            const isOpen = !group.label || openGroup === group.label;
+            const isOpen = !group.label || group.items.length === 1 || openGroup === group.label;
             return (
               <div key={group.label || "summary"} className="contents lg:mb-3 lg:block">
-                {group.label && (
+                {group.label && group.items.length > 1 && (
                   <button
                     type="button"
                     onClick={() => setOpenGroup(openGroup === group.label ? "" : group.label)}
@@ -3042,6 +3063,13 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
             </div>
           </div>
         </header>
+        {(REVIEW_VIEWS.includes(active as typeof REVIEW_VIEWS[number]) || REPORT_VIEWS.includes(active as typeof REPORT_VIEWS[number])) && (
+          <nav className="no-print mb-5 flex gap-1 overflow-x-auto rounded-xl border border-line bg-white p-1.5 shadow-card" aria-label={REVIEW_VIEWS.includes(active as typeof REVIEW_VIEWS[number]) ? "Review views" : "Report views"}>
+            {(REVIEW_VIEWS.includes(active as typeof REVIEW_VIEWS[number]) ? REVIEW_VIEWS : REPORT_VIEWS).map((view) => (
+              <button key={view} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-bold transition-colors ${active === view ? "bg-slate-900 text-white" : "text-muted hover:bg-slate-100 hover:text-ink"}`} onClick={() => setActive(view)}>{SUBVIEW_LABELS[view]}</button>
+            ))}
+          </nav>
+        )}
         {localBackupStale && (
           <div className="no-print mb-5 rounded-lg border border-amber-300 bg-amber-50 p-4" role="status">
             <p className="text-sm font-bold text-amber-900">This browser can no longer keep an offline copy of your workspace.</p>
@@ -4898,7 +4926,7 @@ function AuditReadiness({ findings, findingEvidence, partnerSignOff, validationC
         <div className="grid content-start gap-4">
           <Panel title="Audit Outcome">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              <SummaryItem label="Manager Time Saved" value={`${timeSavedHours}h`} detail={`≈ £${timeSavedValue.toLocaleString("en-GB")}`} level="low" />
+              <SummaryItem label="Evidence Linked" value={String(findingEvidence.length)} detail={`${findings.length} findings reviewed`} level={findingEvidence.length >= findings.length ? "low" : "medium"} />
               <SummaryItem label="Expected Audit Queries" value={String(expectedAuditQueries)} detail="from open blockers" level={expectedAuditQueries ? "medium" : "low"} />
               <SummaryItem label="Financial Exposure" value={`£${Math.round(financialExposure).toLocaleString("en-GB")}`} detail="including accepted risks" level={financialExposure ? "high" : "low"} />
               <SummaryItem label="Review Pack" value={partnerSignOff ? "Locked" : "Draft"} detail={partnerSignOff ? `Signed by ${partnerSignOff.signedBy}` : "Partner approval pending"} level={partnerSignOff ? "low" : "medium"} />
@@ -5278,7 +5306,7 @@ function ReviewPack({
               <ReportMetric label="Audit Readiness" value={`${generatedPack.executiveSummary.auditReadinessScore}%`} detail={`${signOffBlockers} sign-off blocker${signOffBlockers === 1 ? "" : "s"}`} />
               <ReportMetric label="Financial Exposure" value={`£${Math.round(financialExposure).toLocaleString("en-GB")}`} detail={`${acceptedRiskExposure ? `£${Math.round(acceptedRiskExposure).toLocaleString("en-GB")} accepted risk` : "No accepted risk exposure"}`} />
               <ReportMetric label="Evidence Complete" value={`${evidenceCompletePct}%`} detail={`${profile.evidenceLinked}/${findings.length || 0} findings supported`} />
-              <ReportMetric label="Time Saved" value={`${timeSavedHours}h`} detail={`£${timeSavedValue.toLocaleString("en-GB")} manager value`} />
+              <ReportMetric label="Open Items" value={String(openFindings.length)} detail={`${failedChecks.length} validation blocker${failedChecks.length === 1 ? "" : "s"}`} />
             </div>
 
             <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">

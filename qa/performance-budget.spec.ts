@@ -13,7 +13,7 @@ test("interactive demo stays within the browser performance budget", async ({ pa
   await gotoDemo(page);
 
   const startedAt = Date.now();
-  await openPage(page, "Findings");
+  await openPage(page, "Review");
   const routeTransitionMs = Date.now() - startedAt;
 
   const metrics = await page.evaluate(() => {

@@ -14,9 +14,7 @@ import { MOBILE, DESKTOP, primaryNav, gotoDemo } from "./ui-helpers";
 // PAGE_LABELS in app-shell.tsx; the advanced "Help & admin" group is hidden here).
 const PAGES = [
   "Overview",
-  "Findings", "Finance review", "VAT", "Controls & fraud", "Audit readiness", "Review pack",
-  "Accounts", "Inventory & WIP",
-  "Cash flow", "Collections", "Changes", "Month-end close",
+  "Review", "Reports",
   "Import & upload", "All clients", "Practice metrics", "Scheduled reports",
 ];
 
@@ -72,7 +70,7 @@ test("Ask ClosePilot opens contextually without leaving the current screen", asy
   await page.setViewportSize(DESKTOP);
   await gotoDemo(page);
 
-  const findingsButton = primaryNav(page).getByRole("button", { name: "Findings", exact: true });
+  const findingsButton = primaryNav(page).getByRole("button", { name: "Review", exact: true });
   await expect(findingsButton).toHaveClass(/shadow-sm/);
   await page.getByRole("main").locator("header").getByRole("button", { name: "Ask ClosePilot", exact: true }).click();
 
