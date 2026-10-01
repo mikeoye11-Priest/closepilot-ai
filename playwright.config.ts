@@ -15,6 +15,7 @@ const baseURL = externalURL ?? `http://127.0.0.1:${PORT}`;
 export default defineConfig({
   testDir: "qa",
   testMatch: "**/*.spec.ts",
+  snapshotPathTemplate: "{testDir}/{testFilePath}-snapshots/{arg}-{platform}{ext}",
   timeout: 90_000,
   expect: { timeout: 10_000 },
   reporter: "line",

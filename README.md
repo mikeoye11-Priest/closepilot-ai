@@ -408,3 +408,8 @@ simplified.
   including navigation-mode changes and page-level overflow. Overview's Top
   Findings now uses labelled cards on small screens and retains its full table
   from tablet width upward.
+- **P4 report responsiveness and visual regression complete:** the audit Review
+  pack's executive summary, findings and workpaper evidence use labelled mobile
+  summaries while retaining full tables for tablet, desktop and print. Approved
+  1440px browser baselines now protect Import, Overview, Findings and Review
+  pack from unintended visual changes as part of the standard UI suite.

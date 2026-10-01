@@ -5440,7 +5440,10 @@ function ReviewPack({
             <div className="print-page mt-6 grid gap-4">
               <div className="rounded-lg border border-line p-4">
                 <p className="text-xs font-bold uppercase text-muted">Executive Summary</p>
-                <div className="mt-3 overflow-x-auto">
+                <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:hidden print:hidden" data-testid="audit-summary-cards">
+                  {[['Health', `${score}/100`], ['Readiness', `${generatedPack.executiveSummary.auditReadinessScore}/100`], ['Findings', findings.length], ['Accepted risks', acceptedRiskFindings.length], ['Open high', openHigh.length + openCritical.length], ['Validation', `${failedChecks.length} blocker(s)`]].map(([label, value]) => <div key={label} className="rounded-lg bg-slate-50 p-3"><dt className="text-xs font-bold uppercase text-muted">{label}</dt><dd className="mt-1 font-black">{value}</dd></div>)}
+                </dl>
+                <div className="mt-3 hidden overflow-x-auto md:block print:block">
                   <table className="w-full min-w-[720px] border-collapse text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase text-muted">
                       <tr>
@@ -5536,7 +5539,16 @@ function ReviewPack({
 
               <div className="rounded-lg border border-line p-4">
                 <p className="text-xs font-bold uppercase text-muted">Findings Summary</p>
-                <div className="mt-3 overflow-x-auto">
+                <ul className="mt-3 grid gap-2 md:hidden print:hidden" data-testid="pack-finding-cards">
+                  {pdfFindings.map((finding) => (
+                    <li key={finding.id} className="rounded-lg border border-line bg-slate-50 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2"><Pill level={finding.severity}>{finding.severity}</Pill><span className="text-xs font-bold">{FINDING_STATUS_CONFIG[finding.status]?.label ?? finding.status}</span></div>
+                      <strong className="mt-2 block">{finding.title}</strong>
+                      <span className="mt-1 block text-xs text-muted">Owner: {findingOwner(finding)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-3 hidden overflow-x-auto md:block print:block">
                   <table className="w-full min-w-[760px] border-collapse text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase text-muted">
                       <tr>
@@ -5626,7 +5638,18 @@ function ReviewPack({
                         <SummaryNote label="Reviewer" value={`${workpaper.reviewer} · ${new Date(workpaper.date).toLocaleDateString("en-GB")}`} />
                       </div>
                       {workpaper.findings.length ? (
-                        <div className="mt-3 overflow-x-auto">
+                        <div className="mt-3">
+                          <ul className="grid gap-2 md:hidden print:hidden" data-testid="workpaper-finding-cards">
+                            {workpaper.findings.map((finding) => (
+                              <li key={finding.id} className="rounded-lg border border-line bg-slate-50 p-3 text-sm">
+                                <div className="flex items-start justify-between gap-2"><strong>{finding.code} · {finding.title}</strong><span className="shrink-0 text-xs font-bold capitalize">{finding.status}</span></div>
+                                <p className="mt-2 break-words text-xs text-muted">{finding.sourceFile} · {finding.rowIndexes}</p>
+                                <p className="mt-1 text-xs">{finding.calculation}</p>
+                                <p className="mt-2 text-xs font-semibold">Evidence {finding.evidenceStrength} · confidence {finding.detectionConfidence}%</p>
+                              </li>
+                            ))}
+                          </ul>
+                          <div className="hidden overflow-x-auto md:block print:block">
                           <table className="w-full min-w-[980px] border-collapse text-left text-sm">
                             <thead className="bg-slate-50 text-xs uppercase text-muted">
                               <tr>
@@ -5654,6 +5677,7 @@ function ReviewPack({
                               ))}
                             </tbody>
                           </table>
+                          </div>
                         </div>
                       ) : null}
                     </div>
