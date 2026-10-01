@@ -343,6 +343,9 @@ rail should be replaced by a grouped menu drawer.
   level measures.
 - **P3 — responsive and accessibility refinement:** mobile drawer, responsive
   finding/table layouts, non-colour status cues and full keyboard testing.
+- **P4 — production UX hardening:** contain focus in modal experiences, verify
+  intermediate breakpoints, finish high-use responsive tables and protect the
+  core journey with visual regression coverage.
 
 P0 implementation began on 1 October 2026. Behaviour, calculations, evidence,
 permissions and export controls must remain unchanged while presentation is
@@ -395,3 +398,8 @@ simplified.
   controls in both the desktop table and mobile cards. Enter opens the shared
   detail pane, Escape dismisses it, and focus returns to the exact record that
   launched the pane. Desktop and 320px journeys are regression tested.
+- **P4 modal accessibility complete:** the assistant, mobile navigation and
+  mobile finding detail now contain keyboard focus while open. Background app
+  content is inert for shell-level overlays, dialogs expose modal semantics,
+  and automated tests verify wrapping focus. The wide-screen finding pane stays
+  deliberately non-modal so the queue and detail remain jointly operable.

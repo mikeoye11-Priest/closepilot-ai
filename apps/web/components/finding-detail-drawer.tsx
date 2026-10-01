@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EvidenceDecisionTrace } from "@/components/evidence-decision-trace";
 import { EvidenceRowsPreview } from "@/components/evidence-rows-preview";
 import { DrawerField } from "@/components/finding-workflow-panels";
 import { Pill } from "@/components/ui-primitives";
+import { useFocusTrap } from "@/components/use-focus-trap";
 import { parseImpactAmount } from "@/lib/finance";
 import { isOpenFinding } from "@/lib/finding-ledger";
 import { FINDING_STATUS_CONFIG, findingActivityLabel, findingDetectionConfidence, findingDueDate, findingEvidenceReference, findingEvidenceStrengthScore, findingEvidenceTier, findingOwner, findingSeverityRank, findingTriggeredReason, managerReviewStatus } from "@/lib/finding-workflow";
@@ -41,6 +42,8 @@ export function FindingDetailDrawer({
   onClose: () => void;
   responsive?: boolean;
 }) {
+  const panelRef = useRef<HTMLElement>(null);
+  const [isModal, setIsModal] = useState(!responsive);
   const [note, setNote] = useState("");
   const [managerNote, setManagerNote] = useState("");
   const [comment, setComment] = useState("");
@@ -73,6 +76,17 @@ export function FindingDetailDrawer({
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [onClose]);
 
+  useEffect(() => {
+    if (!responsive) return;
+    const media = window.matchMedia("(max-width: 1279px)");
+    const update = () => setIsModal(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [responsive]);
+
+  useFocusTrap(panelRef, isModal);
+
   const act = (status: FindingStatus, fallback = "") => {
     updateFindingStatus(finding.id, status, note || fallback);
     setNote("");
@@ -100,7 +114,7 @@ export function FindingDetailDrawer({
 
   return (
     <div className={responsive ? "fixed inset-0 z-50 bg-slate-950/40 xl:sticky xl:top-6 xl:col-start-2 xl:row-span-3 xl:row-start-1 xl:z-auto xl:h-[calc(100vh-3rem)] xl:min-w-0 xl:bg-transparent" : "fixed inset-0 z-50 bg-slate-950/40"}>
-      <aside className={`ml-auto flex h-full w-full max-w-[min(96vw,1536px)] flex-col overflow-hidden bg-white shadow-2xl ${responsive ? "xl:max-w-none xl:rounded-xl xl:border xl:border-line xl:shadow-panel" : ""}`} aria-label="Finding detail">
+      <aside ref={panelRef} role={isModal ? "dialog" : undefined} aria-modal={isModal ? true : undefined} className={`ml-auto flex h-full w-full max-w-[min(96vw,1536px)] flex-col overflow-hidden bg-white shadow-2xl ${responsive ? "xl:max-w-none xl:rounded-xl xl:border xl:border-line xl:shadow-panel" : ""}`} aria-label="Finding detail">
         <div className="border-b border-line p-5">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">

@@ -8,6 +8,7 @@ import { EvidenceRowsPreview } from "@/components/evidence-rows-preview";
 import { FindingLifecycleSummary } from "@/components/finding-workflow-panels";
 import { ForecastLine, SummaryItem } from "@/components/review-metrics";
 import { EmptyState, Panel, Pill } from "@/components/ui-primitives";
+import { useFocusTrap } from "@/components/use-focus-trap";
 import { evidenceGroundedAnswer, type GroundedAnswerSections } from "@/lib/ask-closepilot";
 import { company as seededCompany, pilotAnalysisResult, pilotClient, pilotCompany, pilotTenant, tenant as seededTenant } from "@/lib/data";
 import { assistantAnswer, calculateAuditReadinessV2, calculateFinanceScorecard, calculateMtdReadiness, calculateMtdReadinessDrivers, calculateReadinessDrivers, calculateReviewConfidence, estimateCashAtRisk, estimateTimeSaved, generateForecast, parseImpactAmount, riskCopy, riskLabel, type MtdReadinessDriver, type ReadinessDriver, type ScoreDriver } from "@/lib/finance";
@@ -1518,8 +1519,10 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const [showAssistant, setShowAssistant] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const assistantButtonRef = useRef<HTMLButtonElement>(null);
+  const assistantPanelRef = useRef<HTMLElement>(null);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const mobileNavCloseRef = useRef<HTMLButtonElement>(null);
+  const mobileNavRef = useRef<HTMLElement>(null);
   const [ruleAnalytics, setRuleAnalytics] = useState<RuleAnalyticsReport | null>(null);
   const [pilotWalkthroughStep, setPilotWalkthroughStep] = useState(0);
   const [assistantResult, setAssistantResult] = useState<AssistantResult | null>(null);
@@ -1545,6 +1548,9 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   useEffect(() => {
     if (mobileNavOpen) requestAnimationFrame(() => mobileNavCloseRef.current?.focus());
   }, [mobileNavOpen]);
+
+  useFocusTrap(assistantPanelRef, showAssistant);
+  useFocusTrap(mobileNavRef, mobileNavOpen);
 
   const userName = useMemo(() => {
     const local = userEmail.split("@")[0] ?? "";
@@ -2971,7 +2977,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       )}
       {showAssistant && (
         <div className="fixed inset-0 z-50 bg-slate-950/40" role="presentation">
-          <aside className="ml-auto flex h-full w-full max-w-[min(96vw,1100px)] flex-col bg-page shadow-2xl" aria-label="Ask ClosePilot assistant" aria-modal="true">
+          <aside ref={assistantPanelRef} role="dialog" className="ml-auto flex h-full w-full max-w-[min(96vw,1100px)] flex-col bg-page shadow-2xl" aria-label="Ask ClosePilot assistant" aria-modal="true">
             <div className="flex items-start justify-between gap-4 border-b border-line bg-white p-5">
               <div><p className="text-xs font-bold uppercase tracking-wide text-brand">Current client</p><h2 className="mt-1 text-xl font-bold">Ask about {currentCompany.name}</h2><p className="mt-1 text-sm text-muted">Answers remain grounded in this review's findings and evidence.</p></div>
               <button autoFocus className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-bold" onClick={() => { setShowAssistant(false); requestAnimationFrame(() => assistantButtonRef.current?.focus()); }}>Close</button>
@@ -2987,7 +2993,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           </aside>
         </div>
       )}
-      <aside className="no-print relative border-b border-white/10 bg-[#0f172a] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r lg:border-white/5">
+      <aside inert={showAssistant ? true : undefined} className="no-print relative border-b border-white/10 bg-[#0f172a] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r lg:border-white/5">
         <div className="flex items-center justify-between gap-4 px-4 py-4 lg:block lg:p-5">
           <div className="flex items-center gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-cyan to-brand font-black shadow-lg shadow-blue-950/30">CP</div>
@@ -3000,7 +3006,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           <button ref={mobileMenuButtonRef} className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white lg:hidden" aria-expanded={mobileNavOpen} aria-controls="mobile-primary-navigation" onClick={() => setMobileNavOpen(true)}>Menu</button>
         </div>
         {mobileNavOpen && <button className="fixed inset-0 z-40 bg-slate-950/55 lg:hidden" aria-label="Close navigation" onClick={() => { setMobileNavOpen(false); requestAnimationFrame(() => mobileMenuButtonRef.current?.focus()); }} />}
-        <nav id="mobile-primary-navigation" aria-label="Primary" className={`${mobileNavOpen ? "fixed inset-y-0 left-0 z-50 grid w-[min(88vw,360px)] content-start overflow-y-auto bg-[#0f172a] p-5 shadow-2xl" : "hidden"} lg:static lg:z-auto lg:block lg:w-full lg:overflow-y-auto lg:overflow-x-hidden lg:bg-transparent lg:px-5 lg:pb-5 lg:pt-0 lg:shadow-none`}>
+        <nav ref={mobileNavRef} id="mobile-primary-navigation" aria-label="Primary" className={`${mobileNavOpen ? "fixed inset-y-0 left-0 z-50 grid w-[min(88vw,360px)] content-start overflow-y-auto bg-[#0f172a] p-5 shadow-2xl" : "hidden"} lg:static lg:z-auto lg:block lg:w-full lg:overflow-y-auto lg:overflow-x-hidden lg:bg-transparent lg:px-5 lg:pb-5 lg:pt-0 lg:shadow-none`}>
           <div className="mb-4 flex items-center justify-between border-b border-white/10 pb-4 lg:hidden"><strong>Navigation</strong><button ref={mobileNavCloseRef} className="rounded-lg border border-white/15 px-3 py-2 text-sm font-bold" onClick={() => { setMobileNavOpen(false); requestAnimationFrame(() => mobileMenuButtonRef.current?.focus()); }}>Close</button></div>
           {navGroups.filter((group) => !presentationMode || !("advanced" in group && group.advanced)).map((group) => {
             // Ungrouped items (the Overview) always show; grouped sections expand
@@ -3055,7 +3061,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           )}
         </div>
       </aside>
-      <main id="main-content" className="min-w-0 max-w-full overflow-x-hidden p-4 lg:p-6">
+      <main inert={showAssistant || mobileNavOpen ? true : undefined} id="main-content" className="min-w-0 max-w-full overflow-x-hidden p-4 lg:p-6">
         <header className="mb-5 rounded-xl border border-line bg-surface/95 p-4 shadow-card backdrop-blur-sm">
           <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
             <div className="min-w-0">

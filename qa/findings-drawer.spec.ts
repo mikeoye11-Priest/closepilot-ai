@@ -62,9 +62,13 @@ test("finding detail remains a full-screen drawer on mobile", async ({ page }) =
   await trigger.focus();
   await page.keyboard.press("Enter");
 
-  const drawer = page.getByRole("complementary", { name: "Finding detail" });
+  const drawer = page.getByRole("dialog", { name: "Finding detail" });
   await expect(drawer).toBeVisible();
+  await expect(drawer).toHaveAttribute("aria-modal", "true");
   await expect(drawer.locator("xpath=..")).toHaveCSS("position", "fixed");
+  await expect(drawer.getByRole("button", { name: "Close", exact: true })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  expect(await drawer.evaluate((element) => element.contains(document.activeElement))).toBe(true);
   const evidenceCards = drawer.getByTestId("evidence-row-cards");
   if (await evidenceCards.count()) {
     await expect(evidenceCards).toBeVisible();

@@ -69,9 +69,13 @@ test("Ask ClosePilot opens contextually without leaving the current screen", asy
   const trigger = page.getByRole("main").locator("header").getByRole("button", { name: "Ask ClosePilot", exact: true });
   await trigger.click();
 
-  const assistant = page.getByRole("complementary", { name: "Ask ClosePilot assistant" });
+  const assistant = page.getByRole("dialog", { name: "Ask ClosePilot assistant" });
   await expect(assistant).toBeVisible();
+  await expect(page.getByRole("main")).toHaveAttribute("inert", "");
   await expect(assistant.getByText("Answers remain grounded in this review's findings and evidence.", { exact: true })).toBeVisible();
+  await expect(assistant.getByRole("button", { name: "Close", exact: true })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  expect(await assistant.evaluate((element) => element.contains(document.activeElement))).toBe(true);
   await page.keyboard.press("Escape");
   await expect(assistant).toBeHidden();
   await expect(trigger).toBeFocused();
@@ -86,7 +90,10 @@ test("mobile navigation is a keyboard-dismissible drawer", async ({ page }) => {
   await trigger.click();
   const navigation = primaryNav(page);
   await expect(navigation).toBeVisible();
+  await expect(page.getByRole("main")).toHaveAttribute("inert", "");
   await expect(navigation.getByRole("button", { name: "Close", exact: true })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  expect(await navigation.evaluate((element) => element.contains(document.activeElement))).toBe(true);
   await page.keyboard.press("Escape");
   await expect(navigation).toBeHidden();
   await expect(trigger).toBeFocused();
