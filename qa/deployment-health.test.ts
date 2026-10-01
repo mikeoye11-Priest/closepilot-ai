@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deploymentHealth, type HealthEnvironment } from "../apps/web/lib/deployment-health";
+import { deploymentHealth, probeSupabase, type HealthEnvironment } from "../apps/web/lib/deployment-health";
 
 const baseEnvironment: HealthEnvironment = {
   NODE_ENV: "production",
@@ -10,6 +10,24 @@ const baseEnvironment: HealthEnvironment = {
   SUPABASE_SERVICE_ROLE_KEY: "service-key",
   CRON_SECRET: "cron-secret",
 };
+
+test("Supabase readiness does not treat publishable keys as bearer JWTs", async () => {
+  const originalFetch = globalThis.fetch;
+  let request: { url: string; init?: RequestInit } | undefined;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    request = { url: String(input), init };
+    return new Response(null, { status: 200 });
+  }) as typeof fetch;
+  try {
+    const result = await probeSupabase("https://example.supabase.co/", "sb_publishable_example");
+    assert.equal(result.reachable, true);
+    assert.equal(request?.url, "https://example.supabase.co/rest/v1/");
+    assert.deepEqual(request?.init?.headers, { apikey: "sb_publishable_example" });
+    assert.equal(request?.init?.method, "HEAD");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("readiness is ready when critical configuration and Supabase are healthy", async () => {
   const health = await deploymentHealth(baseEnvironment, async () => ({ reachable: true, latencyMs: 12 }));

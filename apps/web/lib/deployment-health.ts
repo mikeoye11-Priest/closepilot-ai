@@ -12,7 +12,9 @@ export async function probeSupabase(url: string, anonKey: string): Promise<Datab
   try {
     const response = await fetch(`${url.replace(/\/$/, "")}/rest/v1/`, {
       method: "HEAD",
-      headers: { apikey: anonKey, Authorization: `Bearer ${anonKey}` },
+      // Supabase publishable keys are API keys, not JWT bearer tokens.
+      // The apikey header supports both publishable keys and legacy anon JWTs.
+      headers: { apikey: anonKey },
       cache: "no-store",
       signal: AbortSignal.timeout(3_000),
     });
