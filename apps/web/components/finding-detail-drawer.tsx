@@ -24,6 +24,7 @@ export function FindingDetailDrawer({
   updateEvidenceStatus,
   reviewLocked,
   onClose,
+  responsive = false,
 }: {
   finding: Finding;
   evidence: Evidence[];
@@ -38,6 +39,7 @@ export function FindingDetailDrawer({
   updateEvidenceStatus: (findingId: string, evidenceId: string, status: EvidenceStatus, note?: string) => void;
   reviewLocked: boolean;
   onClose: () => void;
+  responsive?: boolean;
 }) {
   const [note, setNote] = useState("");
   const [managerNote, setManagerNote] = useState("");
@@ -89,8 +91,8 @@ export function FindingDetailDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/40">
-      <aside className="ml-auto flex h-full w-full max-w-[min(96vw,1536px)] flex-col overflow-hidden bg-white shadow-2xl">
+    <div className={responsive ? "fixed inset-0 z-50 bg-slate-950/40 xl:sticky xl:top-6 xl:col-start-2 xl:row-span-3 xl:row-start-1 xl:z-auto xl:h-[calc(100vh-3rem)] xl:min-w-0 xl:bg-transparent" : "fixed inset-0 z-50 bg-slate-950/40"}>
+      <aside className={`ml-auto flex h-full w-full max-w-[min(96vw,1536px)] flex-col overflow-hidden bg-white shadow-2xl ${responsive ? "xl:max-w-none xl:rounded-xl xl:border xl:border-line xl:shadow-panel" : ""}`} aria-label="Finding detail">
         <div className="border-b border-line p-5">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">

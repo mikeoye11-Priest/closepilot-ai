@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { DESKTOP, gotoDemo } from "./ui-helpers";
+import { DESKTOP, MOBILE, gotoDemo } from "./ui-helpers";
 
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize(DESKTOP);
 });
 
-test("locked finding drawer exposes its evidence trail and prevents review mutations", async ({ page }) => {
+test("locked desktop finding pane exposes its evidence trail and prevents review mutations", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await gotoDemo(page);
@@ -16,6 +16,7 @@ test("locked finding drawer exposes its evidence trail and prevents review mutat
 
   const drawer = page.getByRole("complementary").filter({ hasText: "From source row to partner sign-off" });
   await expect(drawer).toBeVisible();
+  await expect(drawer.locator("xpath=..")).toHaveCSS("position", "sticky");
   await expect(drawer.getByText("Fully traceable", { exact: true })).toBeVisible();
   await expect(drawer.getByText("Evidence Viewer", { exact: true })).toBeVisible();
   await expect(drawer.getByText("Why Triggered", { exact: true })).toBeVisible();
@@ -44,4 +45,18 @@ test("locked finding drawer exposes its evidence trail and prevents review mutat
   await drawer.getByRole("button", { name: "Close", exact: true }).click();
   await expect(drawer).toBeHidden();
   expect(errors, errors.join("\n")).toEqual([]);
+});
+
+test("finding detail remains a full-screen drawer on mobile", async ({ page }) => {
+  await page.setViewportSize(MOBILE);
+  await gotoDemo(page);
+
+  const register = page.getByText("Finding Register", { exact: true }).locator("xpath=ancestor::section[1]");
+  await register.locator("tbody tr").first().click();
+
+  const drawer = page.getByRole("complementary", { name: "Finding detail" });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.locator("xpath=..")).toHaveCSS("position", "fixed");
+  await drawer.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(drawer).toBeHidden();
 });

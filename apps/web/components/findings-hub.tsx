@@ -277,7 +277,7 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
         </section>
       </details>
 
-      <section className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr] xl:[&>*:nth-child(2)]:order-first">
+      <section className={`grid gap-4 ${selectedFinding ? "xl:grid-cols-[minmax(0,0.8fr)_minmax(520px,1.2fr)] xl:[&>*:nth-child(1)]:col-start-1 xl:[&>*:nth-child(1)]:row-start-2 xl:[&>*:nth-child(2)]:col-start-1 xl:[&>*:nth-child(2)]:row-start-1 xl:[&>*:nth-child(3)]:col-start-1 xl:[&>*:nth-child(3)]:row-start-3" : "xl:grid-cols-[1.25fr_0.75fr] xl:[&>*:nth-child(2)]:order-first"}`}>
         <Panel title="Manager Review Queue">
           <div className="mb-4 grid gap-3 sm:grid-cols-4">
             <SummaryItem label="Ready" value={String(readyForManager.length)} detail="awaiting manager decision" level={readyForManager.length ? "medium" : "low"} />
@@ -375,6 +375,24 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
             )}
           </div>
         </Panel>
+        {selectedFinding && (
+          <FindingDetailDrawer
+            responsive
+            finding={selectedFinding}
+            evidence={findingEvidence.filter((evidence) => evidence.findingId === selectedFinding.id)}
+            comments={findingComments.filter((comment) => comment.findingId === selectedFinding.id)}
+            activities={findingActivities.filter((activity) => activity.findingId === selectedFinding.id)}
+            partnerSignOff={partnerSignOff}
+            updateFindingStatus={updateFindingStatus}
+            updateFindingAssignment={updateFindingAssignment}
+            updateManagerReview={updateManagerReview}
+            addFindingComment={addFindingComment}
+            addFindingEvidence={addFindingEvidence}
+            updateEvidenceStatus={updateEvidenceStatus}
+            reviewLocked={reviewLocked}
+            onClose={() => setSelectedFindingId(null)}
+          />
+        )}
       </section>
 
       <Panel title="Finding Detail Queue">
@@ -388,23 +406,6 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
         </div>
         <FindingList findings={visibleFindings} setActive={setActive} updateFindingStatus={updateFindingStatus} />
       </Panel>
-      {selectedFinding && (
-        <FindingDetailDrawer
-          finding={selectedFinding}
-          evidence={findingEvidence.filter((evidence) => evidence.findingId === selectedFinding.id)}
-          comments={findingComments.filter((comment) => comment.findingId === selectedFinding.id)}
-          activities={findingActivities.filter((activity) => activity.findingId === selectedFinding.id)}
-          partnerSignOff={partnerSignOff}
-          updateFindingStatus={updateFindingStatus}
-          updateFindingAssignment={updateFindingAssignment}
-          updateManagerReview={updateManagerReview}
-          addFindingComment={addFindingComment}
-          addFindingEvidence={addFindingEvidence}
-          updateEvidenceStatus={updateEvidenceStatus}
-          reviewLocked={reviewLocked}
-          onClose={() => setSelectedFindingId(null)}
-        />
-      )}
     </div>
   );
 }

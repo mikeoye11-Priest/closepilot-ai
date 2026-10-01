@@ -362,7 +362,8 @@ simplified.
 - **P1 prioritisation complete:** Overview ranks the three most important open
   findings by open state, severity and financial impact. On wide screens the
   finding register is the dominant first column, with bulk actions collapsed.
-- Remaining P1 work is replacing the full-screen finding drawer with a persistent
-  selected-finding detail pane on wide screens; the drawer remains appropriate
-  for smaller viewports.
+- **P1 core journey complete:** selecting a finding opens a persistent, sticky
+  detail pane beside the queue on wide screens. The same evidence and decision
+  component remains a full-screen drawer on smaller viewports, avoiding separate
+  workflow implementations.
 - P2 and P3 remain planned.
