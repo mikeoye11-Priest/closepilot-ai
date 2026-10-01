@@ -359,6 +359,10 @@ simplified.
   before showing readiness diagnostics. Findings keeps insights, lifecycle
   metrics and partner sign-off controls available but collapsed, bringing the
   manager queue and finding register substantially closer to the top.
-- Remaining P1 work is a true wide-screen findings master-detail layout and a
-  smaller, action-ranked Overview blocker list.
+- **P1 prioritisation complete:** Overview ranks the three most important open
+  findings by open state, severity and financial impact. On wide screens the
+  finding register is the dominant first column, with bulk actions collapsed.
+- Remaining P1 work is replacing the full-screen finding drawer with a persistent
+  selected-finding detail pane on wide screens; the drawer remains appropriate
+  for smaller viewports.
 - P2 and P3 remain planned.

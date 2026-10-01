@@ -277,7 +277,7 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
         </section>
       </details>
 
-      <section className="grid gap-4 xl:grid-cols-[1fr_0.86fr]">
+      <section className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr] xl:[&>*:nth-child(2)]:order-first">
         <Panel title="Manager Review Queue">
           <div className="mb-4 grid gap-3 sm:grid-cols-4">
             <SummaryItem label="Ready" value={String(readyForManager.length)} detail="awaiting manager decision" level={readyForManager.length ? "medium" : "low"} />
@@ -322,7 +322,9 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
               </button>
             ))}
           </div>
-          <div className="mb-3 grid gap-2 rounded-lg border border-line bg-slate-50 p-3">
+          <details className="mb-3 rounded-lg border border-line bg-slate-50">
+            <summary className="cursor-pointer px-3 py-3 text-sm font-bold">Bulk actions · {selectedVisibleCount} selected</summary>
+            <div className="grid gap-2 border-t border-line p-3">
             <div className="flex flex-wrap items-center gap-2">
               <button className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-bold" onClick={toggleAllVisibleFindings}>
                 {allVisibleSelected ? "Clear Visible" : "Select Visible"} ({selectedVisibleCount})
@@ -336,7 +338,8 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
               <button className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300" disabled={reviewLocked || !selectedFindingIds.length} onClick={() => applyBulkStatus("resolved")}>Mark Resolved</button>
               <button className="rounded-lg bg-green-700 px-3 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300" disabled={reviewLocked || !selectedFindingIds.length} onClick={() => applyBulkStatus("approved")}>Approve</button>
             </div>
-          </div>
+            </div>
+          </details>
           <FindingRegister findings={visibleFindings} onSelect={setSelectedFindingId} selectedIds={selectedFindingIds} onToggleSelected={toggleFindingSelection} />
         </Panel>
 

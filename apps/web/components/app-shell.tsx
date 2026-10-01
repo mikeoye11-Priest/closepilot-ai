@@ -3836,7 +3836,13 @@ function OperationalOverviewDashboard({
   const resolvedFindings = findings.filter((finding) => !isOpenFinding(finding)).length;
   const progress = findings.length ? Math.round((resolvedFindings / findings.length) * 100) : uploads.length ? 35 : 0;
   const evidenceRequested = findings.filter((finding) => finding.status === "evidence_requested").length;
-  const topFindings = findings.slice(0, 5);
+  const topFindings = findings.slice().sort((a, b) => {
+    const openDelta = Number(isOpenFinding(b)) - Number(isOpenFinding(a));
+    if (openDelta) return openDelta;
+    const severityDelta = findingSeverityRank(b.severity) - findingSeverityRank(a.severity);
+    if (severityDelta) return severityDelta;
+    return (b.amount ?? parseImpactAmount(b.expectedImpact)) - (a.amount ?? parseImpactAmount(a.expectedImpact));
+  }).slice(0, 5);
   const readinessPenalty = Math.max(0, 100 - assurance.closeReadiness);
   const missingEvidenceItems = requiredFiles.filter((file) => !uploadedTypes.has(file.type));
   const failedReadinessDrivers = assurance.readinessDrivers.filter((driver) => !driver.passed);
@@ -3915,6 +3921,24 @@ function OperationalOverviewDashboard({
             </details>
           )}
         </section>
+
+        <OverviewCard title="Required before sign-off" action={<button className="text-sm font-bold text-brand" onClick={() => setActive(openFindings ? "Findings" : "Review Pack")}>{openFindings ? "Open work queue" : "Open review pack"}</button>}>
+          {topFindings.filter(isOpenFinding).length ? (
+            <ol className="grid gap-2">
+              {topFindings.filter(isOpenFinding).slice(0, 3).map((finding, index) => (
+                <li key={finding.id}>
+                  <button className="grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-line bg-slate-50 p-3 text-left transition-colors hover:border-brand" onClick={() => setActive("Findings")}>
+                    <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-900 text-xs font-bold text-white">{index + 1}</span>
+                    <span className="min-w-0"><strong className="block truncate text-sm">{finding.title}</strong><span className="mt-0.5 block text-xs text-muted">{finding.recommendation || "Review the evidence and record a decision."}</span></span>
+                    <Pill level={finding.severity}>{riskCopy(finding.severity)}</Pill>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <div className="flex flex-col gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-4 sm:flex-row sm:items-center sm:justify-between"><span><strong className="block text-emerald-900">No unresolved findings</strong><span className="text-sm text-emerald-800">Review the pack and complete partner sign-off.</span></span><button className="text-left text-sm font-bold text-emerald-800" onClick={() => setActive("Review Pack")}>Prepare sign-off</button></div>
+          )}
+        </OverviewCard>
 
         <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Primary review journey">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
