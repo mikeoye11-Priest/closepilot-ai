@@ -1516,11 +1516,35 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const [question, setQuestion] = useState("Why is cash getting tighter?");
   const [showExport, setShowExport] = useState(false);
   const [showAssistant, setShowAssistant] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const assistantButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileNavCloseRef = useRef<HTMLButtonElement>(null);
   const [ruleAnalytics, setRuleAnalytics] = useState<RuleAnalyticsReport | null>(null);
   const [pilotWalkthroughStep, setPilotWalkthroughStep] = useState(0);
   const [assistantResult, setAssistantResult] = useState<AssistantResult | null>(null);
   const [focusedFindingId, setFocusedFindingId] = useState<string | null>(null);
   const [uploadJob, setUploadJob] = useState<UploadJobState | null>(null);
+
+  useEffect(() => {
+    if (!showAssistant && !mobileNavOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (showAssistant) {
+        setShowAssistant(false);
+        requestAnimationFrame(() => assistantButtonRef.current?.focus());
+      } else if (mobileNavOpen) {
+        setMobileNavOpen(false);
+        requestAnimationFrame(() => mobileMenuButtonRef.current?.focus());
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileNavOpen, showAssistant]);
+
+  useEffect(() => {
+    if (mobileNavOpen) requestAnimationFrame(() => mobileNavCloseRef.current?.focus());
+  }, [mobileNavOpen]);
 
   const userName = useMemo(() => {
     const local = userEmail.split("@")[0] ?? "";
@@ -2947,10 +2971,10 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
       )}
       {showAssistant && (
         <div className="fixed inset-0 z-50 bg-slate-950/40" role="presentation">
-          <aside className="ml-auto flex h-full w-full max-w-[min(96vw,1100px)] flex-col bg-page shadow-2xl" aria-label="Ask ClosePilot assistant">
+          <aside className="ml-auto flex h-full w-full max-w-[min(96vw,1100px)] flex-col bg-page shadow-2xl" aria-label="Ask ClosePilot assistant" aria-modal="true">
             <div className="flex items-start justify-between gap-4 border-b border-line bg-white p-5">
               <div><p className="text-xs font-bold uppercase tracking-wide text-brand">Current client</p><h2 className="mt-1 text-xl font-bold">Ask about {currentCompany.name}</h2><p className="mt-1 text-sm text-muted">Answers remain grounded in this review's findings and evidence.</p></div>
-              <button className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-bold" onClick={() => setShowAssistant(false)}>Close</button>
+              <button autoFocus className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-bold" onClick={() => { setShowAssistant(false); requestAnimationFrame(() => assistantButtonRef.current?.focus()); }}>Close</button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
               <AICopilot question={question} setQuestion={setQuestion} score={score} findings={findings} findingActivities={findingActivities} validationChecks={validationChecks} uploads={uploads} company={currentCompany} forecast={forecast} assistantResult={assistantResult?.companyId === currentCompany.id ? assistantResult : null} setAssistantResult={setAssistantResult} updateFindingStatus={updateFindingStatus} updateManagerReview={updateManagerReview} openFindingEvidence={(findingId) => {
@@ -2963,7 +2987,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           </aside>
         </div>
       )}
-      <aside className="no-print overflow-x-hidden border-b border-white/10 bg-[#0f172a] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r lg:border-white/5">
+      <aside className="no-print relative border-b border-white/10 bg-[#0f172a] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r lg:border-white/5">
         <div className="flex items-center justify-between gap-4 px-4 py-4 lg:block lg:p-5">
           <div className="flex items-center gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-cyan to-brand font-black shadow-lg shadow-blue-950/30">CP</div>
@@ -2973,28 +2997,31 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
             </div>
           </div>
           <Pill level={hasUploadedData ? (openFindings.length ? "medium" : "low") : "none"}>{hasUploadedData ? (openFindings.length ? "Review open" : "Review complete") : "Awaiting upload"}</Pill>
+          <button ref={mobileMenuButtonRef} className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white lg:hidden" aria-expanded={mobileNavOpen} aria-controls="mobile-primary-navigation" onClick={() => setMobileNavOpen(true)}>Menu</button>
         </div>
-        <nav aria-label="Primary" className="flex w-full max-w-full gap-1 overflow-x-auto px-4 pb-4 lg:block lg:overflow-y-auto lg:overflow-x-hidden lg:px-5 lg:pb-5">
+        {mobileNavOpen && <button className="fixed inset-0 z-40 bg-slate-950/55 lg:hidden" aria-label="Close navigation" onClick={() => { setMobileNavOpen(false); requestAnimationFrame(() => mobileMenuButtonRef.current?.focus()); }} />}
+        <nav id="mobile-primary-navigation" aria-label="Primary" className={`${mobileNavOpen ? "fixed inset-y-0 left-0 z-50 grid w-[min(88vw,360px)] content-start overflow-y-auto bg-[#0f172a] p-5 shadow-2xl" : "hidden"} lg:static lg:z-auto lg:block lg:w-full lg:overflow-y-auto lg:overflow-x-hidden lg:bg-transparent lg:px-5 lg:pb-5 lg:pt-0 lg:shadow-none`}>
+          <div className="mb-4 flex items-center justify-between border-b border-white/10 pb-4 lg:hidden"><strong>Navigation</strong><button ref={mobileNavCloseRef} className="rounded-lg border border-white/15 px-3 py-2 text-sm font-bold" onClick={() => { setMobileNavOpen(false); requestAnimationFrame(() => mobileMenuButtonRef.current?.focus()); }}>Close</button></div>
           {navGroups.filter((group) => !presentationMode || !("advanced" in group && group.advanced)).map((group) => {
             // Ungrouped items (the Overview) always show; grouped sections expand
-            // one at a time on desktop. On mobile every item stays in the scroll rail.
+            // one at a time in both the desktop sidebar and mobile drawer.
             const isOpen = !group.label || group.items.length === 1 || openGroup === group.label;
             return (
-              <div key={group.label || "summary"} className="contents lg:mb-3 lg:block">
+              <div key={group.label || "summary"} className="mb-3 block">
                 {group.label && group.items.length > 1 && (
                   <button
                     type="button"
                     onClick={() => setOpenGroup(openGroup === group.label ? "" : group.label)}
-                    className="hidden w-full items-center justify-between rounded-lg px-3 pb-1 pt-2 text-[11px] font-black uppercase tracking-wider text-slate-500 transition-colors hover:text-slate-300 lg:flex"
+                    className="flex w-full items-center justify-between rounded-lg px-3 pb-1 pt-2 text-[11px] font-black uppercase tracking-wider text-slate-500 transition-colors hover:text-slate-300"
                     aria-expanded={isOpen}
                   >
                     {group.label}
                     <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className={`h-3.5 w-3.5 transition-transform ${isOpen ? "rotate-180" : ""}`}><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" /></svg>
                   </button>
                 )}
-                <div className={`contents lg:gap-1 ${isOpen ? "lg:grid" : "lg:hidden"}`}>
+                <div className={`${isOpen ? "grid" : "hidden"} gap-1`}>
                   {group.items.map((item) => {
-                    const navClass = `whitespace-nowrap rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors lg:whitespace-normal ${active === item ? "bg-white text-[#0f172a] shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`;
+                    const navClass = `rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition-colors ${active === item ? "bg-white text-[#0f172a] shadow-sm" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"}`;
                     const href = NAV_HREFS[item];
                     // Routed entries are a real navigation, not a shell page,
                     // so they must be an anchor - setActive would silently do
@@ -3005,7 +3032,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
                       return <a key={item} className={navClass} href={href}>{pageLabel(item)}</a>;
                     }
                     return (
-                      <button key={item} className={navClass} onClick={() => setActive(item)}>
+                      <button key={item} data-screen={item} className={navClass} onClick={() => { setActive(item); setMobileNavOpen(false); }}>
                         {pageLabel(item)}
                       </button>
                     );
@@ -3058,7 +3085,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
                   <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => { setOnboardIntent("new"); setActive("Onboarding"); }}>Onboard</button>
                 </>
               )}
-              <button className="h-10 rounded-lg border border-brand bg-cyan-50 px-4 text-sm font-bold text-brand shadow-sm transition-colors hover:bg-cyan-100" onClick={() => setShowAssistant(true)}>Ask ClosePilot</button>
+              <button ref={assistantButtonRef} className="h-10 rounded-lg border border-brand bg-cyan-50 px-4 text-sm font-bold text-brand shadow-sm transition-colors hover:bg-cyan-100" onClick={() => setShowAssistant(true)}>Ask ClosePilot</button>
               <button className="h-10 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700" onClick={() => setShowExport(true)}>Export Review</button>
             </div>
           </div>

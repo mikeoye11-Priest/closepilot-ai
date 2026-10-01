@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { MOBILE, DESKTOP, primaryNav, gotoDemo } from "./ui-helpers";
+import { MOBILE, DESKTOP, primaryNav, gotoDemo, openPage } from "./ui-helpers";
 
 // Navigation + runtime smoke against the stable /demo route (presentation mode —
 // no auth, no onboarding). Replaces the older button/walkthrough specs that
@@ -40,13 +40,7 @@ test("every demo page renders with no runtime errors", async ({ page }) => {
   const nav = primaryNav(page);
 
   for (const label of PAGES) {
-    const button = nav.getByRole("button", { name: label, exact: true });
-    await button.scrollIntoViewIfNeeded();
-    await button.click();
-    // `shadow-sm` is present ONLY on the active nav button (the inactive class uses
-    // hover:bg-white/5), so this asserts the click actually navigated — and that the
-    // panel rendered without an uncaught runtime error (collected above).
-    await expect(button).toHaveClass(/shadow-sm/, { timeout: 10_000 });
+    await openPage(page, label);
     await expect(page.getByRole("main")).toBeVisible();
   }
   expect(errors, errors.join("\n")).toEqual([]);
@@ -72,12 +66,28 @@ test("Ask ClosePilot opens contextually without leaving the current screen", asy
 
   const findingsButton = primaryNav(page).getByRole("button", { name: "Review", exact: true });
   await expect(findingsButton).toHaveClass(/shadow-sm/);
-  await page.getByRole("main").locator("header").getByRole("button", { name: "Ask ClosePilot", exact: true }).click();
+  const trigger = page.getByRole("main").locator("header").getByRole("button", { name: "Ask ClosePilot", exact: true });
+  await trigger.click();
 
   const assistant = page.getByRole("complementary", { name: "Ask ClosePilot assistant" });
   await expect(assistant).toBeVisible();
   await expect(assistant.getByText("Answers remain grounded in this review's findings and evidence.", { exact: true })).toBeVisible();
-  await assistant.getByRole("button", { name: "Close", exact: true }).click();
+  await page.keyboard.press("Escape");
   await expect(assistant).toBeHidden();
+  await expect(trigger).toBeFocused();
   await expect(findingsButton).toHaveClass(/shadow-sm/);
+});
+
+test("mobile navigation is a keyboard-dismissible drawer", async ({ page }) => {
+  await page.setViewportSize(MOBILE);
+  await page.goto("/demo");
+
+  const trigger = page.getByRole("button", { name: "Menu", exact: true });
+  await trigger.click();
+  const navigation = primaryNav(page);
+  await expect(navigation).toBeVisible();
+  await expect(navigation.getByRole("button", { name: "Close", exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(navigation).toBeHidden();
+  await expect(trigger).toBeFocused();
 });

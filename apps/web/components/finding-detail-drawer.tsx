@@ -65,6 +65,14 @@ export function FindingDetailDrawer({
     setAssignmentDueDate(finding.dueDate ?? "");
   }, [finding.assignedTo, finding.dueDate, finding.id]);
 
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
   const act = (status: FindingStatus, fallback = "") => {
     updateFindingStatus(finding.id, status, note || fallback);
     setNote("");
@@ -104,7 +112,7 @@ export function FindingDetailDrawer({
               <h2 className="mt-3 text-xl font-black">{finding.title}</h2>
               <p className="mt-1 text-sm text-muted">{finding.description}</p>
             </div>
-            <button className="rounded-lg border border-line px-3 py-2 text-sm font-bold" onClick={onClose}>Close</button>
+            <button autoFocus className="rounded-lg border border-line px-3 py-2 text-sm font-bold" onClick={onClose}>Close</button>
           </div>
         </div>
 

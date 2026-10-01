@@ -377,4 +377,11 @@ simplified.
 - **P2 metric separation complete:** client review screens lead with evidence,
   blockers, exposure and sign-off state. Time-saving and commercial-value
   estimates are reserved for practice-level measurement.
-- P3 remains planned.
+- **P3 mobile navigation and keyboard foundation complete:** the small-screen
+  horizontal rail is replaced by a grouped navigation drawer. The navigation,
+  contextual assistant and finding detail overlays can be dismissed with
+  Escape; navigation and assistant focus return to their launch controls.
+  Automated coverage now verifies mobile drawer focus and dismissal alongside
+  the existing desktop, accessibility and responsive finding tests. Responsive
+  operational tables, stronger non-colour status cues and expanded keyboard
+  journey coverage remain in the next P3 slice.
