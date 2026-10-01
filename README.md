@@ -403,3 +403,8 @@ simplified.
   content is inert for shell-level overlays, dialogs expose modal semantics,
   and automated tests verify wrapping focus. The wide-screen finding pane stays
   deliberately non-modal so the queue and detail remain jointly operable.
+- **P4 breakpoint coverage complete:** the core Overview, Import, Findings and
+  Review pack journey is regression tested at 320px, 768px, 1024px and 1440px,
+  including navigation-mode changes and page-level overflow. Overview's Top
+  Findings now uses labelled cards on small screens and retains its full table
+  from tablet width upward.

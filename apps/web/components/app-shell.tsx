@@ -4139,7 +4139,18 @@ function OperationalOverviewDashboard({
 
         <OverviewCard title="Top Findings" action={<button className="text-sm font-bold text-brand" onClick={() => setActive("Findings")}>View all findings</button>}>
           {topFindings.length ? (
-            <div aria-label="Top findings table" className="overflow-x-auto" tabIndex={0}>
+            <div>
+              <ul className="grid gap-3 md:hidden" data-testid="top-finding-cards">
+                {topFindings.map((finding) => (
+                  <li key={finding.id} className="rounded-lg border border-line bg-slate-50 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2"><Pill level={finding.severity}>{riskCopy(finding.severity)}</Pill><strong className="text-red-700">{parseImpactAmount(finding.expectedImpact) ? `£${parseImpactAmount(finding.expectedImpact).toLocaleString()}` : "No quantified exposure"}</strong></div>
+                    <strong className="mt-3 block">{finding.title}</strong>
+                    <p className="mt-1 text-xs capitalize text-muted">{finding.category.replaceAll("_", " ")}</p>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs"><Pill level={isOpenFinding(finding) ? "medium" : "low"}>{finding.status.replaceAll("_", " ")}</Pill><span>{finding.assignedTo ?? finding.owner ?? "Unassigned"} · {finding.dueDate ? new Date(finding.dueDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "No due date"}</span></div>
+                  </li>
+                ))}
+              </ul>
+              <div aria-label="Top findings table" className="hidden overflow-x-auto md:block" tabIndex={0}>
               <table className="w-full min-w-[820px] text-left text-sm">
                 <thead className="text-xs uppercase text-muted">
                   <tr>
@@ -4166,6 +4177,7 @@ function OperationalOverviewDashboard({
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           ) : (
             <EmptyState title="No findings yet" detail="Upload a finance pack to populate the review table." />
