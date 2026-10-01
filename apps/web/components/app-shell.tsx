@@ -58,7 +58,7 @@ import { PERSISTABLE_ID, clientToCompany, emptySnapshot, fetchCompanySnapshot, i
 
 const navGroups = [
   { label: "", items: ["Partner Summary"] },
-  { label: "Review", items: ["Findings", "Finance Review", "VAT Assurance", "Controls & Fraud", "Audit Readiness", "Close Review", "Ask ClosePilot"] },
+  { label: "Review", items: ["Findings", "Finance Review", "VAT Assurance", "Controls & Fraud", "Audit Readiness", "Close Review"] },
   { label: "Reports", items: ["Review Pack", "Accounts", "Cash Intelligence", "Collections Intelligence", "Change Intelligence", "Inventory & WIP"] },
   { label: "Clients & firm", items: ["Upload Finance Pack", "Practice Portal", "People", "Practice Metrics", "Scheduled Reports"] },
   { label: "Settings & help", items: ["Settings", "Assurance Engine", "Compatibility", "User Guide"], advanced: true },
@@ -1494,6 +1494,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   const scheduledSnapshotAttempts = useRef<Set<string>>(new Set());
   const [question, setQuestion] = useState("Why is cash getting tighter?");
   const [showExport, setShowExport] = useState(false);
+  const [showAssistant, setShowAssistant] = useState(false);
   const [ruleAnalytics, setRuleAnalytics] = useState<RuleAnalyticsReport | null>(null);
   const [pilotWalkthroughStep, setPilotWalkthroughStep] = useState(0);
   const [assistantResult, setAssistantResult] = useState<AssistantResult | null>(null);
@@ -2923,6 +2924,24 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           onClose={() => setShowExport(false)}
         />
       )}
+      {showAssistant && (
+        <div className="fixed inset-0 z-50 bg-slate-950/40" role="presentation">
+          <aside className="ml-auto flex h-full w-full max-w-[min(96vw,1100px)] flex-col bg-page shadow-2xl" aria-label="Ask ClosePilot assistant">
+            <div className="flex items-start justify-between gap-4 border-b border-line bg-white p-5">
+              <div><p className="text-xs font-bold uppercase tracking-wide text-brand">Current client</p><h2 className="mt-1 text-xl font-bold">Ask about {currentCompany.name}</h2><p className="mt-1 text-sm text-muted">Answers remain grounded in this review's findings and evidence.</p></div>
+              <button className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-bold" onClick={() => setShowAssistant(false)}>Close</button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
+              <AICopilot question={question} setQuestion={setQuestion} score={score} findings={findings} findingActivities={findingActivities} validationChecks={validationChecks} uploads={uploads} company={currentCompany} forecast={forecast} assistantResult={assistantResult?.companyId === currentCompany.id ? assistantResult : null} setAssistantResult={setAssistantResult} updateFindingStatus={updateFindingStatus} updateManagerReview={updateManagerReview} openFindingEvidence={(findingId) => {
+                if (isPilotDemo) setPilotWalkthroughStep(findingId === "find_pilot_ar_001" ? 2 : findingId === "find_pilot_close_001" ? 3 : 1);
+                setFocusedFindingId(findingId);
+                setShowAssistant(false);
+                setActive("Findings");
+              }} setActive={(value) => { setShowAssistant(false); setActive(value); }} />
+            </div>
+          </aside>
+        </div>
+      )}
       <aside className="no-print overflow-x-hidden border-b border-white/10 bg-[#0f172a] text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r lg:border-white/5">
         <div className="flex items-center justify-between gap-4 px-4 py-4 lg:block lg:p-5">
           <div className="flex items-center gap-3">
@@ -3018,6 +3037,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
                   <button className="h-10 rounded-lg border border-line bg-white px-4 text-sm font-bold shadow-sm transition-colors hover:border-brand hover:text-brand" onClick={() => { setOnboardIntent("new"); setActive("Onboarding"); }}>Onboard</button>
                 </>
               )}
+              <button className="h-10 rounded-lg border border-brand bg-cyan-50 px-4 text-sm font-bold text-brand shadow-sm transition-colors hover:bg-cyan-100" onClick={() => setShowAssistant(true)}>Ask ClosePilot</button>
               <button className="h-10 rounded-lg bg-brand px-4 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-700" onClick={() => setShowExport(true)}>Export Review</button>
             </div>
           </div>

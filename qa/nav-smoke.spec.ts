@@ -16,7 +16,7 @@ const PAGES = [
   "Overview",
   "Findings", "Finance review", "VAT", "Controls & fraud", "Audit readiness", "Review pack",
   "Accounts", "Inventory & WIP",
-  "Cash flow", "Collections", "Changes", "Month-end close", "Ask ClosePilot",
+  "Cash flow", "Collections", "Changes", "Month-end close",
   "Import & upload", "All clients", "Practice metrics", "Scheduled reports",
 ];
 
@@ -66,4 +66,20 @@ test("the desktop shell keeps its layout — branded and no horizontal scroll", 
   const noHorizontalScroll = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2);
   expect(noHorizontalScroll, "the page body must not scroll horizontally").toBeTruthy();
   expect(errors, errors.join("\n")).toEqual([]);
+});
+
+test("Ask ClosePilot opens contextually without leaving the current screen", async ({ page }) => {
+  await page.setViewportSize(DESKTOP);
+  await gotoDemo(page);
+
+  const findingsButton = primaryNav(page).getByRole("button", { name: "Findings", exact: true });
+  await expect(findingsButton).toHaveClass(/shadow-sm/);
+  await page.getByRole("main").locator("header").getByRole("button", { name: "Ask ClosePilot", exact: true }).click();
+
+  const assistant = page.getByRole("complementary", { name: "Ask ClosePilot assistant" });
+  await expect(assistant).toBeVisible();
+  await expect(assistant.getByText("Answers remain grounded in this review's findings and evidence.", { exact: true })).toBeVisible();
+  await assistant.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(assistant).toBeHidden();
+  await expect(findingsButton).toHaveClass(/shadow-sm/);
 });

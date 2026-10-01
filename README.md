@@ -366,4 +366,10 @@ simplified.
   detail pane beside the queue on wide screens. The same evidence and decision
   component remains a full-screen drawer on smaller viewports, avoiding separate
   workflow implementations.
-- P2 and P3 remain planned.
+- **P2 in progress:** Ask ClosePilot is now a contextual drawer available from
+  every working screen and no longer consumes a primary-navigation destination.
+  It remains scoped to the selected client, reuses the existing grounded-answer
+  workflow and returns users to their current screen when closed.
+- Remaining P2 work is consolidating overlapping review/report destinations and
+  separating client-review measures from practice-level commercial measures.
+- P3 remains planned.
