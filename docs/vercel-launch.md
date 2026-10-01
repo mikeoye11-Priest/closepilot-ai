@@ -84,7 +84,8 @@ node --env-file=.env.vercel.local scripts/check-launch-readiness.mjs
 Against the Preview URL:
 
 ```bash
-curl --fail https://closepilot-ai-nvlz.vercel.app/api/health
+curl --fail https://closepilot-ai-nvlz.vercel.app/api/health/live
+curl --fail https://closepilot-ai-nvlz.vercel.app/api/health/ready
 CLOSEPILOT_QA_URL=https://closepilot-ai-nvlz.vercel.app npm run test:upload
 CLOSEPILOT_QA_URL=https://closepilot-ai-nvlz.vercel.app npm run test:ui
 ```
@@ -100,7 +101,10 @@ Vercel Functions accept request bodies up to 4.5 MB. ClosePilot therefore keeps 
 - [ ] Wrong-tenant IDs are rejected by RLS.
 - [ ] Sign-out returns to the configured site URL.
 - [ ] Browser security headers are present.
-- [ ] `/api/health` returns `ready` without exposing secret values.
+- [ ] `/api/health/live` returns `alive`.
+- [ ] `/api/health/ready` returns `ready` (or an explicitly accepted
+      `degraded` state) and confirms database reachability without exposing
+      secret values.
 - [ ] File deletion and agreed retention behaviour are verified.
 - [ ] Runtime logs and an incident alert route are assigned to an owner.
 

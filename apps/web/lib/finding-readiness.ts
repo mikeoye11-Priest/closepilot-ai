@@ -98,6 +98,6 @@ export function signOffTrafficLight({
 
 export function trafficLightClasses(state: SignOffTrafficState) {
   if (state === "green") return { box: "border-emerald-200 bg-emerald-50", text: "text-emerald-800", dot: "bg-emerald-600" };
-  if (state === "amber") return { box: "border-amber-200 bg-amber-50", text: "text-amber-800", dot: "bg-amber-500" };
+  if (state === "amber") return { box: "border-amber-200 bg-amber-50", text: "text-amber-800", dot: "bg-amber-700" };
   return { box: "border-red-200 bg-red-50", text: "text-red-800", dot: "bg-red-600" };
 }

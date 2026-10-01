@@ -202,19 +202,19 @@ export function FindingList({ findings, setActive, updateFindingStatus }: { find
   return (
     <div className="grid gap-3">
       <div className="grid gap-2 rounded-lg border border-line bg-slate-50 p-3 md:grid-cols-3">
-        <select className="h-9 rounded-lg border border-line bg-white px-3 text-sm font-bold" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}>
+        <select aria-label="Filter findings by status" className="h-9 rounded-lg border border-line bg-white px-3 text-sm font-bold" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}>
           <option value="open">Open queue</option>
           <option value="reviewed">Reviewed</option>
           <option value="all">All statuses</option>
         </select>
-        <select className="h-9 rounded-lg border border-line bg-white px-3 text-sm font-bold" value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value as typeof severityFilter)}>
+        <select aria-label="Filter findings by severity" className="h-9 rounded-lg border border-line bg-white px-3 text-sm font-bold" value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value as typeof severityFilter)}>
           <option value="all">All severities</option>
           <option value="critical">Critical</option>
           <option value="high">High</option>
           <option value="medium">Medium</option>
           <option value="low">Low</option>
         </select>
-        <select className="h-9 rounded-lg border border-line bg-white px-3 text-sm font-bold" value={evidenceFilter} onChange={(e) => setEvidenceFilter(e.target.value as typeof evidenceFilter)}>
+        <select aria-label="Filter findings by evidence tier" className="h-9 rounded-lg border border-line bg-white px-3 text-sm font-bold" value={evidenceFilter} onChange={(e) => setEvidenceFilter(e.target.value as typeof evidenceFilter)}>
           <option value="all">All evidence tiers</option>
           <option value="deterministic">Assurance findings</option>
           <option value="indicator">Risk indicators</option>

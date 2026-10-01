@@ -303,7 +303,7 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
 
         <Panel title="Finding Register">
           <div className="mb-3 flex flex-wrap gap-2">
-            <select className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold" value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
+            <select aria-label="Filter findings by owner" className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold" value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
               <option value="all">All Owners</option>
               {owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
             </select>
@@ -320,7 +320,7 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
                 {allVisibleSelected ? "Clear Visible" : "Select Visible"} ({selectedVisibleCount})
               </button>
               <input className="h-10 min-w-44 rounded-lg border border-line bg-white px-3 text-sm" value={bulkOwner} onChange={(event) => setBulkOwner(event.target.value)} placeholder="Owner" />
-              <input className="h-10 rounded-lg border border-line bg-white px-3 text-sm" type="date" value={bulkDueDate} onChange={(event) => setBulkDueDate(event.target.value)} />
+              <input aria-label="Bulk due date" className="h-10 rounded-lg border border-line bg-white px-3 text-sm" type="date" value={bulkDueDate} onChange={(event) => setBulkDueDate(event.target.value)} />
               <button className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300" disabled={reviewLocked || !selectedFindingIds.length} onClick={applyBulkAssignment}>Assign Owner</button>
             </div>
             <div className="flex flex-wrap gap-2">

@@ -4026,7 +4026,7 @@ function OperationalOverviewDashboard({
 
         <OverviewCard title="Top Findings" action={<button className="text-sm font-bold text-brand" onClick={() => setActive("Findings")}>View all findings</button>}>
           {topFindings.length ? (
-            <div className="overflow-x-auto">
+            <div aria-label="Top findings table" className="overflow-x-auto" tabIndex={0}>
               <table className="w-full min-w-[820px] text-left text-sm">
                 <thead className="text-xs uppercase text-muted">
                   <tr>
