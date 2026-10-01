@@ -11,7 +11,7 @@ const baseEnvironment: HealthEnvironment = {
   CRON_SECRET: "cron-secret",
 };
 
-test("Supabase readiness does not treat publishable keys as bearer JWTs", async () => {
+test("Supabase readiness checks Auth with publishable keys and never treats them as bearer JWTs", async () => {
   const originalFetch = globalThis.fetch;
   let request: { url: string; init?: RequestInit } | undefined;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -22,9 +22,25 @@ test("Supabase readiness does not treat publishable keys as bearer JWTs", async 
     const result = await probeSupabase("https://example.supabase.co/", "sb_publishable_example");
     assert.equal(result.reachable, true);
     assert.equal(result.statusCode, 200);
-    assert.equal(request?.url, "https://example.supabase.co/rest/v1/");
+    assert.equal(request?.url, "https://example.supabase.co/auth/v1/health");
     assert.deepEqual(request?.init?.headers, { apikey: "sb_publishable_example" });
     assert.equal(request?.init?.method, "GET");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Supabase readiness checks PostgREST with an admin-level key", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestUrl = "";
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    requestUrl = String(input);
+    return new Response(null, { status: 200 });
+  }) as typeof fetch;
+  try {
+    const result = await probeSupabase("https://example.supabase.co", "service-role-key", true);
+    assert.equal(result.reachable, true);
+    assert.equal(requestUrl, "https://example.supabase.co/rest/v1/");
   } finally {
     globalThis.fetch = originalFetch;
   }

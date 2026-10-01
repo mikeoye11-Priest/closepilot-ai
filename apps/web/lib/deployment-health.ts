@@ -6,16 +6,15 @@ export type DatabaseProbeResult = {
   statusCode?: number;
 };
 
-export type DatabaseProbe = (url: string, anonKey: string) => Promise<DatabaseProbeResult>;
+export type DatabaseProbe = (url: string, apiKey: string, adminKey?: boolean) => Promise<DatabaseProbeResult>;
 
-export async function probeSupabase(url: string, anonKey: string): Promise<DatabaseProbeResult> {
+export async function probeSupabase(url: string, apiKey: string, adminKey = false): Promise<DatabaseProbeResult> {
   const startedAt = performance.now();
   try {
-    const response = await fetch(`${url.replace(/\/$/, "")}/rest/v1/`, {
+    const path = adminKey ? "/rest/v1/" : "/auth/v1/health";
+    const response = await fetch(url.replace(/\/$/, "") + path, {
       method: "GET",
-      // Supabase publishable keys are API keys, not JWT bearer tokens.
-      // The apikey header supports both publishable keys and legacy anon JWTs.
-      headers: { apikey: anonKey },
+      headers: { apikey: apiKey },
       cache: "no-store",
       signal: AbortSignal.timeout(3_000),
     });
@@ -29,9 +28,11 @@ export async function probeSupabase(url: string, anonKey: string): Promise<Datab
 export async function deploymentHealth(env: HealthEnvironment = process.env, databaseProbe: DatabaseProbe = probeSupabase) {
   const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "";
   const supabaseAnonKey = env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ?? "";
+  const supabaseServiceKey = env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "";
   const configured = Boolean(supabaseUrl && supabaseAnonKey);
+  const databaseKey = supabaseServiceKey || supabaseAnonKey;
   const database = configured
-    ? await databaseProbe(supabaseUrl, supabaseAnonKey)
+    ? await databaseProbe(supabaseUrl, databaseKey, Boolean(supabaseServiceKey))
     : { reachable: false, latencyMs: 0 };
 
   const checks = {
