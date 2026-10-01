@@ -385,3 +385,9 @@ simplified.
   the existing desktop, accessibility and responsive finding tests. Responsive
   operational tables, stronger non-colour status cues and expanded keyboard
   journey coverage remain in the next P3 slice.
+- **P3 responsive review tables and status cues complete:** the finding register
+  and row-level evidence switch to labelled cards below tablet width while
+  retaining semantic tables on larger screens. Shared risk pills now combine
+  text, colour and distinct intensity markers. The shell and review panels are
+  constrained at 320px, with automated coverage for card visibility, evidence
+  presentation and page-level horizontal overflow.

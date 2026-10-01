@@ -136,7 +136,7 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
   }, [clearFocusedFinding, findings, focusedFindingId]);
 
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 gap-4">
       <details className="rounded-lg border border-line bg-white shadow-panel">
         <summary className="cursor-pointer px-5 py-4 text-sm font-bold">Review insights and trends</summary>
         <div className="border-t border-line p-5"><FindingsInsightsPanel findings={findings} /></div>
@@ -277,7 +277,7 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
         </section>
       </details>
 
-      <section className={`grid gap-4 ${selectedFinding ? "xl:grid-cols-[minmax(0,0.8fr)_minmax(520px,1.2fr)] xl:[&>*:nth-child(1)]:col-start-1 xl:[&>*:nth-child(1)]:row-start-2 xl:[&>*:nth-child(2)]:col-start-1 xl:[&>*:nth-child(2)]:row-start-1 xl:[&>*:nth-child(3)]:col-start-1 xl:[&>*:nth-child(3)]:row-start-3" : "xl:grid-cols-[1.25fr_0.75fr] xl:[&>*:nth-child(2)]:order-first"}`}>
+      <section className={`grid min-w-0 gap-4 ${selectedFinding ? "xl:grid-cols-[minmax(0,0.8fr)_minmax(520px,1.2fr)] xl:[&>*:nth-child(1)]:col-start-1 xl:[&>*:nth-child(1)]:row-start-2 xl:[&>*:nth-child(2)]:col-start-1 xl:[&>*:nth-child(2)]:row-start-1 xl:[&>*:nth-child(3)]:col-start-1 xl:[&>*:nth-child(3)]:row-start-3" : "xl:grid-cols-[1.25fr_0.75fr] xl:[&>*:nth-child(2)]:order-first"}`}>
         <Panel title="Manager Review Queue">
           <div className="mb-4 grid gap-3 sm:grid-cols-4">
             <SummaryItem label="Ready" value={String(readyForManager.length)} detail="awaiting manager decision" level={readyForManager.length ? "medium" : "low"} />

@@ -44,7 +44,19 @@ export function EvidenceRowsPreview({ finding, compact = false }: { finding: Fin
         <EvidenceSummaryLine label="Account / Party" value={evidenceRef.accountOrParty} />
         <EvidenceSummaryLine label="Calculation" value={evidenceRef.calculation} />
       </div>
-      <div className="overflow-x-auto">
+      <ul className="grid gap-2 p-3 md:hidden" data-testid="evidence-row-cards">
+        {visibleRows.map((row, index) => (
+          <li key={`${row.sourceFile}-${row.rowIndex ?? "row"}-${index}`} className="rounded-lg border border-line bg-slate-50 p-3 text-xs">
+            <div className="flex items-start justify-between gap-3"><strong className="break-words">{evidenceCalculationLabel(row)}</strong><span className="shrink-0 font-bold">{typeof row.amount === "number" ? `£${Math.round(Math.abs(row.amount)).toLocaleString("en-GB")}` : "—"}</span></div>
+            <dl className="mt-3 grid grid-cols-2 gap-3">
+              <div><dt className="font-bold uppercase text-muted">Row</dt><dd className="mt-1 font-mono">{row.sheetName ? `${row.sheetName} · ` : ""}{row.rowIndex ? `#${row.rowIndex}` : "n/a"}</dd></div>
+              <div><dt className="font-bold uppercase text-muted">Account / Party</dt><dd className="mt-1">{row.accountCode || "—"}</dd></div>
+              <div className="col-span-2"><dt className="font-bold uppercase text-muted">Source values</dt><dd className="mt-1 break-words">{evidenceRowPreview(row)}</dd></div>
+            </dl>
+          </li>
+        ))}
+      </ul>
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[920px] border-collapse text-left text-xs">
           <thead className="bg-slate-50 uppercase text-muted"><tr><th className="border-b border-line p-2">Source File</th><th className="border-b border-line p-2">Row</th><th className="border-b border-line p-2">Calculation Input</th><th className="border-b border-line p-2">Account / Party</th><th className="border-b border-line p-2">Amount</th><th className="border-b border-line p-2">Raw Source Values</th></tr></thead>
           <tbody>

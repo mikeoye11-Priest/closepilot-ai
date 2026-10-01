@@ -48,15 +48,28 @@ test("locked desktop finding pane exposes its evidence trail and prevents review
 });
 
 test("finding detail remains a full-screen drawer on mobile", async ({ page }) => {
-  await page.setViewportSize(MOBILE);
+  await page.setViewportSize({ ...MOBILE, width: 320 });
   await gotoDemo(page);
 
   const register = page.getByText("Finding Register", { exact: true }).locator("xpath=ancestor::section[1]");
-  await register.locator("tbody tr").first().click();
+  const cards = register.getByTestId("finding-register-cards");
+  await expect(cards).toBeVisible();
+  await expect(register.locator("table")).toBeHidden();
+  await cards.locator("li button").first().click();
 
   const drawer = page.getByRole("complementary", { name: "Finding detail" });
   await expect(drawer).toBeVisible();
   await expect(drawer.locator("xpath=..")).toHaveCSS("position", "fixed");
+  const evidenceCards = drawer.getByTestId("evidence-row-cards");
+  if (await evidenceCards.count()) {
+    await expect(evidenceCards).toBeVisible();
+    await expect(evidenceCards.locator("xpath=following-sibling::div[1]")).toBeHidden();
+  }
+  const horizontalOverflow = await page.evaluate(() => ({
+    width: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    offenders: Array.from(document.querySelectorAll("body *")).filter((element) => element.getBoundingClientRect().right > document.documentElement.clientWidth + 1).slice(0, 6).map((element) => ({ tag: element.tagName, className: element.className, right: Math.round(element.getBoundingClientRect().right) })),
+  }));
+  expect(horizontalOverflow.width, JSON.stringify(horizontalOverflow.offenders)).toBeLessThanOrEqual(1);
   await drawer.getByRole("button", { name: "Close", exact: true }).click();
   await expect(drawer).toBeHidden();
 });

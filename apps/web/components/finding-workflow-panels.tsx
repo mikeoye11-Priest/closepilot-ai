@@ -57,7 +57,26 @@ export function FindingRegister({
   const rows = findings.slice().sort((a, b) => weight[b.severity] - weight[a.severity]).slice(0, 12);
 
   return (
-    <div className="overflow-x-auto">
+    <div>
+      <ul className="grid gap-3 md:hidden" data-testid="finding-register-cards">
+        {rows.map((finding) => {
+          const statusCfg = FINDING_STATUS_CONFIG[finding.status] ?? FINDING_STATUS_CONFIG.open;
+          return (
+            <li key={finding.id} className="rounded-lg border border-line bg-white p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <input className="mt-1 h-4 w-4 shrink-0 accent-brand" type="checkbox" checked={selectedIds.includes(finding.id)} onChange={() => onToggleSelected(finding.id)} aria-label={`Select ${finding.title}`} />
+                <button className="min-w-0 flex-1 text-left" onClick={() => onSelect(finding.id)}>
+                  <span className="flex flex-wrap items-center gap-2"><Pill level={finding.severity}>{finding.severity}</Pill><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${statusCfg.color}`}>{statusCfg.label}</span></span>
+                  <strong className="mt-2 block">{finding.title}</strong>
+                  <span className="mt-1 block break-words text-xs text-muted">{finding.sourceFile ?? finding.evidence.sourceFile}</span>
+                  <span className="mt-3 grid grid-cols-2 gap-3 text-xs"><span><span className="block font-bold uppercase text-muted">Owner</span>{findingOwner(finding)}</span><span><span className="block font-bold uppercase text-muted">Due</span>{findingDueDate(finding)}</span></span>
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="hidden overflow-x-auto md:block">
       <table className="w-full min-w-[760px] border-collapse text-left text-sm">
         <thead className="text-xs uppercase text-muted">
           <tr>
@@ -87,6 +106,7 @@ export function FindingRegister({
           })}
         </tbody>
       </table>
+      </div>
       {findings.length > rows.length && <p className="mt-2 text-xs text-muted">{findings.length - rows.length} more finding(s) in the detail queue.</p>}
     </div>
   );

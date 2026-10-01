@@ -2948,7 +2948,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
   }, [active, assurance, assistantResult, cashAtRisk, collectionCases, companySnapshots, companies, coreQuality, currentCompany, financialExposure, findingActivities, findingComments, findingEvidence, findings, focusedFindingId, importProfiles, integrationDiagnostics, isAnalysing, isPilotDemo, onboardIntent, openFindings, partnerSignOff, pilotWalkthroughStep, portfolioClients, question, recommendations, reportSchedules, scheduledReports, risk, score, tenant, timeSaved, uploadJob, uploadMessage, uploads, userName, validationBlockers, validationChecks, validationWarnings, vatReview]);
 
   return (
-    <div className="min-h-screen bg-page text-ink lg:grid lg:grid-cols-[280px_1fr]">
+    <div className="min-h-screen max-w-full overflow-x-hidden bg-page text-ink lg:grid lg:grid-cols-[280px_1fr]">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-brand focus:px-4 focus:py-2 focus:font-bold focus:text-white focus:shadow-lg">Skip to content</a>
       {showExport && (
         <ExportModal
@@ -3055,7 +3055,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
           )}
         </div>
       </aside>
-      <main id="main-content" className="min-w-0 p-4 lg:p-6">
+      <main id="main-content" className="min-w-0 max-w-full overflow-x-hidden p-4 lg:p-6">
         <header className="mb-5 rounded-xl border border-line bg-surface/95 p-4 shadow-card backdrop-blur-sm">
           <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
             <div className="min-w-0">

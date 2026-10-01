@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 export function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-xl border border-line bg-surface p-5 shadow-card">
+    <section className="min-w-0 rounded-xl border border-line bg-surface p-5 shadow-card">
       <div className="mb-4 flex items-center gap-2.5">
         <span className="h-4 w-1 rounded-full bg-gradient-to-b from-cyan to-brand" aria-hidden="true" />
         <h2 className="text-[15px] font-bold tracking-tight text-ink">{title}</h2>
@@ -20,8 +20,16 @@ export function Pill({ level, children }: { level: string; children: ReactNode }
     critical: "bg-red-50 text-red-700 ring-red-600/20",
     none: "bg-slate-100 text-slate-700 ring-slate-500/20",
   };
+  const markers: Record<string, string> = {
+    low: "✓",
+    medium: "!",
+    high: "!!",
+    critical: "!!!",
+    none: "–",
+  };
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold capitalize leading-none ring-1 ring-inset ${colors[level] || colors.medium}`}>
+      <span aria-hidden="true" className="font-black tracking-tighter">{markers[level] || markers.medium}</span>
       {children}
     </span>
   );
