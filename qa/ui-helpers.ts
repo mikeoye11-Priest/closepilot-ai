@@ -36,6 +36,7 @@ const SUBVIEWS: Record<string, { parent: string; navigation: string; label: stri
 // (`shadow-sm` is present only on the active nav button).
 export async function gotoDemo(page: Page) {
   await page.goto("/demo");
+  await page.evaluate(() => window.scrollTo(0, 0));
   const nav = await revealPrimaryNav(page);
   const probe = nav.locator('button[data-screen="Findings"]');
   await expect(async () => {

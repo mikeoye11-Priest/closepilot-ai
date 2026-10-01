@@ -57,6 +57,13 @@ test("the desktop shell keeps its layout — branded and no horizontal scroll", 
   await expect(page.getByRole("main")).toBeVisible();
   const noHorizontalScroll = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2);
   expect(noHorizontalScroll, "the page body must not scroll horizontally").toBeTruthy();
+
+  const sidebar = primaryNav(page).locator("xpath=ancestor::aside[1]");
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect.poll(async () => page.evaluate(() => window.scrollY)).toBeGreaterThan(100);
+  const sidebarBox = await sidebar.boundingBox();
+  expect(sidebarBox?.y ?? Number.NaN, "the desktop sidebar stays pinned while the page scrolls").toBeCloseTo(0, 0);
+  expect(sidebarBox?.height ?? 0).toBeCloseTo(DESKTOP.height, 0);
   expect(errors, errors.join("\n")).toEqual([]);
 });
 
