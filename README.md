@@ -347,3 +347,18 @@ rail should be replaced by a grouped menu drawer.
 P0 implementation began on 1 October 2026. Behaviour, calculations, evidence,
 permissions and export controls must remain unchanged while presentation is
 simplified.
+
+### Implementation status
+
+- **P0 foundation complete:** navigation is grouped into the five target areas;
+  the global header is shorter; duplicate next-action banners are removed from
+  the three core screens; upload and finding copy is more operational.
+- **P1 core journey in progress:** Overview now leads with assurance, readiness,
+  unresolved work and material exposure instead of practice-value estimates;
+  score detail is collapsed. A new Upload view opens on the file-selection task
+  before showing readiness diagnostics. Findings keeps insights, lifecycle
+  metrics and partner sign-off controls available but collapsed, bringing the
+  manager queue and finding register substantially closer to the top.
+- Remaining P1 work is a true wide-screen findings master-detail layout and a
+  smaller, action-ranked Overview blocker list.
+- P2 and P3 remain planned.

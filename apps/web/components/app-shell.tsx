@@ -3878,31 +3878,41 @@ function OperationalOverviewDashboard({
             setActive={setActive}
           />
         )}
-        <section>
-          <div className="mb-3"><p className="text-xs font-bold uppercase text-muted">Partner Summary</p><h2 className="mt-1 text-xl font-black">One consistent review, whoever prepared the accounts</h2><p className="mt-1 text-sm text-muted">Prepared accounts in. Evidence-backed partner decision out.</p></div>
+        <section aria-label="Review status">
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div><h2 className="text-xl font-bold">Review status</h2><p className="mt-1 text-sm text-muted">The current decision position for this client.</p></div>
+            <button className="text-left text-sm font-bold text-brand sm:text-right" onClick={() => setActive(openFindings ? "Findings" : "Review Pack")}>{openFindings ? "Review blockers" : "Open review pack"}</button>
+          </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <OverviewMetricCard title="Partner Assurance Score" value={uploads.length ? score : 0} suffix="/100" tone={risk} badge={uploads.length ? "Review complete" : "Awaiting upload"} />
             <OverviewMetricCard title="Audit Readiness" value={uploads.length ? assurance.closeReadiness : 0} suffix="/100" tone={assurance.closeReadiness >= 80 ? "low" : assurance.closeReadiness >= 65 ? "medium" : "high"} badge={assurance.closeReadiness >= 80 ? "Good" : "Fair"} />
-            <article className="rounded-lg border border-line bg-white p-5 shadow-panel"><p className="text-sm font-bold text-muted">Estimated Time Saved</p><strong className="mt-4 block text-3xl font-black text-emerald-700">{timeSavedHours}h</strong><p className="mt-4 text-sm font-bold text-emerald-700">£{timeSavedValue.toLocaleString("en-GB")} manager value</p><p className="mt-4 text-sm text-muted">This review cycle</p></article>
             <article className="rounded-lg border border-line bg-white p-5 shadow-panel">
-              <p className="text-sm font-bold text-muted">Est. Exposure</p>
+              <p className="text-sm font-bold text-muted">Unresolved items</p>
+              <strong className={`mt-4 block text-3xl font-black ${openFindings ? "text-red-600" : "text-emerald-700"}`}>{openFindings}</strong>
+              <p className="mt-4 text-sm font-bold text-muted">{openHighFindings} critical or high</p>
+              <p className="mt-4 text-sm text-muted">{validationBlockers} validation blocker(s)</p>
+            </article>
+            <article className="rounded-lg border border-line bg-white p-5 shadow-panel">
+              <p className="text-sm font-bold text-muted">Material exposure</p>
               <strong className="mt-4 block text-3xl font-black text-red-600">£{financialExposure.toLocaleString()}</strong>
-              <p className="mt-4 text-sm font-bold text-red-600">{financialExposure ? "High Risk" : "No exposure"}</p>
-              <p className="mt-4 text-sm text-muted">{openFindings} open finding(s)</p>
+              <p className="mt-4 text-sm font-bold text-muted">{evidenceLinked}/{findings.length || 0} findings evidence-linked</p>
+              <p className="mt-4 text-sm text-muted">{partnerSignOff ? `Signed by ${partnerSignOff.signedBy}` : "Partner sign-off pending"}</p>
             </article>
           </div>
           {uploads.length > 0 && scoreDrivers.length > 0 && (
-            <div className="mt-3 rounded-lg border border-line bg-white p-4 shadow-panel">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase text-muted">Why this score</p>
+            <details className="mt-3 rounded-lg border border-line bg-white shadow-panel">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-bold">Why this score</summary>
+              <div className="border-t border-line p-4">
+                <div className="flex items-center justify-end">
                 <button className="text-sm font-bold text-brand" onClick={() => setActive("Assurance Engine")}>Full breakdown</button>
-              </div>
+                </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {[...scoreDrivers].sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact)).slice(0, 4).map((driver, index) => (
                   <ScoreDriverRow key={`${driver.factor}_${index}`} driver={driver} />
                 ))}
               </div>
-            </div>
+              </div>
+            </details>
           )}
         </section>
 

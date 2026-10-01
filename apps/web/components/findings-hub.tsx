@@ -150,7 +150,9 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
           <button className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white" onClick={onCreateNewReviewCycle}>Create New Review Cycle</button>
         </section>
       )}
-      <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
+      <details className="rounded-lg border border-line bg-white shadow-panel">
+        <summary className="cursor-pointer px-5 py-4 text-sm font-bold">Review progress · {workflowCoverage}% complete</summary>
+        <div className="border-t border-line p-5">
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
           <div>
             <h2 className="text-xl font-bold">Review progress</h2>
@@ -185,9 +187,12 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
           <SummaryItem label="Manager Approved" value={`${managerApprovedPercent}%`} detail={`${managerApproved} approved`} level={managerApprovedPercent >= 70 ? "low" : "medium"} />
           <SummaryItem label="Review Completion" value={`${workflowCoverage}%`} detail="findings, evidence and decisions" level={workflowCoverageReady ? "low" : "high"} />
         </div>
-      </section>
+        </div>
+      </details>
 
-      <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+      <details className="rounded-lg border border-line bg-white shadow-panel">
+        <summary className="cursor-pointer px-5 py-4 text-sm font-bold">Partner review and sign-off · {traffic.label}</summary>
+        <section className="grid gap-4 border-t border-line p-5 xl:grid-cols-[0.9fr_1.1fr]">
         <Panel title="Partner View">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <SummaryItem label="Critical Open" value={String(criticalOpen)} detail="must be zero" level={criticalOpen ? "critical" : "low"} />
@@ -269,7 +274,8 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
           </div>
         </Panel>
 
-      </section>
+        </section>
+      </details>
 
       <section className="grid gap-4 xl:grid-cols-[1fr_0.86fr]">
         <Panel title="Manager Review Queue">

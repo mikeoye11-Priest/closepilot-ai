@@ -248,7 +248,7 @@ export function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uplo
 
   return (
     <div className="grid gap-4">
-      <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Finance pack readiness">
+      {uploads.length > 0 && <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Finance pack readiness">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div><h2 className="text-xl font-bold">Upload finance pack</h2><p className="mt-1 max-w-3xl text-sm text-muted">Add the prepared-account exports for this review.</p></div>
           <div className="flex shrink-0 items-center gap-2">
@@ -265,9 +265,8 @@ export function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uplo
             )}
           </div>
         </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Metric title="Core File Coverage" value={`${coverage}%`} detail={`${requiredPresent}/${requiredFiles.length} required files`} tone={coverage === 100 ? "low" : "medium"} />
-          <Metric title="Files Reviewed" value={String(uploads.length)} detail="Recognised finance exports" tone={uploads.length ? "low" : "medium"} />
           <Metric title="File Mapping" value={mappingIssues ? String(mappingIssues) : "Ready"} detail={mappingIssues ? "Files need confirmation" : "No mapping hold"} tone={mappingIssues ? "high" : "low"} />
           <Metric title="Validation" value={failedChecks ? `${failedChecks} blocked` : "Ready"} detail={`${warningChecks} warning${warningChecks === 1 ? "" : "s"}`} tone={failedChecks ? "critical" : warningChecks ? "medium" : "low"} />
           <Metric title="Review Output" value={String(findings.length)} detail={`${recommendations.length} recommended actions`} tone={findings.length ? "medium" : "low"} />
@@ -280,7 +279,7 @@ export function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uplo
             {uploadJob.error ? <p className="mt-2 text-sm font-semibold text-red-800">{uploadJob.error}</p> : null}
           </div>
         )}
-      </section>
+      </section>}
 
       <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="grid content-start gap-4">
@@ -320,7 +319,9 @@ export function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uplo
             </div>
           </Panel>
 
-          <Panel title="Review Progress">
+          <details className="rounded-xl border border-line bg-surface shadow-card">
+            <summary className="cursor-pointer px-5 py-4 text-[15px] font-bold">Review progress</summary>
+            <div className="border-t border-line p-5">
             <div className="grid gap-3">
               {([
                 ["Files recognised", uploads.length > 0, uploads.length ? `${uploads.length} exports reviewed` : "Awaiting upload"],
@@ -331,7 +332,8 @@ export function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uplo
                 <div key={step} className="flex items-center justify-between gap-3 rounded-lg border border-line p-4"><span><strong className="block">{step}</strong><span className="mt-1 block text-xs text-muted">{detail}</span></span><Pill level={done ? "low" : "medium"}>{done ? "Complete" : "Pending"}</Pill></div>
               ))}
             </div>
-          </Panel>
+            </div>
+          </details>
         </div>
       </section>
 
