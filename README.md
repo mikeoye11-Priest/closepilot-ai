@@ -391,3 +391,7 @@ simplified.
   text, colour and distinct intensity markers. The shell and review panels are
   constrained at 320px, with automated coverage for card visibility, evidence
   presentation and page-level horizontal overflow.
+- **P3 finding keyboard workflow complete:** finding titles are real keyboard
+  controls in both the desktop table and mobile cards. Enter opens the shared
+  detail pane, Escape dismisses it, and focus returns to the exact record that
+  launched the pane. Desktop and 320px journeys are regression tested.

@@ -48,7 +48,7 @@ export function FindingRegister({
   onToggleSelected,
 }: {
   findings: Finding[];
-  onSelect: (findingId: string) => void;
+  onSelect: (findingId: string, trigger?: HTMLElement) => void;
   selectedIds: string[];
   onToggleSelected: (findingId: string) => void;
 }) {
@@ -65,7 +65,7 @@ export function FindingRegister({
             <li key={finding.id} className="rounded-lg border border-line bg-white p-4 shadow-sm">
               <div className="flex items-start gap-3">
                 <input className="mt-1 h-4 w-4 shrink-0 accent-brand" type="checkbox" checked={selectedIds.includes(finding.id)} onChange={() => onToggleSelected(finding.id)} aria-label={`Select ${finding.title}`} />
-                <button className="min-w-0 flex-1 text-left" onClick={() => onSelect(finding.id)}>
+                <button className="min-w-0 flex-1 text-left" onClick={(event) => onSelect(finding.id, event.currentTarget)}>
                   <span className="flex flex-wrap items-center gap-2"><Pill level={finding.severity}>{finding.severity}</Pill><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${statusCfg.color}`}>{statusCfg.label}</span></span>
                   <strong className="mt-2 block">{finding.title}</strong>
                   <span className="mt-1 block break-words text-xs text-muted">{finding.sourceFile ?? finding.evidence.sourceFile}</span>
@@ -92,12 +92,12 @@ export function FindingRegister({
           {rows.map((finding) => {
             const statusCfg = FINDING_STATUS_CONFIG[finding.status] ?? FINDING_STATUS_CONFIG.open;
             return (
-              <tr key={finding.id} className="cursor-pointer hover:bg-slate-50" onClick={() => onSelect(finding.id)}>
+              <tr key={finding.id} className="hover:bg-slate-50">
                 <td className="border-b border-line p-2" onClick={(event) => event.stopPropagation()}>
                   <input className="h-4 w-4 accent-brand" type="checkbox" checked={selectedIds.includes(finding.id)} onChange={() => onToggleSelected(finding.id)} aria-label={`Select ${finding.title}`} />
                 </td>
                 <td className="border-b border-line p-2"><Pill level={finding.severity}>{finding.severity}</Pill></td>
-                <td className="border-b border-line p-2"><strong className="block">{finding.title}</strong><span className="text-xs text-muted">{finding.sourceFile ?? finding.evidence.sourceFile}</span></td>
+                <td className="border-b border-line p-2"><button className="text-left hover:text-brand focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand" onClick={(event) => onSelect(finding.id, event.currentTarget)}><strong className="block">{finding.title}</strong><span className="text-xs text-muted">{finding.sourceFile ?? finding.evidence.sourceFile}</span></button></td>
                 <td className="border-b border-line p-2 font-semibold">{findingOwner(finding)}</td>
                 <td className="border-b border-line p-2"><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${statusCfg.color}`}>{statusCfg.label}</span></td>
                 <td className="border-b border-line p-2 font-semibold">{findingDueDate(finding)}</td>

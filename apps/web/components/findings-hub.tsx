@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FindingDetailDrawer } from "@/components/finding-detail-drawer";
 import { FindingList } from "@/components/finding-cards";
 import { FindingsInsightsPanel } from "@/components/findings-insights-panel";
@@ -38,6 +38,7 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
   const [statusFilter, setStatusFilter] = useState<LifecycleStatus | "all">("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
+  const findingTriggerRef = useRef<HTMLElement | null>(null);
   const [selectedFindingIds, setSelectedFindingIds] = useState<string[]>([]);
   const [bulkOwner, setBulkOwner] = useState("");
   const [bulkDueDate, setBulkDueDate] = useState("");
@@ -101,6 +102,14 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
   const toggleFindingSelection = (findingId: string) => {
     setSelectedFindingIds((ids) => ids.includes(findingId) ? ids.filter((id) => id !== findingId) : [...ids, findingId]);
   };
+  const openFinding = (findingId: string, trigger?: HTMLElement) => {
+    findingTriggerRef.current = trigger ?? null;
+    setSelectedFindingId(findingId);
+  };
+  const closeFinding = () => {
+    setSelectedFindingId(null);
+    requestAnimationFrame(() => findingTriggerRef.current?.focus());
+  };
   const toggleAllVisibleFindings = () => {
     setSelectedFindingIds((ids) => {
       const visibleIds = visibleFindings.map((finding) => finding.id);
@@ -119,6 +128,7 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
           : pilotWalkthroughStep === 3 ? "find_pilot_close_001"
             : null;
     if (targetId && findings.some((finding) => finding.id === targetId)) {
+      findingTriggerRef.current = null;
       setSelectedFindingId(targetId);
     }
     if (pilotWalkthroughStep === 0) {
@@ -130,6 +140,7 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
   useEffect(() => {
     if (!focusedFindingId) return;
     if (findings.some((finding) => finding.id === focusedFindingId)) {
+      findingTriggerRef.current = null;
       setSelectedFindingId(focusedFindingId);
       clearFocusedFinding();
     }
@@ -340,7 +351,7 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
             </div>
             </div>
           </details>
-          <FindingRegister findings={visibleFindings} onSelect={setSelectedFindingId} selectedIds={selectedFindingIds} onToggleSelected={toggleFindingSelection} />
+          <FindingRegister findings={visibleFindings} onSelect={openFinding} selectedIds={selectedFindingIds} onToggleSelected={toggleFindingSelection} />
         </Panel>
 
         <Panel title="Evidence Management">
@@ -390,7 +401,7 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
             addFindingEvidence={addFindingEvidence}
             updateEvidenceStatus={updateEvidenceStatus}
             reviewLocked={reviewLocked}
-            onClose={() => setSelectedFindingId(null)}
+            onClose={closeFinding}
           />
         )}
       </section>

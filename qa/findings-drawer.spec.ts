@@ -12,7 +12,9 @@ test("locked desktop finding pane exposes its evidence trail and prevents review
 
   const register = page.getByText("Finding Register", { exact: true }).locator("xpath=ancestor::section[1]");
   await expect(register).toBeVisible();
-  await register.locator("tbody tr").first().click();
+  const trigger = register.locator("tbody tr").first().getByRole("button");
+  await trigger.focus();
+  await page.keyboard.press("Enter");
 
   const drawer = page.getByRole("complementary").filter({ hasText: "From source row to partner sign-off" });
   await expect(drawer).toBeVisible();
@@ -42,8 +44,9 @@ test("locked desktop finding pane exposes its evidence trail and prevents review
   await expect(manager.getByRole("button", { name: "Return", exact: true })).toBeDisabled();
   await expect(manager.getByRole("button", { name: "Escalate", exact: true })).toBeDisabled();
 
-  await drawer.getByRole("button", { name: "Close", exact: true }).click();
+  await page.keyboard.press("Escape");
   await expect(drawer).toBeHidden();
+  await expect(trigger).toBeFocused();
   expect(errors, errors.join("\n")).toEqual([]);
 });
 
@@ -55,7 +58,9 @@ test("finding detail remains a full-screen drawer on mobile", async ({ page }) =
   const cards = register.getByTestId("finding-register-cards");
   await expect(cards).toBeVisible();
   await expect(register.locator("table")).toBeHidden();
-  await cards.locator("li button").first().click();
+  const trigger = cards.locator("li button").first();
+  await trigger.focus();
+  await page.keyboard.press("Enter");
 
   const drawer = page.getByRole("complementary", { name: "Finding detail" });
   await expect(drawer).toBeVisible();
@@ -70,6 +75,7 @@ test("finding detail remains a full-screen drawer on mobile", async ({ page }) =
     offenders: Array.from(document.querySelectorAll("body *")).filter((element) => element.getBoundingClientRect().right > document.documentElement.clientWidth + 1).slice(0, 6).map((element) => ({ tag: element.tagName, className: element.className, right: Math.round(element.getBoundingClientRect().right) })),
   }));
   expect(horizontalOverflow.width, JSON.stringify(horizontalOverflow.offenders)).toBeLessThanOrEqual(1);
-  await drawer.getByRole("button", { name: "Close", exact: true }).click();
+  await page.keyboard.press("Escape");
   await expect(drawer).toBeHidden();
+  await expect(trigger).toBeFocused();
 });
