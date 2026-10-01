@@ -3,6 +3,7 @@ export type HealthEnvironment = Record<string, string | undefined>;
 export type DatabaseProbeResult = {
   reachable: boolean;
   latencyMs: number;
+  statusCode?: number;
 };
 
 export type DatabaseProbe = (url: string, anonKey: string) => Promise<DatabaseProbeResult>;
@@ -18,7 +19,7 @@ export async function probeSupabase(url: string, anonKey: string): Promise<Datab
       cache: "no-store",
       signal: AbortSignal.timeout(3_000),
     });
-    return { reachable: response.ok, latencyMs: Math.round(performance.now() - startedAt) };
+    return { reachable: response.ok, latencyMs: Math.round(performance.now() - startedAt), statusCode: response.status };
   } catch {
     return { reachable: false, latencyMs: Math.round(performance.now() - startedAt) };
   }
@@ -55,6 +56,7 @@ export async function deploymentHealth(env: HealthEnvironment = process.env, dat
     checks,
     capabilities,
     databaseLatencyMs: database.latencyMs,
+    databaseStatusCode: database.statusCode,
     deployment: env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local",
     environment: env.VERCEL_ENV ?? env.NODE_ENV ?? "unknown",
     quickbooksEnvironment: capabilities.quickbooks ? (env.QUICKBOOKS_ENVIRONMENT ?? "sandbox") : undefined,
