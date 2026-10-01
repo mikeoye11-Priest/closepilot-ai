@@ -12,13 +12,14 @@ export async function probeSupabase(url: string, anonKey: string): Promise<Datab
   const startedAt = performance.now();
   try {
     const response = await fetch(`${url.replace(/\/$/, "")}/rest/v1/`, {
-      method: "HEAD",
+      method: "GET",
       // Supabase publishable keys are API keys, not JWT bearer tokens.
       // The apikey header supports both publishable keys and legacy anon JWTs.
       headers: { apikey: anonKey },
       cache: "no-store",
       signal: AbortSignal.timeout(3_000),
     });
+    await response.body?.cancel();
     return { reachable: response.ok, latencyMs: Math.round(performance.now() - startedAt), statusCode: response.status };
   } catch {
     return { reachable: false, latencyMs: Math.round(performance.now() - startedAt) };

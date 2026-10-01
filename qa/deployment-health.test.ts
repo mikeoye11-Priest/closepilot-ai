@@ -24,7 +24,7 @@ test("Supabase readiness does not treat publishable keys as bearer JWTs", async 
     assert.equal(result.statusCode, 200);
     assert.equal(request?.url, "https://example.supabase.co/rest/v1/");
     assert.deepEqual(request?.init?.headers, { apikey: "sb_publishable_example" });
-    assert.equal(request?.init?.method, "HEAD");
+    assert.equal(request?.init?.method, "GET");
   } finally {
     globalThis.fetch = originalFetch;
   }
