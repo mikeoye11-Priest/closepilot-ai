@@ -26,6 +26,14 @@ export async function gotoDemo(page: Page) {
 // Navigate to a page by its sidebar display label and confirm it became active.
 export async function openPage(page: Page, label: string) {
   const button = primaryNav(page).getByRole("button", { name: label, exact: true });
+  if (!(await button.isVisible())) {
+    const groupButtons = primaryNav(page).locator('button[aria-expanded]');
+    for (let index = 0; index < await groupButtons.count(); index += 1) {
+      const groupButton = groupButtons.nth(index);
+      if ((await groupButton.getAttribute("aria-expanded")) !== "true") await groupButton.click();
+      if (await button.isVisible()) break;
+    }
+  }
   await button.scrollIntoViewIfNeeded();
   await button.click();
   await expect(button).toHaveClass(/shadow-sm/, { timeout: 10_000 });

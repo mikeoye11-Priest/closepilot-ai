@@ -137,7 +137,10 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
 
   return (
     <div className="grid gap-4">
-      <FindingsInsightsPanel findings={findings} />
+      <details className="rounded-lg border border-line bg-white shadow-panel">
+        <summary className="cursor-pointer px-5 py-4 text-sm font-bold">Review insights and trends</summary>
+        <div className="border-t border-line p-5"><FindingsInsightsPanel findings={findings} /></div>
+      </details>
       {reviewLocked && (
         <section className="flex flex-col gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -150,8 +153,7 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
       <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
           <div>
-            <p className="text-xs font-bold uppercase text-muted">Finding Lifecycle</p>
-            <h2 className="mt-1 text-2xl font-black">Review, evidence, approval and sign-off</h2>
+            <h2 className="text-xl font-bold">Review progress</h2>
             <p className="mt-1 text-sm text-muted">{findings.length ? `${findings.length} finding(s) tracked through the review workflow.` : "Upload a finance pack to create the first review queue."}</p>
           </div>
           <button className="rounded-lg bg-brand px-4 py-2.5 text-sm font-bold text-white" onClick={() => setActive(uploads.length ? "Review Pack" : "Upload Finance Pack")}>

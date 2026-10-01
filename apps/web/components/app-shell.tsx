@@ -58,11 +58,10 @@ import { PERSISTABLE_ID, clientToCompany, emptySnapshot, fetchCompanySnapshot, i
 
 const navGroups = [
   { label: "", items: ["Partner Summary"] },
-  { label: "Review", items: ["Findings", "Finance Review", "VAT Assurance", "Controls & Fraud", "Audit Readiness", "Review Pack"] },
-  { label: "Accounts", items: ["Accounts", "Inventory & WIP"] },
-  { label: "Analysis", items: ["Cash Intelligence", "Collections Intelligence", "Change Intelligence", "Close Review", "Ask ClosePilot"] },
-  { label: "Workspace", items: ["Upload Finance Pack", "Practice Portal", "People", "Practice Metrics", "Scheduled Reports"] },
-  { label: "Help & admin", items: ["Compatibility", "User Guide", "Assurance Engine", "Settings"], advanced: true },
+  { label: "Review", items: ["Findings", "Finance Review", "VAT Assurance", "Controls & Fraud", "Audit Readiness", "Close Review", "Ask ClosePilot"] },
+  { label: "Reports", items: ["Review Pack", "Accounts", "Cash Intelligence", "Collections Intelligence", "Change Intelligence", "Inventory & WIP"] },
+  { label: "Clients & firm", items: ["Upload Finance Pack", "Practice Portal", "People", "Practice Metrics", "Scheduled Reports"] },
+  { label: "Settings & help", items: ["Settings", "Assurance Engine", "Compatibility", "User Guide"], advanced: true },
 ] as const;
 
 // item → its group label, so the sidebar can auto-open the section for the
@@ -2993,9 +2992,8 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
         <header className="mb-5 rounded-xl border border-line bg-surface/95 p-4 shadow-card backdrop-blur-sm">
           <div className="flex flex-col justify-between gap-4 xl:flex-row xl:items-center">
             <div className="min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted">ClosePilot Review</p>
               <h1 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">{pageLabel(active)}</h1>
-              <p className="mt-1 max-w-4xl text-sm text-muted">{tenant.name} · {currentCompany.name} · {uploads.length} finance exports reviewed, {openFindings.length} items to resolve.{timeSavedMins > 0 ? ` · Estimated time saved ${timeSavedHours}h (£${timeSavedValue.toLocaleString("en-GB")} manager capacity).` : ""}</p>
+              <p className="mt-1 max-w-4xl text-sm text-muted">{tenant.name} · {currentCompany.name}{hasUploadedData ? ` · ${openFindings.length} unresolved item${openFindings.length === 1 ? "" : "s"}` : " · No review started"}</p>
             </div>
             <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
               {!presentationMode && (
@@ -3030,7 +3028,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
             <p className="mt-1 text-sm text-amber-800">Your work is still being saved to ClosePilot. Only the local backup used when you are offline has stopped updating.</p>
           </div>
         )}
-        {nextAction && (
+        {nextAction && !["Partner Summary", "Upload Finance Pack", "Findings"].includes(active) && (
           <NextActionBanner
             title={nextAction.title}
             detail={nextAction.detail}

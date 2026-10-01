@@ -237,3 +237,113 @@ The trust model above is enforced by gates rather than intent:
   evidence it cites.
 - `npm run test:invariants` — cross-module checks, including that every
   deliverable balances and cites the right source.
+
+## UI simplification roadmap
+
+The product is functionally broad, but the interface currently exposes too much
+context, guidance and supporting evidence at the same time. The design goal is
+to move from “show everything ClosePilot knows” to “show the decision the user
+needs to make next, with evidence available on demand.” This is an information-
+architecture and content-density programme, not a visual rebrand.
+
+### Product-wide design rules
+
+- Each page has one title, at most one short context line and one primary action.
+- Operational pages show no more than four headline metrics.
+- Evidence, calculations, score explanations and methodology use progressive
+  disclosure instead of competing with the primary task.
+- Marketing-style headlines belong in onboarding and the public site. Inside
+  the application, headings use literal task names such as `Upload finance
+  pack`, `Review status`, `Collection priorities` and `Assurance coverage`.
+- Colour is reserved for blockers, warnings, successful sign-off and destructive
+  actions; ordinary information should not look like an alert.
+- Findings are the centre of the product. Other modules should lead users to a
+  decision, evidence request, resolution or sign-off rather than duplicating the
+  finding lifecycle.
+- Practice-value estimates such as time saved and manager capacity belong in
+  Practice Metrics, not in every client-review header.
+
+### Information architecture
+
+The main navigation should present five primary areas, with the existing
+capabilities nested beneath them:
+
+1. **Overview** — the current client's decision status and blockers.
+2. **Review** — findings, finance review, VAT, controls, audit readiness and
+   close review.
+3. **Reports** — review pack, accounts, cash, collections, change analysis and
+   inventory/WIP.
+4. **Clients & firm** — finance-pack intake, client portfolio, people, practice
+   metrics and scheduled reports.
+5. **Settings & help** — integrations/settings, assurance configuration,
+   compatibility and guidance.
+
+`Ask ClosePilot` should ultimately become a contextual assistant available from
+the current screen rather than a separate destination. On mobile, the horizontal
+rail should be replaced by a grouped menu drawer.
+
+### Priority screens
+
+**Overview / Partner Summary**
+
+- Answer four questions first: can this be signed off, what is material, what
+  remains unresolved, and what happens next.
+- Lead with sign-off state, material exposure, unresolved blockers and evidence
+  completion.
+- Put score drivers, forecasts, activity, commercial value and extended metrics
+  behind expandable secondary sections.
+- Do not show multiple competing expressions of the same readiness state.
+
+**Upload Finance Pack**
+
+- Put the upload control before explanatory and diagnostic material.
+- Use the concise instruction `Drop files here or choose files`.
+- After upload, show coverage, mapping and validation in one compact status row.
+- Remove duplicated instructions across the header, upload box, checklist,
+  progress panel and next-action panel.
+
+**Findings**
+
+- Bring the review queue to the top and use a master-detail layout on wide
+  screens: filters and findings on the left, evidence and decision controls on
+  the right.
+- Keep lifecycle statistics, sign-off gates and readiness forecasts in a compact
+  Review Progress disclosure.
+- Prioritise critical/high, evidence-needed and unresolved filters.
+
+**Reports and specialist modules**
+
+- Treat Finance Review, VAT, Controls and Audit Readiness as views of one review,
+  not unrelated product destinations.
+- Treat Accounts and Review Pack as report outputs.
+- Place Collections beneath Cash unless user research proves it is a distinct
+  daily workspace.
+- Keep draft CT600 and iXBRL limitations visible at the point of export without
+  repeating the full disclaimer throughout the application.
+
+### Visual and responsive system
+
+- Use three levels: primary decision, supporting workflow, and on-demand detail.
+- Reduce nested cards and reserve bordered containers for meaningful groups.
+- Use one strong page heading; use medium-weight section titles and regular body
+  copy instead of repeated uppercase eyebrows and `font-black` headings.
+- Convert wide operational tables into stacked summary rows on small screens.
+- Test at 320px, 768px, 1024px and 1440px, including keyboard navigation between
+  the findings list and detail panel.
+
+### Delivery phases
+
+- **P0 — simplify without changing behaviour:** regroup navigation, quieten the
+  global header, remove duplicate next-action guidance, shorten operational
+  copy, limit top-line metrics and expose the primary task sooner.
+- **P1 — rebuild the core journey:** redesign Overview, Upload Finance Pack and
+  Findings around the task-first structures above.
+- **P2 — consolidate modules:** merge overlapping review/report destinations,
+  introduce the contextual assistant and separate client-level from practice-
+  level measures.
+- **P3 — responsive and accessibility refinement:** mobile drawer, responsive
+  finding/table layouts, non-colour status cues and full keyboard testing.
+
+P0 implementation began on 1 October 2026. Behaviour, calculations, evidence,
+permissions and export controls must remain unchanged while presentation is
+simplified.

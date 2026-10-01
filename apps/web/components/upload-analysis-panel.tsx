@@ -250,7 +250,7 @@ export function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uplo
     <div className="grid gap-4">
       <section className="rounded-lg border border-line bg-white p-5 shadow-panel" aria-label="Finance pack readiness">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div><p className="text-xs font-bold uppercase text-muted">Prepared Accounts Intake</p><h2 className="mt-1 text-2xl font-black">Import prepared accounts, then follow the exceptions</h2><p className="mt-2 max-w-3xl text-sm text-muted">ClosePilot identifies each exported schedule, checks whether the accounts agree, and creates findings linked to the original rows.</p></div>
+          <div><h2 className="text-xl font-bold">Upload finance pack</h2><p className="mt-1 max-w-3xl text-sm text-muted">Add the prepared-account exports for this review.</p></div>
           <div className="flex shrink-0 items-center gap-2">
             <Pill level={!uploads.length || mappingIssues || failedChecks ? "medium" : "low"}>{intakeStatus}</Pill>
             {/* Available whenever a review exists — uploaded OR synced — so a Xero/
@@ -286,10 +286,10 @@ export function UploadAnalyse({ analyseUploads, isAnalysing, uploadMessage, uplo
         <div className="grid content-start gap-4">
         <Panel title="Import Prepared Accounts">
           <div className="rounded-lg border-2 border-dashed border-line bg-slate-50 p-8 text-center">
-            <strong>Choose the prepared-account exports for this review</strong>
-            <p className="mt-2 text-sm text-muted">Import CSV or Excel files together. Trial balance, P&amp;L, balance sheet, debtors, creditors and VAT provide the strongest review coverage.</p>
+            <strong>Drop files here or choose files</strong>
+            <p className="mt-2 text-sm text-muted">CSV and Excel supported. Add files together where possible.</p>
             <label className="mt-5 inline-flex cursor-pointer rounded-lg bg-brand px-4 py-3 font-bold text-white">
-              {isAnalysing ? "Reviewing files…" : uploads.length ? "Add More Exports" : "Choose Prepared-Account Exports"}
+              {isAnalysing ? "Reviewing files…" : uploads.length ? "Add more files" : "Choose files"}
               <input className="sr-only" type="file" multiple accept=".csv,.tsv,.txt,.xlsx,.xls" onChange={(event) => analyseUploads(event.target.files)} />
             </label>
             <p className="mt-3 text-sm text-muted">{uploadMessage}</p>
