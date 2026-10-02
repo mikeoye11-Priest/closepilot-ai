@@ -425,3 +425,7 @@ simplified.
   governance/supporting schedules and the evidence trail are revealed on
   demand but remain included in print output. A density regression keeps the
   default view below 900 visible words.
+- **P5 insight hierarchy complete:** Finance, VAT, Audit Readiness and
+  Month-end Close now lead with the decision headline and AI action, with the
+  supporting signal list available on demand instead of filling the page by
+  default.

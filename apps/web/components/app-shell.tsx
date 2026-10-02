@@ -7236,8 +7236,12 @@ function FinanceInsightsPanel({ statements, tenantId, companyId, scheduleCadence
           {error && <span className="text-sm text-red-700">{error}</span>}
         </div>
       )}
-      <div className="mt-4 grid gap-2">
-        {insights.signals.map((signal, index) => (
+      <details className="mt-4 rounded-xl border border-line bg-slate-50/70">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-ink">
+          Review {insights.signals.length} supporting signal{insights.signals.length === 1 ? "" : "s"}
+        </summary>
+        <div className="grid gap-2 border-t border-line p-3">
+          {insights.signals.map((signal, index) => (
           <div key={index} className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-line p-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -7249,8 +7253,9 @@ function FinanceInsightsPanel({ statements, tenantId, companyId, scheduleCadence
             </div>
             <span className="shrink-0 text-[11px] font-bold uppercase text-muted">{signal.area}</span>
           </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </details>
     </Panel>
   );
 }
@@ -8294,8 +8299,12 @@ function CloseInsightsPanel({ findings, recommendations, validationChecks }: { f
           {error && <span className="text-sm text-red-700">{error}</span>}
         </div>
       )}
-      <div className="mt-4 grid gap-2">
-        {insights.signals.map((signal, index) => (
+      <details className="mt-4 rounded-xl border border-line bg-slate-50/70">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-ink">
+          Review {insights.signals.length} supporting signal{insights.signals.length === 1 ? "" : "s"}
+        </summary>
+        <div className="grid gap-2 border-t border-line p-3">
+          {insights.signals.map((signal, index) => (
           <div key={index} className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-line p-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -8307,8 +8316,9 @@ function CloseInsightsPanel({ findings, recommendations, validationChecks }: { f
             </div>
             <span className="shrink-0 text-[11px] font-bold uppercase text-muted">{signal.area}</span>
           </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </details>
     </Panel>
   );
 }
@@ -8347,8 +8357,12 @@ function AuditInsightsPanel({ findings, validationChecks, uploads, partnerSigned
           {error && <span className="text-sm text-red-700">{error}</span>}
         </div>
       )}
-      <div className="mt-4 grid gap-2">
-        {insights.signals.map((signal, index) => (
+      <details className="mt-4 rounded-xl border border-line bg-slate-50/70">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-ink">
+          Review {insights.signals.length} supporting signal{insights.signals.length === 1 ? "" : "s"}
+        </summary>
+        <div className="grid gap-2 border-t border-line p-3">
+          {insights.signals.map((signal, index) => (
           <div key={index} className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-line p-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -8360,8 +8374,9 @@ function AuditInsightsPanel({ findings, validationChecks, uploads, partnerSigned
             </div>
             <span className="shrink-0 text-[11px] font-bold uppercase text-muted">{signal.area}</span>
           </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </details>
     </Panel>
   );
 }
@@ -8400,8 +8415,12 @@ function VatInsightsPanel({ vatReview, findings, validationChecks, uploads }: { 
           {error && <span className="text-sm text-red-700">{error}</span>}
         </div>
       )}
-      <div className="mt-4 grid gap-2">
-        {insights.signals.map((signal, index) => (
+      <details className="mt-4 rounded-xl border border-line bg-slate-50/70">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-ink">
+          Review {insights.signals.length} supporting signal{insights.signals.length === 1 ? "" : "s"}
+        </summary>
+        <div className="grid gap-2 border-t border-line p-3">
+          {insights.signals.map((signal, index) => (
           <div key={index} className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-line p-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -8413,8 +8432,9 @@ function VatInsightsPanel({ vatReview, findings, validationChecks, uploads }: { 
             </div>
             <span className="shrink-0 text-[11px] font-bold uppercase text-muted">{signal.area}</span>
           </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </details>
     </Panel>
   );
 }
