@@ -4039,6 +4039,9 @@ function OperationalOverviewDashboard({
           </ol>
         </section>
 
+        <details className="rounded-lg border border-line bg-white shadow-panel">
+          <summary className="cursor-pointer px-5 py-4 text-sm font-bold text-ink">Supporting review analysis</summary>
+          <div className="grid gap-4 border-t border-line p-5">
         <section className="grid gap-4 xl:grid-cols-[0.95fr_1.1fr_0.85fr]">
           <OverviewCard title="Findings Reviewed by Severity">
             <div className="grid items-center gap-4 sm:grid-cols-[140px_1fr]">
@@ -4136,6 +4139,8 @@ function OperationalOverviewDashboard({
             </div>
           </div>
         </OverviewCard>
+          </div>
+        </details>
 
         <OverviewCard title="Top Findings" action={<button className="text-sm font-bold text-brand" onClick={() => setActive("Findings")}>View all findings</button>}>
           {topFindings.length ? (
@@ -4765,7 +4770,7 @@ function RuleCoverageReport({ analytics }: { analytics: RuleAnalyticsReport }) {
         ))}
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto" tabIndex={0}>
         <table className="w-full min-w-[760px] border-collapse text-left text-sm">
           <thead className="text-xs uppercase text-muted">
             <tr>
@@ -4937,7 +4942,7 @@ function AuditReadiness({ findings, findingEvidence, partnerSignOff, validationC
           <div><p className="text-xs font-bold uppercase text-muted">Audit Readiness Action Plan</p><h2 className="mt-1 text-xl font-black">Evidence, owner and readiness improvement</h2></div>
           <span className="text-sm font-semibold text-muted">Weights total 100%</span>
         </div>
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 overflow-x-auto" tabIndex={0}>
           <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
             <thead className="text-xs uppercase text-muted"><tr><th className="border-b border-line p-3">Control / Weight</th><th className="border-b border-line p-3">Status</th><th className="border-b border-line p-3">Evidence</th><th className="border-b border-line p-3">Owner / Due</th><th className="border-b border-line p-3">Required Action</th><th className="border-b border-line p-3">Uplift</th><th className="border-b border-line p-3">Open</th></tr></thead>
             <tbody>
@@ -5817,7 +5822,7 @@ function ReviewPack({
             <ReportMetric label="ECL Proxy" value={`£${Math.round(ecl / 1000)}k`} detail="Expected credit loss estimate" />
             <ReportMetric label="Priority Customers" value={String(collection.length)} detail="requiring action" />
           </div>
-          <div className="mt-4 overflow-x-auto">
+          <div className="mt-4 overflow-x-auto" tabIndex={0}>
             {collection.length ? (
               <table className="w-full min-w-[760px] border-collapse text-left text-sm">
                 <thead className="text-xs uppercase text-muted">
@@ -5848,7 +5853,7 @@ function ReviewPack({
         <div className="print-page mt-6 rounded-lg border border-line p-4">
           <h2 className="font-black">Supplier Risk Report</h2>
           <p className="mt-1 text-sm text-muted">AP priorities are separated from review prompts so duplicate payment, vendor and supplier concentration risks are clear.</p>
-          <div className="mt-4 overflow-x-auto">
+          <div className="mt-4 overflow-x-auto" tabIndex={0}>
             {supplierRisk.length ? (
               <table className="w-full min-w-[760px] border-collapse text-left text-sm">
                 <thead className="text-xs uppercase text-muted">
@@ -7095,7 +7100,7 @@ function VariancePanel({ statements }: { statements?: SyncStatements }) {
   return (
     <Panel title="Variance · Actual vs Prior Period">
       <p className="max-w-2xl text-sm text-muted">Where the P&amp;L moved against the comparison period. Favourable = higher income/profit or lower cost.</p>
-      <div className="mt-4 overflow-x-auto">
+      <div className="mt-4 overflow-x-auto" tabIndex={0}>
         <table className="w-full min-w-[560px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-line text-left text-xs font-bold uppercase text-muted">
@@ -7354,9 +7359,14 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
 
       {cashTab === "forecast" && (<>
         <DebtorBridgePanel ledger={debtorLedger} />
-        <InvariantsPanel statements={statements} ledger={debtorLedger} coverage={{ sourceLinked, totalExposure }} findings={findings} />
         <ThirteenWeekCashflow statements={statements} ledger={debtorLedger} />
-        <WhatIfPlanner statements={statements} />
+        <details className="rounded-lg border border-line bg-white shadow-panel">
+          <summary className="cursor-pointer px-5 py-4 text-sm font-bold text-ink">Forecast controls and scenario planning</summary>
+          <div className="grid gap-4 border-t border-line p-4">
+            <InvariantsPanel statements={statements} ledger={debtorLedger} coverage={{ sourceLinked, totalExposure }} findings={findings} />
+            <WhatIfPlanner statements={statements} />
+          </div>
+        </details>
       </>)}
 
       {cashTab === "liquidity" && (<>
@@ -7404,7 +7414,7 @@ function CashflowPanel({ findings, uploads, collectionCases, statements, tenantI
 
       <section className="rounded-lg border border-line bg-white p-5 shadow-panel">
         <div><p className="text-xs font-bold uppercase text-muted">Forecast Inputs</p><h2 className="mt-1 text-xl font-black">Customer commitments and evidence basis</h2></div>
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 overflow-x-auto" tabIndex={0}>
           <table className="w-full min-w-[920px] border-collapse text-left text-sm">
             <thead className="text-xs uppercase text-muted"><tr><th className="border-b border-line p-3">Customer</th><th className="border-b border-line p-3">Balance</th><th className="border-b border-line p-3">Case Status</th><th className="border-b border-line p-3">Forecast Basis</th><th className="border-b border-line p-3">Evidence</th></tr></thead>
             <tbody>{accounts.map((account) => {
@@ -7629,7 +7639,7 @@ function CollectionsPanel({ findings, collectionCases, saveCollectionCase, actor
         {accounts.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted">No customer balances with supporting rows found. Upload an aged debtors file to create the collection queue.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" tabIndex={0}>
             <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
               <thead className="text-xs uppercase text-muted">
                 <tr>
@@ -9292,7 +9302,7 @@ function ControlsFraudPanel({ findings, validationChecks, uploads, partnerSignOf
 
         <Panel title="Control Exception Register">
           {relevantFindings.length ? (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" tabIndex={0}>
               <table className="w-full min-w-[900px] border-collapse text-left text-sm">
                 <thead className="text-xs uppercase text-muted"><tr><th className="border-b border-line p-3">Risk signal</th><th className="border-b border-line p-3">Finding</th><th className="border-b border-line p-3">Amount</th><th className="border-b border-line p-3">Evidence</th><th className="border-b border-line p-3">Decision</th><th className="border-b border-line p-3">Open</th></tr></thead>
                 <tbody>{relevantFindings.map((finding) => {
@@ -9355,7 +9365,7 @@ function ReportAppendix({ findings, uploads, validationChecks }: { findings: Fin
           <p className="mt-1 text-sm text-muted">{unresolved} unresolved findings remain before final sign-off.</p>
         </div>
       </div>
-      <div className="mt-4 overflow-x-auto">
+      <div className="mt-4 overflow-x-auto" tabIndex={0}>
         <table className="w-full min-w-[760px] border-collapse text-left">
           <thead className="text-xs uppercase text-muted">
             <tr>
@@ -9891,7 +9901,7 @@ function ExportModal({
               </div>
               <div className="rounded-lg border border-line bg-white p-5">
                 <p className="text-xs font-bold uppercase text-muted">Findings Summary</p>
-                <div className="mt-3 overflow-x-auto">
+                <div className="mt-3 overflow-x-auto" tabIndex={0}>
                   <table className="w-full min-w-[760px] border-collapse text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase text-muted">
                       <tr>
@@ -10411,7 +10421,7 @@ function InventoryPanel({ review, uploads, companyName, setActive, scheduleCaden
       )}
 
       <Panel title="Top items by value">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" tabIndex={0}>
           <table className="w-full min-w-[560px] text-left text-sm">
             <thead className="text-xs uppercase text-muted"><tr><th className="border-b border-line p-2">Item</th><th className="border-b border-line p-2">Category</th><th className="border-b border-line p-2">Qty</th><th className="border-b border-line p-2">Value</th><th className="border-b border-line p-2">Days since movement</th></tr></thead>
             <tbody>
@@ -10506,7 +10516,7 @@ function ScheduledReportsPanel({ reports, setActive }: { reports: ScheduledRepor
           </Panel>
         )}
         <Panel title="Top items by value">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" tabIndex={0}>
             <table className="w-full min-w-[480px] text-left text-sm">
               <thead className="text-xs uppercase text-muted"><tr><th className="border-b border-line p-2">Item</th><th className="border-b border-line p-2">Category</th><th className="border-b border-line p-2">Value</th></tr></thead>
               <tbody>{review.topItems.map((item, index) => (<tr key={`${item.item}_${index}`} className="border-b border-line last:border-0"><td className="p-2 font-semibold">{item.item}</td><td className="p-2 text-muted">{item.category}</td><td className="p-2 font-bold">{gbp(item.value)}</td></tr>))}</tbody>

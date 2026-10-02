@@ -429,3 +429,8 @@ simplified.
   Month-end Close now lead with the decision headline and AI action, with the
   supporting signal list available on demand instead of filling the page by
   default.
+- **P5 operational page simplification complete:** Overview keeps the decision
+  position, blockers, review journey and top findings in view while moving
+  supporting analytics on demand. Cash Flow keeps the debtor bridge and
+  13-week forecast primary, with controls and scenario planning disclosed when
+  needed. Remaining wide data regions are keyboard-scrollable.

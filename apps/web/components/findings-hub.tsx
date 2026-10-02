@@ -173,7 +173,7 @@ export function FindingsHub({ findings, findingEvidence, findingComments, findin
             {uploads.length ? "Open Review Pack" : "Import Accounts"}
           </button>
         </div>
-        <div className="mt-5 overflow-x-auto">
+        <div className="mt-5 overflow-x-auto" tabIndex={0}>
           <table className="w-full min-w-[560px] border-collapse text-left text-sm">
             <thead className="text-xs uppercase text-muted">
               <tr>

@@ -48,6 +48,22 @@ test("review pack opens on the decision summary with supporting detail on demand
   await expect(main.getByRole("heading", { name: "Evidence Appendix" })).toBeVisible();
 });
 
+test("overview and cash flow keep secondary analysis on demand", async ({ page }) => {
+  await gotoDemo(page);
+
+  await openPage(page, "Overview");
+  const overviewDisclosure = page.getByRole("main").getByText("Supporting review analysis", { exact: true }).locator("..");
+  await expect(overviewDisclosure).not.toHaveAttribute("open", "");
+  await overviewDisclosure.locator("summary").click();
+  await expect(overviewDisclosure).toHaveAttribute("open", "");
+
+  await openPage(page, "Cash flow");
+  const cashDisclosure = page.getByRole("main").getByText("Forecast controls and scenario planning", { exact: true }).locator("..");
+  await expect(cashDisclosure).not.toHaveAttribute("open", "");
+  await cashDisclosure.locator("summary").click();
+  await expect(cashDisclosure).toHaveAttribute("open", "");
+});
+
 test("VAT pack exports produce the exception CSV and evidence JSON", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
