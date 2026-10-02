@@ -346,6 +346,9 @@ rail should be replaced by a grouped menu drawer.
 - **P4 — production UX hardening:** contain focus in modal experiences, verify
   intermediate breakpoints, finish high-use responsive tables and protect the
   core journey with visual regression coverage.
+- **P5 — all-page clarity audit:** reduce default density in Review pack, VAT,
+  Finance, Cash flow and Overview; simplify high-control workflows; and enforce
+  WCAG regression coverage across every working view.
 
 P0 implementation began on 1 October 2026. Behaviour, calculations, evidence,
 permissions and export controls must remain unchanged while presentation is
@@ -413,3 +416,12 @@ simplified.
   summaries while retaining full tables for tablet, desktop and print. Approved
   1440px browser baselines now protect Import, Overview, Findings and Review
   pack from unintended visual changes as part of the standard UI suite.
+- **P5 accessibility remediation complete:** every one of the 17 working views
+  is now included in the permanent WCAG A/AA suite. Upload and Accounts selects,
+  the Finance prompt, report tabs, VAT actions and Finance/VAT/Cash scroll
+  regions have accessible names, stable contrast and keyboard access.
+- **P5 Review pack simplification complete:** the default screen retains the
+  partner decision, blockers, key measures and export actions. Pack settings,
+  governance/supporting schedules and the evidence trail are revealed on
+  demand but remain included in print output. A density regression keeps the
+  default view below 900 visible words.

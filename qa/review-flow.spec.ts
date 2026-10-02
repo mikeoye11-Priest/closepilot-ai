@@ -28,6 +28,26 @@ test("review pack exports produce the findings CSV and evidence JSON", async ({ 
   expect(errors, errors.join("\n")).toEqual([]);
 });
 
+test("review pack opens on the decision summary with supporting detail on demand", async ({ page }) => {
+  await gotoDemo(page);
+  await openPage(page, "Review pack");
+
+  const main = page.getByRole("main");
+  await expect(main.getByText("Partner conclusion", { exact: true })).toBeVisible();
+  await expect(main.getByLabel("Pack Type")).toBeHidden();
+  await expect(main.getByRole("heading", { name: "Financial Exposure Explanation" })).toBeHidden();
+  await expect(main.getByRole("heading", { name: "Evidence Appendix" })).toBeHidden();
+  const visibleWords = await main.evaluate((element) => (element as HTMLElement).innerText.trim().split(/\s+/).length);
+  expect(visibleWords).toBeLessThan(900);
+
+  await main.getByRole("button", { name: "Pack settings" }).click();
+  await expect(main.getByLabel("Pack Type")).toBeVisible();
+  await main.getByRole("button", { name: "Supporting schedules" }).click();
+  await expect(main.getByRole("heading", { name: "Financial Exposure Explanation" })).toBeVisible();
+  await main.getByRole("button", { name: "Evidence & audit trail" }).click();
+  await expect(main.getByRole("heading", { name: "Evidence Appendix" })).toBeVisible();
+});
+
 test("VAT pack exports produce the exception CSV and evidence JSON", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));

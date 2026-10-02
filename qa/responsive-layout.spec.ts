@@ -28,6 +28,7 @@ for (const viewport of BREAKPOINTS) {
       await expect(primaryNav(page)).toBeHidden();
       await expect(page.getByRole("button", { name: "Menu", exact: true })).toBeVisible();
       await openPage(page, "Review pack");
+      await page.getByRole("button", { name: "Pack settings" }).click();
       await page.getByLabel("Pack Type").selectOption("audit");
       await expect(page.getByTestId("audit-summary-cards")).toBeVisible();
       await expect(page.getByTestId("pack-finding-cards")).toBeVisible();

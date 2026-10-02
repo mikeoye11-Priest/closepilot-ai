@@ -63,7 +63,7 @@ function FormatCard({ title, sub, onClick, tone = "default" }: { title: string; 
   return (
     <button onClick={onClick} className={`flex flex-col items-start rounded-xl border px-4 py-3 text-left transition-colors ${tones[tone]}`}>
       <span className={`text-sm font-black ${titleTone}`}>{title}</span>
-      <span className="mt-0.5 text-xs text-slate-500">{sub}</span>
+      <span className="mt-0.5 text-xs text-slate-700">{sub}</span>
     </button>
   );
 }
@@ -121,11 +121,11 @@ export function ManagementAccountsPanel({ tenantId, companyId, companyName, vari
 
           <p className="mt-6 text-xs font-bold uppercase tracking-wider text-slate-500">Reporting period</p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <select className="rounded-lg border border-line bg-white px-3 py-2 text-sm" value={periodFrequency} onChange={(event) => changePeriodFrequency(event.target.value as "auto" | ReportFrequency)}>
+            <select aria-label="Reporting period frequency" className="rounded-lg border border-line bg-white px-3 py-2 text-sm" value={periodFrequency} onChange={(event) => changePeriodFrequency(event.target.value as "auto" | ReportFrequency)}>
               <option value="auto">Auto (from data)</option>
               {PERIOD_FREQUENCIES.map((frequency) => <option key={frequency} value={frequency}>{frequency[0].toUpperCase() + frequency.slice(1)}</option>)}
             </select>
-            <select className="rounded-lg border border-line bg-white px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-400" value={periodValue} disabled={periodFrequency === "auto"} onChange={(event) => setPeriodValue(event.target.value)}>
+            <select aria-label="Reporting period" className="rounded-lg border border-line bg-white px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-600" value={periodValue} disabled={periodFrequency === "auto"} onChange={(event) => setPeriodValue(event.target.value)}>
               {periodFrequency === "auto"
                 ? <option value="">As synced / uploaded</option>
                 : periods.map((period) => <option key={period.value} value={period.value}>{period.label}</option>)}

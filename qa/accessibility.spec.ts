@@ -2,7 +2,11 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { DESKTOP, gotoDemo, openPage } from "./ui-helpers";
 
-const SCREENS = ["Overview", "Findings", "Review pack"] as const;
+const SCREENS = [
+  "Overview", "Import & upload", "All clients", "Practice metrics", "Scheduled reports",
+  "Findings", "Finance review", "VAT", "Controls & fraud", "Audit readiness", "Month-end close",
+  "Review pack", "Accounts", "Cash flow", "Collections", "Changes", "Inventory & WIP",
+] as const;
 
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize(DESKTOP);

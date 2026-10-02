@@ -3099,7 +3099,7 @@ export function AppShell({ userEmail, presentationMode = false }: { userEmail: s
         {(REVIEW_VIEWS.includes(active as typeof REVIEW_VIEWS[number]) || REPORT_VIEWS.includes(active as typeof REPORT_VIEWS[number])) && (
           <nav className="no-print mb-5 flex gap-1 overflow-x-auto rounded-xl border border-line bg-white p-1.5 shadow-card" aria-label={REVIEW_VIEWS.includes(active as typeof REVIEW_VIEWS[number]) ? "Review views" : "Report views"}>
             {(REVIEW_VIEWS.includes(active as typeof REVIEW_VIEWS[number]) ? REVIEW_VIEWS : REPORT_VIEWS).map((view) => (
-              <button key={view} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-bold transition-colors ${active === view ? "bg-slate-900 text-white" : "text-muted hover:bg-slate-100 hover:text-ink"}`} onClick={() => setActive(view)}>{SUBVIEW_LABELS[view]}</button>
+              <button key={view} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-bold ${active === view ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100 hover:text-ink"}`} onClick={() => setActive(view)}>{SUBVIEW_LABELS[view]}</button>
             ))}
           </nav>
         )}
@@ -4998,6 +4998,9 @@ function ReviewPack({
   const [signOffStatus, setSignOffStatus] = useState<PartnerSignOffStatus>(partnerSignOff?.status ?? "draft");
   const [reviewPackStatus, setReviewPackStatus] = useState<ReviewPackStatus>(partnerSignOff?.reviewPackStatus ?? "DRAFT");
   const [packType, setPackType] = useState<"audit" | "partner" | "client" | "evidence">("partner");
+  const [showPackSettings, setShowPackSettings] = useState(false);
+  const [showSupportingSchedules, setShowSupportingSchedules] = useState(false);
+  const [showEvidenceTrail, setShowEvidenceTrail] = useState(false);
   const [conclusion, setConclusion] = useState(partnerSignOff ? "Approved and locked following partner sign-off." : "Draft: manager review required before final issue.");
   const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
   const profile = evidenceProfile(findings);
@@ -5269,6 +5272,9 @@ function ReviewPack({
             <p className="mt-1 text-sm text-muted">{tenant.name} · Prepared {today} · {uploads.length} file{uploads.length !== 1 ? "s" : ""} reviewed</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" aria-expanded={showPackSettings} onClick={() => setShowPackSettings((value) => !value)}>Pack settings</button>
+            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" aria-expanded={showSupportingSchedules} onClick={() => setShowSupportingSchedules((value) => !value)}>Supporting schedules</button>
+            <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" aria-expanded={showEvidenceTrail} onClick={() => setShowEvidenceTrail((value) => !value)}>Evidence & audit trail</button>
             <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:text-muted" disabled={reviewLocked} onClick={() => setActive("Upload Finance Pack")}>Import More</button>
             <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={() => exportFile(`${fileSlug}_findings.csv`, findingsCsv(findings), "text/csv;charset=utf-8")}>Findings Schedule</button>
             <button className="rounded-lg border border-line px-4 py-2 text-sm font-bold" onClick={downloadEvidencePack}>Evidence Archive</button>
@@ -5278,7 +5284,7 @@ function ReviewPack({
           </div>
         </div>
         {coverError && <p className="mt-2 text-sm text-amber-800">{coverError}</p>}
-        <div className="mt-4 grid gap-3 md:grid-cols-5">
+        <div className={`${showPackSettings ? "grid" : "hidden print:grid"} mt-4 gap-3 md:grid-cols-5`}>
           <label className="grid gap-1">
             <span className="text-xs font-bold uppercase text-muted">Pack Type</span>
             <select className="h-10 rounded-lg border border-line px-3 text-sm font-bold" value={packType} onChange={(e) => setPackType(e.target.value as typeof packType)}>
@@ -5687,6 +5693,7 @@ function ReviewPack({
             </div>
           )}
 
+          <div className={`${showSupportingSchedules ? "block" : "hidden print:block"}`}>
           <div className="mt-6 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
             <div className={`rounded-lg border p-4 ${partnerSignOff ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
               <p className="text-xs font-bold uppercase text-muted">Partner Sign-Off</p>
@@ -5943,9 +5950,10 @@ function ReviewPack({
             {packType !== "client" && <FindingTriageSection title="Advisory Observations" findings={advisoryFindings} empty="No advisory observations." compact />}
           </div>
         </div>
+        </div>
 
         {(packType === "evidence" || packType === "partner" || packType === "audit") && (
-          <div className="print-page mt-6 rounded-lg border border-line p-4">
+          <div className={`${showEvidenceTrail ? "block" : "hidden print:block"} print-page mt-6 rounded-lg border border-line p-4`}>
             <h2 className="font-black">Evidence Appendix</h2>
             <div className="mt-3 grid gap-3">
               {findings.slice(0, packType === "evidence" ? findings.length : 10).map((finding) => (
@@ -6283,7 +6291,7 @@ function CollectionOpportunityReport({ opportunities, ecl, cashAtRisk, setActive
           <SummaryItem label="Top 10 Opportunity" value={`£${topValue.toLocaleString("en-GB")}`} detail="priority collection queue" level={topValue ? "medium" : "low"} />
           <SummaryItem label="Provision Estimate" value={`£${Math.round(ecl).toLocaleString("en-GB")}`} detail="IFRS 9-style ECL proxy" level={ecl ? "medium" : "low"} />
         </div>
-        <div className="overflow-x-auto rounded-lg border border-line">
+        <div className="overflow-x-auto rounded-lg border border-line" tabIndex={0} role="region" aria-label="Collection opportunities table">
           {opportunities.length ? (
             <table className="w-full min-w-[820px] border-collapse text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-muted">
@@ -6333,7 +6341,7 @@ function SupplierRiskReport({ opportunities, setActive }: { opportunities: Suppl
           <SummaryItem label="Duplicate Risk" value={`£${duplicateRisk.toLocaleString("en-GB")}`} detail="payment hold candidates" level={duplicateRisk ? "high" : "low"} />
           <SummaryItem label="Supplier Actions" value={String(opportunities.length)} detail="requiring AP review" level={opportunities.length ? "medium" : "low"} />
         </div>
-        <div className="overflow-x-auto rounded-lg border border-line">
+        <div className="overflow-x-auto rounded-lg border border-line" tabIndex={0} role="region" aria-label="Supplier risks table">
           {opportunities.length ? (
             <table className="w-full min-w-[820px] border-collapse text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-muted">
@@ -6533,7 +6541,7 @@ function CopilotPrompt({ question, setQuestion, openCopilot }: { question: strin
     <Panel title="Ask ClosePilot">
       <p className="mb-3 text-sm text-muted">Ask why profit moved, what is blocking close, or where cash risk is hiding.</p>
       <div className="flex flex-col gap-2 sm:flex-row">
-        <input className="h-11 flex-1 rounded-lg border border-line px-3" value={question} onChange={(event) => setQuestion(event.target.value)} />
+        <input aria-label="Ask a question about this finance review" className="h-11 flex-1 rounded-lg border border-line px-3" value={question} onChange={(event) => setQuestion(event.target.value)} />
         <button className="rounded-lg bg-brand px-5 font-bold text-white" onClick={openCopilot}>Ask</button>
       </div>
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -6696,7 +6704,7 @@ function DebtorBridgePanel({ ledger }: { ledger: DebtorLedger }) {
   return (
     <Panel title="Debtor Bridge · one reconciled debtor total">
       <p className="max-w-2xl text-sm text-muted">The single authoritative receivables reconciliation. Every debtor figure — exposure, collections, cash-flow receipts — draws from this, so a 90-day invoice is counted once and its ageing/risk/promise signals are children, not extra balance.</p>
-      <div className="mt-4 overflow-x-auto">
+      <div className="mt-4 overflow-x-auto" tabIndex={0} role="region" aria-label="Debtor reconciliation table">
         <table className="w-full min-w-[420px] text-sm">
           <tbody>
             {rows.map(([label, value, note]) => (
@@ -6821,7 +6829,7 @@ function ThirteenWeekCashflow({ statements, ledger }: { statements?: StatementsF
       )}
 
       {/* Closing-balance bars: green above the zero line, red below. */}
-      <div className="mt-4 overflow-x-auto">
+      <div className="mt-4 overflow-x-auto" tabIndex={0} role="region" aria-label="Thirteen-week cash balance chart">
         <div className="flex min-w-[560px] items-stretch gap-1" style={{ height: "160px" }} aria-hidden="true">
           {result.weeks.map((w) => (
             <div key={w.week} className="flex flex-1 flex-col" title={`Week ${w.week}: ${gbp(w.closing)}`}>
@@ -6834,7 +6842,7 @@ function ThirteenWeekCashflow({ statements, ledger }: { statements?: StatementsF
         </div>
       </div>
 
-      <div className="mt-4 overflow-x-auto">
+      <div className="mt-4 overflow-x-auto" tabIndex={0} role="region" aria-label="Thirteen-week cash forecast table">
         <table className="w-full min-w-[640px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-line text-left text-xs font-bold uppercase text-muted">
@@ -8197,7 +8205,7 @@ function VatReviewGroupCard({ group, decision, onDecision, updateFindingStatus }
         />
         <div className="flex flex-wrap gap-2">
           <button className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-bold text-white" onClick={() => decide("accepted_risk")}>Accept Risk</button>
-          <button className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-bold text-white" onClick={() => decide("evidence_requested")}>Request Evidence</button>
+          <button className="rounded-lg bg-amber-700 px-3 py-2 text-sm font-bold text-white" onClick={() => decide("evidence_requested")}>Request Evidence</button>
           <button className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white" onClick={() => decide("resolved")}>Resolved</button>
           <button className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-bold" onClick={() => decide("false_positive")}>False Positive</button>
         </div>
@@ -8894,7 +8902,7 @@ function VatAssuranceModule({ vatReview, findings, validationChecks, uploads, up
           </div>
 
           {proposedAdjustments.length ? (
-            <div className="overflow-x-auto rounded-lg border border-line">
+            <div className="overflow-x-auto rounded-lg border border-line" tabIndex={0} role="region" aria-label="Proposed VAT adjustments table">
               <table className="w-full min-w-[900px] border-collapse text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-muted">
                   <tr>
@@ -8927,7 +8935,7 @@ function VatAssuranceModule({ vatReview, findings, validationChecks, uploads, up
         </Panel>
 
         <Panel title="Before / After VAT Return">
-          <div className="overflow-x-auto rounded-lg border border-line">
+          <div className="overflow-x-auto rounded-lg border border-line" tabIndex={0} role="region" aria-label="VAT return comparison table">
             <table className="w-full min-w-[520px] border-collapse text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-muted">
                 <tr>
@@ -8958,7 +8966,7 @@ function VatAssuranceModule({ vatReview, findings, validationChecks, uploads, up
 
       <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <Panel title="VAT Return Boxes 1-9">
-          <div className="overflow-x-auto rounded-lg border border-line">
+          <div className="overflow-x-auto rounded-lg border border-line" tabIndex={0} role="region" aria-label="VAT return boxes table">
             <table className="w-full min-w-[620px] border-collapse text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-muted">
                 <tr>
@@ -9006,7 +9014,7 @@ function VatAssuranceModule({ vatReview, findings, validationChecks, uploads, up
 
       <Panel title={`${selectedBox.replace("box", "Box ")} Transaction Drill-Through`}>
         {selectedContributions.length ? (
-          <div className="overflow-x-auto rounded-lg border border-line">
+          <div className="overflow-x-auto rounded-lg border border-line" tabIndex={0} role="region" aria-label="VAT transaction drill-through table">
             <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-muted">
                 <tr>

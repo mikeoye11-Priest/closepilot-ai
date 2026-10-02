@@ -143,6 +143,7 @@ function UploadIntelligence({ uploads }: { uploads: Upload[] }) {
                     )}
                   </div>
                   <select
+                    aria-label={`Document type for ${upload.fileName}`}
                     className="h-10 rounded-lg border border-line bg-white px-3 text-sm font-bold"
                     value={upload.fileType}
                     onChange={(event) => setOverrides((items) => ({ ...items, [upload.id]: event.target.value as Upload["fileType"] }))}
